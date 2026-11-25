@@ -94,7 +94,7 @@ flowchart LR
   end
   C["Extension and routine code"] -->|"model token"| MP
   MP --> AN["Anthropic API"]
-  AG -->|"turn token: tools, history, snapshots, reservations"| API
+  AG -->|"turn token: tools, history, snapshots, usage reports"| API
 ```
 
 ## 2. Decided and proposed
@@ -170,6 +170,10 @@ Decided 2026-11-25 by the product owner, after the second review round:
   risk of the Anthropic key living in the process that runs the agent, to
   simplify the architecture. Self-hosted, the `agent` container (D3) holds
   the key and runs the same path. §2.1 has the reasoning.
+- **D7. Soft limits.** Usage is counted after each model request, and a
+  turn stops before its next request once it is over a limit; no
+  reservation before a request (§10.2). Overshoot is at most one request
+  per turn, and the Anthropic monthly spend limit is the backstop.
 
 ### 2.1 Considered: a separate agent function
 
@@ -498,7 +502,7 @@ knowledge and the rest) are disabled, so their tables are never created.
   the claim generation (§6.3). So a mutation already past its check commits
   before the fence moves, and every later one sees the new generation.
   Every other write a turn makes works the same way: a tool write, an
-  extension job's enqueue and a model reservation each take the session's
+  extension job's enqueue and a model usage report each take the session's
   fence key shared in their own transaction, after the privacy lock (the
   established order), check the generation there, and hold the key through
   commit.
@@ -632,11 +636,10 @@ On the API, for the agent runtime only (a turn token, or the runtime
 credential to claim one, §7.3):
 
 ```
-POST /v1/agent/runtime/sessions/:id/claim          claim a turn → turn token
+POST /v1/agent/runtime/sessions/:id/claim          claim a turn → turn token (checks limits, takes the lease, §10.2)
 POST /v1/agent/runtime/sessions/:id/storage        one Mastra storage call (§5.2)
 POST /v1/agent/runtime/sessions/:id/tools/:name    one Retainer or extension tool call (§8.1)
-POST /v1/agent/runtime/sessions/:id/model/reserve  reserve one model request and take its lease (§10.2)
-POST /v1/agent/runtime/sessions/:id/model/report   report its usage, settle and release (§10.2)
+POST /v1/agent/runtime/sessions/:id/model/report   report one model request's usage → continue or stop (§10.2)
 GET  /v1/agent/runtime/sessions/:id/turn           the turn's state, to notice a cancel (§6.5)
 POST /v1/agent/runtime/sessions/:id/close          close the turn with its counts
 ```
@@ -699,11 +702,11 @@ late in an invocation gets a shorter turn.
   its deadline; that one is closed as `timed_out` first, so a dead
   invocation doesn't leave the chat busy. Otherwise the claim is refused with
   `409 turn_running`.
-- Storage calls, tool calls and reservations carry the turn token, and a
+- Storage calls, tool calls and usage reports carry the turn token, and a
   stale generation is refused. A late write from an old invocation can't
   land after a new claim.
 - A claim or a cancel moves the generation only under the session's fence
-  lock, so a storage mutation, tool write, job enqueue or reservation
+  lock, so a storage mutation, tool write, job enqueue or usage report
   already past its check commits first (§5.2).
 - The turn's state is the API's. A turn the API ends itself (cancelled,
   timed out) is closed by the API; the old runtime's own close is refused
@@ -777,9 +780,9 @@ shared PubSub, which is later.
 
 **Cancel.** `POST …/cancel` and `forget` fence the turn in the API (a new
 claim generation, under the session's fence lock) and record it as
-`cancelled` there and then. From then on its storage calls, tool calls and
-reservations get `turn_cancelled`; a request already reserved can still
-report its usage (§10.2). A model request can stream for minutes without
+`cancelled` there and then. From then on its storage calls and tool calls
+get `turn_cancelled`; a model request already sent can still report its
+usage (§10.2). A model request can stream for minutes without
 calling the API, so while one is in flight the runtime also asks the API
 for the turn's state every 5 seconds (`GET …/turn`, with a 2-second
 timeout). On `cancelled`, `timed_out`, a stale generation or an erased
@@ -893,7 +896,7 @@ and never open anything of the agent's.
   Claims: workspace, session, person, and how it was minted (the web app's
   session, or the CLI login with its elevation). Minted by `POST …/token`,
   good for 15 minutes. Only the agent's stream endpoint accepts it; storage,
-  tools and reservations refuse it. On its own it can start a turn and
+  tools and usage reports refuse it. On its own it can start a turn and
   nothing else, so a client holding it can't save messages or call a tool
   directly.
 - **Runtime credential.** Proves the caller is the agent runtime. Hosted:
@@ -1143,19 +1146,19 @@ They start generous on purpose: a routine or a chat that hits a wall in its
 first weeks is worse than a few expensive turns. They get tightened from
 real usage.
 
-| Limit                                      | Chat (per turn)                | Task (per task)                                          | Built on                                |
-| ------------------------------------------ | ------------------------------ | -------------------------------------------------------- | --------------------------------------- |
-| Steps                                      | 50                             | 100                                                      | `maxSteps`                              |
-| Output per step                            | 32,000 tokens                  | 32,000 tokens                                            | `maxOutputTokens`, the proxy            |
-| Tool calls                                 | 200                            | 500                                                      | `hooks.beforeToolCall`                  |
-| Web searches                               | 30                             | 100                                                      | The reservation's running total (§10.2) |
-| Web fetches                                | 30                             | 100                                                      | The reservation's running total (§10.2) |
-| Searches or fetches in one request         | 10 each                        | 10 each                                                  | The web tools' constant `max_uses`      |
-| Request size                               | 5 MiB, or 900,000 input tokens | Same                                                     | The agent runtime (§5.5)                |
-| Time                                       | 14 minutes                     | 24 hours, in slices that hand off after about 10 minutes | The turn's deadline (§6.3), §9.3        |
-| Tasks per routine run                      | n/a                            | 10                                                       | The session API                         |
-| Agent model requests per person per day    | 2,000                          | n/a                                                      | The reservation (§10.2)                 |
-| Agent model requests per workspace per day | 20,000                         | 20,000                                                   | The reservation (§10.2)                 |
+| Limit                                      | Chat (per turn)                | Task (per task)                                          | Built on                                     |
+| ------------------------------------------ | ------------------------------ | -------------------------------------------------------- | -------------------------------------------- |
+| Steps                                      | 50                             | 100                                                      | `maxSteps`                                   |
+| Output per step                            | 32,000 tokens                  | 32,000 tokens                                            | `maxOutputTokens`, the proxy                 |
+| Tool calls                                 | 200                            | 500                                                      | `hooks.beforeToolCall`                       |
+| Web searches                               | 30                             | 100                                                      | Counted from each request's usage (§10.2)    |
+| Web fetches                                | 30                             | 100                                                      | Counted from each request's usage (§10.2)    |
+| Searches or fetches in one request         | 10 each                        | 10 each                                                  | The web tools' constant `max_uses`           |
+| Request size                               | 5 MiB, or 900,000 input tokens | Same                                                     | The agent runtime (§5.5)                     |
+| Time                                       | 14 minutes                     | 24 hours, in slices that hand off after about 10 minutes | The turn's deadline (§6.3), §9.3             |
+| Tasks per routine run                      | n/a                            | 10                                                       | The session API                              |
+| Agent model requests per person per day    | 2,000                          | n/a                                                      | Checked at claim, counted from usage (§10.2) |
+| Agent model requests per workspace per day | 20,000                         | 20,000                                                   | Checked at claim, counted from usage (§10.2) |
 
 **Web searches and fetches.** `max_uses` can't follow the turn's remaining
 allowance, because changing it changes the tool definitions (§8.3). So it
@@ -1163,18 +1166,14 @@ stays at 10 on every request, and both web tools must carry it: Anthropic
 sets no default cap for web fetch, so the agent list refuses a web tool
 without it (§12).
 
-- **Charged up front.** Each reservation charges the full allowance (10)
-  of each web tool the request carries, against the turn's totals (the
-  task's, across its slices), counting requests still in flight. A task
-  without `web.fetch` is never charged for fetches. It is
-  refused, and the turn ends as `limit_reached`, when the charged total has
-  already reached the cap.
-- **Settled once.** When the request ends, its report settles the charge
-  against the `server_tool_use` counts in its final usage. If the usage is
-  missing or partial (a stream that failed, a report that was lost), the
-  full charge stays. A retry is a new request with a new charge.
-- **The bound.** A turn can overshoot a cap by at most one request's
-  allowance (10), whatever fails along the way.
+- **Counted after each request.** Each request's report adds the
+  `server_tool_use` counts from its final usage to the turn's totals (the
+  task's, across its slices). If the usage is missing or partial, the
+  request counts as the full 10 of each web tool it carried; a task without
+  `web.fetch` is never counted for fetches.
+- **The bound.** A turn makes one model request at a time and waits for the
+  report's answer before the next, so a turn can pass a cap by at most one
+  request's allowance (10).
 
 A task's caller may pass lower limits. Self-hosted operators set the daily
 numbers with environment variables. On the hosted service the Anthropic
@@ -1182,32 +1181,37 @@ workspace's monthly spend limit stays the last backstop
 (`extensions-model-calls.md` §2). Agent requests don't count toward a
 routine's model call caps (`routines.md` §4.6).
 
-### 10.2 Reserved per model request
+### 10.2 Counted after each model request
+
+Decided 2026-11-25 (D7): limits are soft. Usage is counted after each
+request, and the turn stops before its next request once it is over; there
+is no reservation before a request. The limits are generous anyway, and the
+Anthropic workspace's monthly spend limit stays the hard backstop.
 
 The Anthropic provider instance is created with a `fetch` of our own. It
 runs the proxy's own code path in-process (D6): the agent list (§12), then
-the call to Anthropic with the key from the process environment. Each
-request costs two API calls, both with the turn token:
+the call to Anthropic with the key from the process environment.
 
-- **Reserve** (`…/model/reserve`), before the request. In one atomic step
-  the API checks the claim generation, counts the request against the
-  session's, the person's and the workspace's limits, charges the turn's
-  web totals (§10.1), and takes the hosted writer lease that the proxy's
-  own requests take today, sized to the turn's deadline plus the report's
-  grace, not the 320 seconds a plain proxy request gets. It records a
-  request ID bound to the workspace, turn, generation and writer build. Or
-  it refuses, and the turn ends as `limit_reached`.
-- **Report** (`…/model/report`), after it, for that request ID with the
-  runtime credential. Usage goes to `ai_usage`, the web charge is settled
-  and the lease is released, once: a repeat changes nothing. A report for a
-  cancelled or expired turn, carrying metadata only, is still accepted for
-  its own reservation and never touches a newer claim. A lost report
-  leaves the full charge; when the upstream's end is uncertain the lease
-  is held to its ceiling, as the proxy does for its other requests.
+- **At claim** (§6.3), the API checks the person's and the workspace's day
+  and the turn's or task's totals, and refuses the turn as `limit_reached`
+  if one is already spent. The claim also takes the hosted writer lease
+  that the proxy's own requests take today, once for the whole turn, sized
+  to the turn's deadline plus its grace and released at close.
+- **After each request**, one report (`…/model/report`), with a request ID
+  the runtime makes and the turn token. Usage goes to `ai_usage`, the
+  counts are added (§10.1), and the answer is `continue` or `stop`. A repeat
+  of the same request ID changes nothing. On `stop` the turn ends as
+  `limit_reached` before its next request. A report for a cancelled or
+  expired turn, carrying metadata only, is still accepted with the runtime
+  credential for its own request ID and never touches a newer claim.
+- **If the report can't be made**, the runtime retries it briefly; if it
+  still fails, the turn ends rather than send another request uncounted.
+  A runtime that dies loses at most that one request's count.
 
-A retried request reserves again. This is the routine reservation
-(`routines.md` §6.3) moved to where every model request passes, including
-Mastra's own (titles, repairs). There is no model token to replay.
+So a model request costs one API call, after it, instead of two. Turns
+running at the same time can each pass the person's or workspace's day by
+at most one request. This replaces the routine-style reservation
+(`routines.md` §6.3) for the agent; routines and extensions keep theirs.
 
 ### 10.3 Usage
 
@@ -1260,9 +1264,9 @@ extension list.
 | `mcp_servers`, anything else                                                                                              | No                                                                                                                                                                   |
 
 - **Admission and metering.** The agent's requests pass the same checks
-  as the proxy's others, but the reservation and the writer lease come from
-  the reserve call, against the turn's claim generation, and usage goes in
-  the report call (§10.2), not through a model token. The length check's
+  as the proxy's others, but the writer lease comes from the turn's claim
+  and usage goes in the report after each request (§10.2, D7), not through
+  a model token. The length check's
   token counts (§5.5) take the same in-process path to Anthropic's token
   counting, which is free and not counted against the limits.
 - **Timeouts.** Today the proxy aborts its upstream request at 330 seconds
@@ -1296,8 +1300,8 @@ extension list.
   expiries) with its native Lambda payload, which the function's entry
   routes to the job handler, apart from function-URL events, and
   authenticates with the launcher's credential. This ships in PR 1, for
-  approval recovery. It claims turns, reserves model requests and
-  reports usage with its existing ingress secret (§7.3). There is no
+  approval recovery. It claims turns and reports usage with its existing
+  ingress secret (§7.3). There is no
   separate `agent` function. Infrastructure is in `retainer-cloud`.
 - **Accepted costs (D6).** The Anthropic key lives in the process that
   reads untrusted text, and an agent bug, a memory spike or a bad deploy
@@ -1320,11 +1324,11 @@ extension list.
 
 ## 14. Delivery
 
-| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **1. Agent core and chat backend** | The agent in the `model` module (D6): the agent list, the in-process model path, reserve and report, timeouts and the capture refusal at the report ingress; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease, the runtime routes, the shared erasure for `forget`, retention and the workspace purge); `@mastra/pg` behind the session API, with the `retainer_mastra` role, the erasure function and the migration step; `packages/agent` with the pass-through store, pinned tools, Retainer's tools, web tools, approvals of record and their recovery, with the internal job entry on both hosts, and the step checkpoint; the chat endpoints and stream; limits, reservations and the chat-length limit; the hosted `model` function's new timeout and memory (`retainer-cloud`) and the self-hosted `agent` container; `retainer agent chat` and the `cli.md` changes |
-| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included) and recorded reads; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Agent core and chat backend** | The agent in the `model` module (D6): the agent list, the in-process model path, the usage report and its answer, timeouts and the capture refusal at the report ingress; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease, the runtime routes, the shared erasure for `forget`, retention and the workspace purge); `@mastra/pg` behind the session API, with the `retainer_mastra` role, the erasure function and the migration step; `packages/agent` with the pass-through store, pinned tools, Retainer's tools, web tools, approvals of record and their recovery, with the internal job entry on both hosts, and the step checkpoint; the chat endpoints and stream; limits, reservations and the chat-length limit; the hosted `model` function's new timeout and memory (`retainer-cloud`) and the self-hosted `agent` container; `retainer agent chat` and the `cli.md` changes |
+| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included) and recorded reads; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 Then: approvals for routines, extension `write` and `send` tools in tasks,
 the member agent with a person's connections, compaction instead of the
@@ -1362,7 +1366,7 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 
 **Tokens and access**
 
-- The stream token is refused by storage, tools and reservations: a client
+- The stream token is refused by storage, tools and usage reports: a client
   holding it can't save a message or call an extension `send` tool.
 - A claim without the runtime credential is refused.
 - A turn token can't reach another session, call a tool the caller can't,
@@ -1430,19 +1434,18 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 
 **Limits and the proxy**
 
-- **Concurrent:** many model requests reserving against the same person's
-  and workspace's limits, and against one turn's web totals while requests
-  are in flight.
-- Search and fetch charges add up across requests and slices; the next
-  request is refused at the cap. A lost report keeps the full charge; a
-  retry is charged again; spillover across slices stays within one
-  request's allowance.
+- **Concurrent:** many turns of one person and workspace report at once;
+  each passes the day's limit by at most one request.
+- Search and fetch counts add up across requests and slices; the report
+  answers `stop` at the cap, and the turn sends no further request. A
+  report with missing usage counts the full allowance; a report that can't
+  be made ends the turn.
 - The agent list refuses a web tool without `max_uses`.
-- A search-only task with a low fetch cap and a lost report is never
-  refused on fetches.
+- A search-only task with a low fetch cap and missing usage is never
+  stopped on fetches.
 - A cancelled request's metadata-only report, and one arriving just after
-  the deadline, settle once and leave the newer claim alone; a deployment
-  drain during an agent stream past 330 seconds waits for its lease.
+  the deadline, count once and leave the newer claim alone; a deployment
+  drain during an agent stream past 330 seconds waits for the turn's lease.
 - A fake upstream that returns `pause_turn`: the turn continues or ends as
   `incomplete`, never as a finished answer.
 - A slow agent stream past 330 seconds completes; the runtime ends it at
@@ -1545,3 +1548,4 @@ Answered 2026-11-25:
 - Where the agent runs: inside the model proxy, the `model` function
   hosted and the `agent` container self-hosted, with the key in its process
   (D6, §2.1, §13).
+- Limits: soft, counted after each model request (D7, §10.2).
