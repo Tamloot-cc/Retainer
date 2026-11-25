@@ -8,8 +8,9 @@ reviewers: their agreed fixes are in the sections they affect, and the
 product owner's five decisions on what they left open are D1 to D5 in §2.
 Revised a third time the same day: the agent runs inside the model proxy
 (D6), and a second review round's fixes are in place. Later that day:
-soft limits (D7), and D4 and D5 relaxed to accept a rare `diverged` run and
-a rare repeated write. §2 lists what is decided.
+soft limits (D7), D4 and D5 relaxed to accept a rare `diverged` run and
+a rare repeated write, prompt caching designed (§3.5) and the length check
+dropped (D2). §2 lists what is decided.
 
 Builds on [extensions-model-calls.md](extensions-model-calls.md) (the model
 proxy, and §11 there, which first described this agent) and
@@ -142,11 +143,11 @@ Decided 2026-11-25 by the product owner, on what the review left open:
 - **D1. No refusal fallbacks.** Agent requests carry no `fallbacks`, and the
   proxy's agent list refuses the field. A refused turn ends as `refused`; a
   refused task ends as `refused`, with no repair turn (§3.4, §12).
-- **D2. A hard chat-length limit in PR 1.** Before each request the agent
-  runtime measures it. Past a threshold under the proxy's 6 MiB, or near
-  the context limit, the turn ends as `context_limit_reached` and the person
-  starts a new chat. Compaction comes later, once Mastra is shown to store
-  and replay compaction blocks (§5.5).
+- **D2. No length check before sending (revised 2026-11-25).** Chats are
+  assumed to stay under the 1M-token context. If Anthropic refuses a
+  request as too long or too large, the turn ends as
+  `context_limit_reached` and the person starts a new chat. Compaction is
+  set aside (§5.5).
 - **D3. Self-hosted turns run in their own container.** Chat and task turns
   run in an `agent` Compose container with no database credential and no
   route to Postgres. It reaches Retainer only through the API, like the
@@ -343,9 +344,8 @@ own model (`routines.md` §4.5). What it means for the harness:
   and edits to anything before it can invalidate it, the tool definitions
   included. So Mastra's history trimming is off: each turn loads the whole
   thread (§5.5), and a chat's tool list is fixed when it is created (§8.3).
-  Anthropic's context management clears old tool results, but a chat still
-  has a hard length limit (D2, §5.5). PR 1 checks that Mastra stores and
-  replays thinking blocks with their signatures.
+  The same rule keeps the prompt cache warm (§3.5). PR 1 checks that
+  Mastra stores and replays thinking blocks with their signatures.
 - **No forced tool choice.** `tool_choice` `any` and `tool` are refused, so
   a task's typed answer must use native structured output
   (`output_config.format`), not a forced tool. PR 2 checks which one
@@ -364,8 +364,45 @@ own model (`routines.md` §4.5). What it means for the harness:
   turn.
 - **Output** up to 128K tokens a step; the limit in §10 is lower. Every
   request streams.
-- **Caching.** The system prompt and the tool list are stable (§8.3) and
-  marked for prompt caching, so long sessions pay for them once.
+- **Caching** is designed in §3.5.
+
+### 3.5 Prompt caching
+
+Every step of a turn resends the whole chat, so caching decides most of the
+cost: on Sonnet 5.5 a cache read costs 0.05 of the input price. The cache
+matches the request's prefix byte for byte, in the order tools, system,
+messages, and a change anywhere invalidates everything after it.
+
+- **A stable prefix.**
+  - **Tools** are pinned per session, in a fixed order (§8.3), and
+    serialized deterministically: the same schemas give the same bytes.
+  - **The system prompt** is one static text per build: no date, no
+    person, no workspace ID, no flags. What varies per chat (the person,
+    the workspace's name and schema summary, today's date, a task's
+    instructions) goes in the first user message, after the cached part,
+    and never changes afterwards.
+  - **History only grows** (§3.4). Nothing is injected into a request and
+    removed from the next: no per-turn reminders, no elevation status, no
+    counters. A change mid-chat (an elevation, a removed extension) shows
+    up as a tool's error result (§8.3), which is appended like any other.
+- **Two breakpoints.** One explicit `cache_control` on the last system
+  block, with a 1-hour TTL, so the tools and system prompt stay cached
+  between a person's replies. And Anthropic's automatic caching (a
+  top-level `cache_control`, 5-minute TTL) for the growing conversation:
+  each step reads the previous step's prefix and writes its own. The
+  1-hour entry comes before the 5-minute one, as Anthropic requires. The
+  agent's in-process `fetch` (§10.2) adds the top-level field, so it
+  doesn't depend on Mastra or the AI SDK supporting it.
+- **Between turns** the conversation tail stays on 5 minutes: a reply
+  within 5 minutes reads the whole chat from cache; a later one rewrites
+  the tail once and reads the tools and system prompt. PR 1 measures the
+  gap between turns and moves the tail to 1 hour if most replies come
+  later. The timer runs from a request's start, so a step that streams for
+  more than 5 minutes also lets the tail expire; PR 1 counts those too.
+- **Measured.** `ai_usage` already records cache reads and writes per
+  request. PR 1's acceptance: from the second step of a turn on, the cache
+  read covers the previous request's input; a test diffs consecutive
+  request bodies and finds them identical up to the appended turn.
 
 ## 4. Architecture
 
@@ -596,30 +633,17 @@ tokens and errors.
   `lastMessages: false`, which turns history off; the default is the last
   10 messages. No `messageHistory` token budget, and no processor that drops
   messages. The round-trip test across fresh instances (§15) holds it.
-- **The limit (D2).** Anthropic's context management clears old tool
-  results at Anthropic, after the proxy has checked the request's size
-  (`MAX_REQUEST_BYTES`, 6 MiB), so it doesn't shrink what Retainer sends. A
-  chat with many web fetches would pass 6 MiB long before 1M tokens. So
-  before each request, the one about to be sent, the agent runtime checks
-  two things:
-  - **its final serialized size**, against 5 MiB;
-  - **an upper bound on its whole input**, against 900,000 tokens: the
-    last response's full input (uncached, cache-read and cache-written
-    tokens together) plus everything added since, counted with Anthropic's
-    token counting. That endpoint refuses requests with web server tools,
-    so it counts the added content alone, which carries none. A first
-    request has no last response: it is counted without the web tool
-    definitions, plus a fixed allowance for them. A byte ratio is only an
-    estimate, so it isn't used.
-
-  Past either, or when the bound can't be computed (the count fails), the
-  turn ends as `context_limit_reached` before anything is sent, and the
-  chat says to start a new one. A task ends the same way. The 900,000 leaves room
-  for the step's output (32,000 tokens) and the request's own web results
-  (§10.1). Both thresholds are starting values, tuned from real chats.
-- **Later: compaction.** Server-side compaction (`compact-2026-01-12`,
-  already on the proxy's beta list) replaces the limit once a PR shows
-  Mastra stores and replays `compaction` blocks.
+- **The limit (D2).** There is no check before sending. The agent's
+  requests go to Anthropic in-process, so the 6 MB limit of the function
+  URL, which bounds extension and routine requests, doesn't apply to
+  them. If Anthropic refuses a request as too long for the context
+  (`prompt is too long`) or too large (`413`), the turn ends as
+  `context_limit_reached`, and the chat says to start a new one. A task
+  ends the same way.
+- **Later: compaction.** Set aside for now. Server-side compaction
+  (`compact-2026-01-12`, already on the proxy's beta list) would let a chat
+  run past the context, once Mastra is shown to store and replay
+  `compaction` blocks.
 
 ## 6. The chat
 
@@ -1143,19 +1167,19 @@ They start generous on purpose: a routine or a chat that hits a wall in its
 first weeks is worse than a few expensive turns. They get tightened from
 real usage.
 
-| Limit                                      | Chat (per turn)                | Task (per task)                                          | Built on                                     |
-| ------------------------------------------ | ------------------------------ | -------------------------------------------------------- | -------------------------------------------- |
-| Steps                                      | 50                             | 100                                                      | `maxSteps`                                   |
-| Output per step                            | 32,000 tokens                  | 32,000 tokens                                            | `maxOutputTokens`, the proxy                 |
-| Tool calls                                 | 200                            | 500                                                      | `hooks.beforeToolCall`                       |
-| Web searches                               | 30                             | 100                                                      | Counted from each request's usage (§10.2)    |
-| Web fetches                                | 30                             | 100                                                      | Counted from each request's usage (§10.2)    |
-| Searches or fetches in one request         | 10 each                        | 10 each                                                  | The web tools' constant `max_uses`           |
-| Request size                               | 5 MiB, or 900,000 input tokens | Same                                                     | The agent runtime (§5.5)                     |
-| Time                                       | 14 minutes                     | 24 hours, in slices that hand off after about 10 minutes | The turn's deadline (§6.3), §9.3             |
-| Tasks per routine run                      | n/a                            | 10                                                       | The session API                              |
-| Agent model requests per person per day    | 2,000                          | n/a                                                      | Checked at claim, counted from usage (§10.2) |
-| Agent model requests per workspace per day | 20,000                         | 20,000                                                   | Checked at claim, counted from usage (§10.2) |
+| Limit                                      | Chat (per turn)      | Task (per task)                                          | Built on                                     |
+| ------------------------------------------ | -------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| Steps                                      | 50                   | 100                                                      | `maxSteps`                                   |
+| Output per step                            | 32,000 tokens        | 32,000 tokens                                            | `maxOutputTokens`, the proxy                 |
+| Tool calls                                 | 200                  | 500                                                      | `hooks.beforeToolCall`                       |
+| Web searches                               | 30                   | 100                                                      | Counted from each request's usage (§10.2)    |
+| Web fetches                                | 30                   | 100                                                      | Counted from each request's usage (§10.2)    |
+| Searches or fetches in one request         | 10 each              | 10 each                                                  | The web tools' constant `max_uses`           |
+| Request size                               | The 1M-token context | Same                                                     | Anthropic's refusal ends the turn (§5.5)     |
+| Time                                       | 14 minutes           | 24 hours, in slices that hand off after about 10 minutes | The turn's deadline (§6.3), §9.3             |
+| Tasks per routine run                      | n/a                  | 10                                                       | The session API                              |
+| Agent model requests per person per day    | 2,000                | n/a                                                      | Checked at claim, counted from usage (§10.2) |
+| Agent model requests per workspace per day | 20,000               | 20,000                                                   | Checked at claim, counted from usage (§10.2) |
 
 **Web searches and fetches.** `max_uses` can't follow the turn's remaining
 allowance, because changing it changes the tool definitions (§8.3). So it
@@ -1263,9 +1287,7 @@ extension list.
 - **Admission and metering.** The agent's requests pass the same checks
   as the proxy's others, but the writer lease comes from the turn's claim
   and usage goes in the report after each request (§10.2, D7), not through
-  a model token. The length check's
-  token counts (§5.5) take the same in-process path to Anthropic's token
-  counting, which is free and not counted against the limits.
+  a model token.
 - **Timeouts.** Today the proxy aborts its upstream request at 330 seconds
   (`UPSTREAM_TIMEOUT_MS`), which covers a handler's 300-second deadline. An
   agent request can rightly run longer. The chain: a turn's deadline is its
@@ -1355,11 +1377,11 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   are checked after `init()`.
 - History round-trips across fresh instances, thinking blocks and their
   signatures included: a 40-step chat and a long all-text chat load whole.
-- A request past either threshold ends as `context_limit_reached`,
-  including one where only the newest input (a long message or a large tool
-  result) takes it past 900,000 tokens, dense text with few bytes per
-  token, and a first request with a large task input and no history. A
-  failed count ends the turn before anything is sent.
+- A fake upstream that answers `prompt is too long` or `413`: the turn
+  ends as `context_limit_reached`.
+- Caching: consecutive request bodies in a turn and across turns are
+  identical up to the appended content, `cache_control` markers aside; the
+  system prompt has no per-chat bytes; the top-level field is added.
 
 **Tokens and access**
 
@@ -1514,8 +1536,8 @@ or "PR 2 checks":
   through Mastra as provider tools (§8.1);
 - the storage calls Mastra's agent makes (§5.2);
 - `handleChatStream`'s approval path at the pinned version (§6.4);
-- the fixed allowance for the web tool definitions in a first request's
-  count, measured from a real request (§5.5);
+- the cache read on each step against the previous request's input, and
+  the gap between a chat's turns, which decides the tail's TTL (§3.5);
 - which structured output Mastra's `structuredOutput` sends (§3.4), and
   whether durable agents hold up (§9.3), both in PR 2.
 
@@ -1534,7 +1556,10 @@ Answered 2026-11-25:
 - Waiting: suspend and resume, no polling (§2.2).
 - Order: the chat backend first, then tasks, then the web chat screen (§14).
 - Refusal fallbacks: none for agent requests (D1, §3.4).
-- Long chats: a hard length limit in PR 1, compaction later (D2, §5.5).
+- Long chats: no check before sending; Anthropic's refusal ends the turn
+  as `context_limit_reached`; compaction set aside (D2, §5.5).
+- Caching: a static system prompt, a 1-hour breakpoint after it and
+  automatic caching for the conversation (§3.5).
 - Self-hosted turns: in their own container, without database access (D3,
   §13).
 - Reads in routines that use the agent: live; a rare `diverged` is
@@ -1545,3 +1570,6 @@ Answered 2026-11-25:
   hosted and the `agent` container self-hosted, with the key in its process
   (D6, §2.1, §13).
 - Limits: soft, counted after each model request (D7, §10.2).
+- Redis: none, hosted or self-hosted. A hosted Redis service would be an
+  extra subprocessor, and AWS's own would move the `model` function into
+  the VPC; resumable streams and Mastra's steering wait (§6.5, §6.8).
