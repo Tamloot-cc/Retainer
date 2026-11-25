@@ -171,16 +171,16 @@ Decided 2026-11-25 by the product owner, on what the review left open:
   effect's argument hash stays whole, input included (§9.2). Code that
   takes its input from the trigger snapshot avoids it, and recording reads
   would store CRM content for each run.
-- **D5. A crashed step is sampled again (relaxed 2026-11-25).** A task
-  slice that dies mid-step resumes from the last saved step and asks the
-  model again. A dead chat turn isn't retried; the person's next message
-  continues from the saved steps (§8.4). A Retainer write the dead step
-  already made may be made a second time; Retainer's writes are mostly safe to repeat (an upsert by
-  identity, an assertion of the same value), and a repeated fact or event
-  is acceptable. An extension `write` or `send` call still needs its
-  one-use approval, which makes one job keyed by the tool call ID; the job
-  is delivered at least once with that key, as every tool job is, and the
-  tool must honour it (§6.4, §8.4).
+- **D5. A crashed step is sampled again (relaxed 2026-11-25).** A task slice
+  that dies mid-step resumes from the last saved step and asks the model
+  again. A dead chat turn isn't retried; the person's next message continues
+  from the saved steps (§8.4). A Retainer write the dead step already made
+  may be made a second time; Retainer's writes are mostly safe to repeat (an
+  upsert by identity, an assertion of the same value), and a repeated fact
+  or event is acceptable. An extension `write` or `send` call still needs
+  its one-use approval, which makes one job keyed by the tool call ID; the
+  job is delivered at least once with that key, as every tool job is, and
+  the tool must honour it (§6.4, §8.4).
 
 Decided 2026-11-25 by the product owner, after the second review round:
 
