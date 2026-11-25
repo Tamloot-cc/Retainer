@@ -58,8 +58,8 @@ set of tools.
   that caller.
 - **Mastra for the loop, Retainer for the data.** Mastra runs the loop,
   streams, pauses for approvals and keeps the message history. Its storage
-  is an adapter that saves through Retainer's API to Retainer's Postgres
-  (§5).
+  is Mastra's own Postgres store, `@mastra/pg`, run by Retainer's API on
+  Retainer's database; the agent reaches it only through the API (§3.2).
 
 ```mermaid
 flowchart LR
@@ -90,9 +90,10 @@ Decided in `extensions-model-calls.md` §11 (2026-11-14), unchanged:
 Refined from §11 there (2026-11-25):
 
 - "Mastra's own memory and storage aren't used" becomes: **Mastra's storage
-  is an adapter onto Retainer's API.** The data is still Retainer's, in
-  Retainer's Postgres, written through the API; Mastra never gets a database
-  of its own (§5).
+  is `@mastra/pg`, run by Retainer's API.** The data stays in Retainer's
+  Postgres, in a `mastra` schema; the agent function reaches it only
+  through the API and never holds a database credential (§3.2, decided
+  2026-11-25).
 - "Each task runs as a series of short jobs, one per step" becomes: **a task
   runs as one job, or a few** if it outlasts one, with each step saved as it
   ends (§9.3). Mastra runs the loop inside a job; splitting it per step would
@@ -128,39 +129,59 @@ would be thrown away once suspend and resume exists.
 
 ### 3.1 The table
 
-| Need                                 | Decision              | How                                                                                                                                                            |
-| ------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The agent loop                       | Built-in              | `Agent` with `stream()` and `generate()`                                                                                                                       |
-| Model access                         | Built-in              | Claude Sonnet 5.5 (§3.4) through an `@ai-sdk/anthropic` instance whose base URL is the model proxy, with a `fetch` that gets a model token per request (§10.2) |
-| Anthropic options                    | Built-in              | `providerOptions.anthropic`: adaptive thinking with summaries shown, effort, context management, refusal fallbacks (§3.4)                                      |
-| Message history                      | Built-in, our storage | `Memory` with `savePerStep: true` on the Retainer store (§5). No trimming: whole history each turn (§3.4)                                                      |
-| Semantic recall                      | Off                   | Retainer has no embeddings (`semanticRecall: false`, no vector store, no embedder)                                                                             |
-| Working memory, observational memory | Off                   | Retainer's own memory (`me`, `workspace`, records) is the memory; the agent uses it through tools                                                              |
-| Thread titles                        | Built-in              | `generateTitle`; its model call goes through the proxy and counts (§10)                                                                                        |
-| Streaming to a UI                    | Built-in              | `handleChatStream` from `@mastra/ai-sdk`: the AI SDK UI message stream that `useChat` reads, with `sendReasoning: true`                                        |
-| Approvals                            | Built-in, our storage | `requireApproval` and `requireToolApproval`, resumed with `resumeStream`; paused runs saved in the Retainer store (§6.4)                                       |
-| Per-request auth                     | Built-in              | `RequestContext`, read by tools; the token is never persisted (§7.3)                                                                                           |
-| Step and time limits                 | Built-in              | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, `abortSignal`                                                                                          |
-| Tool call caps                       | Built on a hook       | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                                               |
-| Web search                           | Built-in, AI SDK      | Anthropic's `web_search_20260209` as an AI SDK provider tool. Not Mastra's `webSearchTool`, which sends the older `web_search_20250305`                        |
-| Web fetch                            | Built-in, AI SDK      | Anthropic's `web_fetch_20260209` as an AI SDK provider tool. Not Mastra's `webFetchTool`, which fetches from the agent function (§8)                           |
-| Retainer tools                       | Ours                  | `createTool` over `@retainer/sdk` (§8)                                                                                                                         |
-| Storage                              | Ours, small           | One adapter for two storage domains, `memory` and `workflows`, over Retainer's API (§5)                                                                        |
-| Resumable streams                    | Off                   | They need a shared PubSub such as Redis. `durable: false`; reconnecting reads the saved history (§6.5)                                                         |
-| Durable agents                       | Evaluate in PR 2      | Beta. A candidate for long tasks (§9.3)                                                                                                                        |
-| Guardrail processors                 | Later                 | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                                            |
-| Tracing                              | Off for now           | The saved messages are the trace (§5.3). A custom exporter can send spans to Retainer later                                                                    |
-| Mastra's server, A2A, MCP server     | Not used              | Retainer's API is the only way in                                                                                                                              |
+| Need                                 | Decision             | How                                                                                                                                                            |
+| ------------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The agent loop                       | Built-in             | `Agent` with `stream()` and `generate()`                                                                                                                       |
+| Model access                         | Built-in             | Claude Sonnet 5.5 (§3.4) through an `@ai-sdk/anthropic` instance whose base URL is the model proxy, with a `fetch` that gets a model token per request (§10.2) |
+| Anthropic options                    | Built-in             | `providerOptions.anthropic`: adaptive thinking with summaries shown, effort, context management, refusal fallbacks (§3.4)                                      |
+| Message history                      | Built-in             | `Memory` with `savePerStep: true`, stored by `@mastra/pg` behind the API (§3.2). No trimming: whole history each turn (§3.4)                                   |
+| Semantic recall                      | Off                  | Retainer has no embeddings (`semanticRecall: false`, no vector store, no embedder)                                                                             |
+| Working memory, observational memory | Off                  | Retainer's own memory (`me`, `workspace`, records) is the memory; the agent uses it through tools                                                              |
+| Thread titles                        | Built-in             | `generateTitle`; its model call goes through the proxy and counts (§10)                                                                                        |
+| Streaming to a UI                    | Built-in             | `handleChatStream` from `@mastra/ai-sdk`: the AI SDK UI message stream that `useChat` reads, with `sendReasoning: true`                                        |
+| Approvals                            | Built-in             | `requireApproval` and `requireToolApproval`, resumed with `resumeStream`; paused runs saved by `@mastra/pg` behind the API (§6.4)                              |
+| Per-request auth                     | Built-in             | `RequestContext`, read by tools; the token is never persisted (§7.3)                                                                                           |
+| Step and time limits                 | Built-in             | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, `abortSignal`                                                                                          |
+| Tool call caps                       | Built on a hook      | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                                               |
+| Web search                           | Built-in, AI SDK     | Anthropic's `web_search_20260209` as an AI SDK provider tool. Not Mastra's `webSearchTool`, which sends the older `web_search_20250305`                        |
+| Web fetch                            | Built-in, AI SDK     | Anthropic's `web_fetch_20260209` as an AI SDK provider tool. Not Mastra's `webFetchTool`, which fetches from the agent function (§8)                           |
+| Retainer tools                       | Ours                 | `createTool` over `@retainer/sdk` (§8)                                                                                                                         |
+| Storage                              | Built-in, in the API | `@mastra/pg` (`MemoryPG`, `WorkflowsPG`) runs in Retainer's API; the agent function's store forwards each call to it (§3.2)                                    |
+| Resumable streams                    | Off                  | They need a shared PubSub such as Redis. `durable: false`; reconnecting reads the saved history (§6.5)                                                         |
+| Durable agents                       | Evaluate in PR 2     | Beta. A candidate for long tasks (§9.3)                                                                                                                        |
+| Guardrail processors                 | Later                | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                                            |
+| Tracing                              | Off for now          | The saved messages are the trace (§5.3). A custom exporter can send spans to Retainer later                                                                    |
+| Mastra's server, A2A, MCP server     | Not used             | Retainer's API is the only way in                                                                                                                              |
 
-### 3.2 Why build the storage adapter
+### 3.2 Storage: `@mastra/pg` behind the API
 
-Mastra has no storage adapter that talks to an HTTP API; its adapters are
-database clients (`@mastra/pg` and others). The agent function has no
-database access by design, so it needs one. The two domains it uses are
-small: nine abstract methods for `memory` (threads and messages) and eight
-for `workflows` (the snapshots behind approvals and suspended runs). The
-alternative, building history and approvals ourselves, is more code than the
-adapter and loses `handleChatStream`'s native approval handling.
+Mastra's Postgres store, `@mastra/pg` (Apache-2.0), is a database client.
+The agent function has no database access by design: it reads untrusted
+text (web pages, emails, records anyone could write), so it holds only a
+token for its own session. So the store runs in Retainer's API instead
+(decided 2026-11-25):
+
+```
+agent function                  Retainer API                     Postgres
+Mastra agent ── storage call ─▶ checks the session token, ─▶   schema "mastra":
+(pass-through store)            calls MemoryPG / WorkflowsPG    Mastra's tables
+```
+
+- **The agent function's store forwards.** Each call in the two domains the
+  agent uses, `memory` (threads and messages) and `workflows` (the snapshots
+  behind approvals and suspended runs), goes to the API with the session
+  token.
+- **The API checks, then calls Mastra's store.** It checks that the thread
+  or run belongs to the token's session and calls `MemoryPG` or
+  `WorkflowsPG`.
+- **We write no message or snapshot tables and no SQL for them.** Mastra's
+  tested store keeps them in its own format, so history, approvals and
+  `handleChatStream`'s approval flow work as Mastra expects.
+
+Considered: the agent connecting to Postgres itself, inside the VPC behind a
+NAT gateway with a role limited to the `mastra` schema. Rejected: the
+process that reads untrusted text would hold a database password, and
+hosted would pay for a NAT gateway.
 
 ### 3.3 Licence: staying free
 
@@ -174,8 +195,9 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
   testing for free; production use needs a written agreement with Mastra and
   a licence key.
 - **What we use is all Apache-2.0**: `@mastra/core`'s agent, memory,
-  workflows and processors, `@mastra/memory` and `@mastra/ai-sdk`. None of
-  the Enterprise features is configured: no FGA or RBAC provider, no auth
+  workflows and processors, `@mastra/memory`, `@mastra/ai-sdk`, and
+  `@mastra/pg` 1.38.0 in the API. None of the Enterprise features is
+  configured: no FGA or RBAC provider, no auth
   provider, no Studio, no editor, no agent builder.
 - **One catch.** `@mastra/core` bundles code built from
   `packages/_internals/auth/src/ee/` into its runtime, and the agent loop
@@ -183,8 +205,10 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
   provider configured it returns at once. Loading it runs nothing else (it
   defines constants). Our reading: running this no-op is not using the
   Enterprise feature (fine-grained authorization), so the licence's
-  production-use terms don't apply. The licence lets Mastra designate more
-  code as Enterprise later (its §5.1), for future versions only.
+  production-use terms don't apply. `@mastra/pg` loads the same core
+  modules in the API, so the guards below cover `packages/server` too. The
+  licence lets Mastra designate more code as Enterprise later (its §5.1),
+  for future versions only.
 - **How we keep it free:**
   - A lint rule refuses imports from any `ee/` path and any Mastra auth,
     FGA, RBAC, editor or agent-builder export.
@@ -196,14 +220,16 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
     on 2026-11-25. Until they answer, we work on our reading (decided
     2026-11-25); the work doesn't wait for the reply. If they disagree, we
     take the way out below.
-  - **The way out stays short.** The storage adapter, the tools and the
-    session API are ours. If Mastra's terms change, the loop can move to the
-    Anthropic SDK's tool runner (`@anthropic-ai/sdk`, MIT), and the chat
-    stream to the AI SDK alone, without changing the API, the tables or the
-    clients.
+  - **The way out stays short.** The tools, the session API and
+    `agent_sessions` are ours. If Mastra's terms change, the loop can move
+    to the Anthropic SDK's tool runner (`@anthropic-ai/sdk`, MIT), and the
+    chat stream to the AI SDK alone, without changing the API or the
+    clients. Stored chats would move out of Mastra's tables with a one-off
+    script.
 - **Versions** are pinned. Mastra moves fast (core 1.86 on 2026-11-25); the
-  storage adapter has a conformance test against Mastra's domain contracts,
-  and an upgrade is a PR that runs it and the licence check.
+  storage has a conformance test against Mastra's domain contracts, and an
+  upgrade is a PR that runs it, Mastra's migrations (§5.2) and the licence
+  check.
 
 ### 3.4 The model: Claude Sonnet 5.5
 
@@ -272,11 +298,12 @@ those two origins is possible later, as for the routine runner
 
 - **`packages/agent`** (MIT, like `packages/runner`): the harness. The
   Mastra agent, the base system prompt, Retainer's tools built on
-  `@retainer/sdk`, the storage adapter, the chat handler and the task
+  `@retainer/sdk`, the pass-through store, the chat handler and the task
   driver. It imports no server code.
 - **`packages/server/src/agent-sessions`** (Admin layer, next to
-  `routines`): the session API, the tables behind the storage adapter,
-  limits, approvals of record, `forget`.
+  `routines`): the session API, the storage endpoints over `@mastra/pg`,
+  limits, approvals of record, `forget`. The only server module that
+  imports Mastra; a lint rule keeps it so.
 - **`packages/server/src/agent-runtime`** (Foundation layer, next to
   `routine-runtime`): minting and checking session tokens and agent model
   tokens.
@@ -292,49 +319,74 @@ core still never calls a model.
 
 ### 5.1 Tables
 
-| Table             | Holds                                                                                                                        |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `agent_sessions`  | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, limits and use, created, last active         |
-| `agent_messages`  | Mastra's stored messages for a session, as jsonb: the person's messages, the agent's text, reasoning, tool calls and results |
-| `agent_snapshots` | Mastra's workflow snapshots: a paused turn waiting for an approval or a resume. Deleted when the turn finishes               |
-| `agent_turns`     | One row per turn: status, steps, tokens, tool calls, error code, durations. IDs and counts only                              |
+Ours, in Drizzle's schema like every other table:
 
-A Mastra thread is a session; its `resourceId` is the person for a chat and
-the caller for a task. The adapter's methods map one to one onto session
-endpoints, so a session token can only reach its own session's rows.
+| Table            | Holds                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_sessions` | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, limits and use, created, last active           |
+| `agent_turns`    | One row per turn: status, steps, tokens, tool calls, error code, durations, the Mastra run IDs it started. IDs and counts only |
 
-### 5.2 The adapter
+Mastra's, in the `mastra` schema, created by `@mastra/pg`:
 
-`RetainerStore` in `packages/agent` implements Mastra's `MemoryStorage` and
-`WorkflowsStorage` domains over the API and is passed to Mastra as a
-`MastraCompositeStore` with only those two domains. Every other domain is
-disabled. It:
+| Table                                                              | Holds                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `mastra_threads`, `mastra_messages` and the memory domain's others | The history: the person's messages, the agent's text, reasoning, tool calls and results |
+| `mastra_workflow_snapshot`                                         | A paused turn waiting for an approval or a resume                                       |
 
-- calls `…/runtime/sessions/:id/…` endpoints with the session token;
-- drops the session token and any other credential from what it saves
-  (§7.3);
-- answers `supportsConcurrentUpdates()` with `false`; one turn per session
+A Mastra thread is a session: the thread ID is the session ID, and its
+`resourceId` is the person for a chat and the caller for a task. Mastra's
+tables have no workspace column, so row-level security doesn't cover them.
+Instead, only `agent-sessions` touches them, and only for a session it has
+already checked. Only the `memory` and `workflows` domains exist; the
+others (traces, scores, knowledge and the rest) are disabled, so their
+tables are never created.
+
+### 5.2 The store
+
+- **In the agent function**, `packages/agent` passes Mastra a
+  `MastraCompositeStore` with only `memory` and `workflows`, each a
+  pass-through that sends the method and its arguments to
+  `…/runtime/sessions/:id/storage` with the session token. It drops the
+  session token and any other credential from what it sends (§7.3), and
+  answers `supportsConcurrentUpdates()` with `false`: one turn per session
   at a time makes concurrent updates unnecessary (§6.3).
+- **In the API**, `agent-sessions` holds a `MemoryPG` and a `WorkflowsPG`
+  with `schemaName: "mastra"` and `disableInit: true`. Before each call it
+  checks that every thread, resource and run the arguments name belongs to
+  the token's session. Calls that reach across sessions, such as listing a
+  resource's threads, are refused. PR 1 lists the calls Mastra's agent makes
+  and allows only those.
+- **Its pool.** Retainer's server uses postgres.js; `@mastra/pg` needs a
+  `pg` pool, so `agent-sessions` opens a small one (two connections in the
+  hosted `api` function) with the same role.
+- **Migrations.** At runtime the store runs no DDL. `pnpm db:migrate`, and
+  the hosted migration step, run Mastra's `init()` for the two domains with
+  the migration role after Drizzle's migrations. Drizzle doesn't manage the
+  `mastra` schema.
 
 ### 5.3 The trace
 
 The saved messages are the trace: each step's reasoning, each tool call with
 its input and result, and the answer, in the format the UI will render.
 `agent_turns` adds counts and durations. The routine run page, the
-extension run list and the chat all read the same messages.
+extension run list and the chat all read the same messages. Mastra's own
+tracing stays off (§3.1).
 
 ### 5.4 Retention and `forget`
 
 - **A chat** is kept until its person deletes it. It is private to them:
   admins see that it exists and its usage, not its content.
 - **A task's** messages are kept while the task runs, then for 7 days so a
-  person can inspect it, then deleted, the rule for routine run results
-  (`routines.md` §6.6).
+  person can inspect it, then deleted through `MemoryPG.deleteThread`, the
+  rule for routine run results (`routines.md` §6.6).
 - **`forget`** deletes every session in the workspace, chats and tasks,
-  with their messages and snapshots, in the same deletion, and fences every
-  running turn, which ends as `cancelled` (decided 2026-11-25, the simpler
-  option). Retainer doesn't track which records a session read, so it can't
-  be narrower (the same reasoning as `routines.md` §6.6).
+  with their threads, messages and snapshots, in the same deletion, and
+  fences every running turn, which ends as `cancelled` (decided 2026-11-25,
+  the simpler option). To stay in the same transaction, `forget` deletes
+  Mastra's rows by thread ID with plain SQL, the one place Retainer writes
+  Mastra's tables itself; a test fails if an upgrade renames them. Retainer
+  doesn't track which records a session read, so it can't be narrower (the
+  same reasoning as `routines.md` §6.6).
 - This is an exception to "nothing the model saw is stored"
   (`extensions-model-calls.md` §3.3): a conversation can't continue without
   its history.
@@ -390,7 +442,7 @@ flow does it:
 
 - The tool has `requireApproval: true`, or the turn's
   `requireToolApproval` function says so.
-- Mastra pauses, saves a snapshot through the adapter, and streams an
+- Mastra pauses, saves a snapshot through the API, and streams an
   approval request part with the tool and its arguments. The turn ends.
 - The client sends the answer (approve, or decline with a reason) to the
   same stream endpoint. `handleChatStream` reads it and resumes the paused
@@ -471,8 +523,9 @@ called (`routines.md` §5.1). No personal memory.
   model calls only.
 - **Never persisted.** The session token travels in the `RequestContext`.
   Mastra snapshots serializable context entries and puts them in spans, so
-  the token is held in a non-serializable wrapper, and the adapter drops
-  credentials from anything it saves. A resumed turn gets a fresh token.
+  the token is held in a non-serializable wrapper, and the pass-through
+  store drops credentials from anything it sends. A resumed turn gets a
+  fresh token.
 
 ## 8. Tools
 
@@ -567,7 +620,7 @@ extension SDK hides the plumbing: `agentClient(invocation).start(...)` and an
   same session from its saved history. A crashed job's retry does the same,
   and the idempotency keys keep writes from repeating.
 - **Mastra's durable agents** do this checkpointing themselves, on the
-  `workflows` store the adapter already provides. They are in beta and their
+  `workflows` store already behind the API. They are in beta and their
   multi-process mode wants a PubSub that redelivers. PR 2 tries them in
   in-process mode first and falls back to the continuation above if they
   don't hold up.
@@ -683,11 +736,11 @@ itself. Usage reports carry the session from the token.
 
 ## 14. Delivery
 
-| PR                                 | What ships                                                                                                                                                                                                                                                                                                              |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Agent core and chat backend** | The proxy's agent list; `ai_usage` session columns; `agent-sessions` and `agent-runtime`; `packages/agent` with the storage adapter, Retainer's tools, web tools and approvals; the chat endpoints and stream; limits and reservations; `forget`; the hosted `agent` function (`retainer-cloud`); `retainer agent chat` |
-| **2. Tasks**                       | `retainer.ai.agent` with waiting runs; `agentClient` with `onAgentResult`; manifest grants and review notices; the task driver, with durable agents tried first                                                                                                                                                         |
-| **3. Web chat screen**             | The chat UI on `useChat`, the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                         |
+| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Agent core and chat backend** | The proxy's agent list; `ai_usage` session columns; `agent-sessions` and `agent-runtime`; `@mastra/pg` behind the session API, with its migration step; `packages/agent` with the pass-through store, Retainer's tools, web tools and approvals; the chat endpoints and stream; limits and reservations; `forget`; the hosted `agent` function (`retainer-cloud`); `retainer agent chat` |
+| **2. Tasks**                       | `retainer.ai.agent` with waiting runs; `agentClient` with `onAgentResult`; manifest grants and review notices; the task driver, with durable agents tried first                                                                                                                                                                                                                          |
+| **3. Web chat screen**             | The chat UI on `useChat`, the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                          |
 
 Then: approvals for routines, extension `write` and `send` tools in tasks,
 the member agent with a person's connections, and joining a running turn's
@@ -698,8 +751,11 @@ stream again.
 Unit tests for each module; integration tests against real Postgres for
 everything that touches it. Among them:
 
-- **The adapter** passes a conformance suite against Mastra's `memory` and
-  `workflows` domain contracts, run on each Mastra upgrade.
+- **The store**, the pass-through and the API side together, passes a
+  conformance suite against Mastra's `memory` and `workflows` domain
+  contracts on real Postgres, run on each Mastra upgrade.
+- A storage call naming another session's thread, resource or run is
+  refused, within a workspace and across workspaces.
 - A session token can't reach another session, call a tool the caller
   can't, write at a higher rank, or read another person's `me`.
 - Removing a person, cancelling a run or erasing the workspace stops the
@@ -709,10 +765,11 @@ everything that touches it. Among them:
   run reaching the same `ai.agent`.
 - An approval answered in a different function instance resumes the turn.
 - A retried step doesn't repeat a Retainer write.
-- No token appears in `agent_messages`, `agent_snapshots` or logs.
+- No token appears in Mastra's tables or in logs.
 - The proxy refuses `mcp_servers`, an unlisted server tool type, another
   model and a larger `max_tokens` with an agent token.
-- `forget` clears session content and cancels running turns.
+- `forget` clears session content, Mastra's rows included, and cancels
+  running turns.
 - A dry run's task makes no write and calls no extension tool.
 
 ## 16. Prior art
@@ -737,6 +794,7 @@ Answered 2026-11-25:
 - Chats from the CLI: read-only, with the person's full role after
   `retainer elevate` (§6.7).
 - `forget`: deletes every session in the workspace (§5.4).
+- Storage: `@mastra/pg`, run by the API, never by the agent function (§3.2).
 - Licence: checked; free as long as no Enterprise feature is configured,
   with the guards in §3.3. The no-op `requireFGA` call is treated as not
   using an Enterprise feature until Mastra says otherwise.
