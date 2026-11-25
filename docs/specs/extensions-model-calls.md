@@ -759,6 +759,9 @@ staging check in step 3 may still change the proxy.
 
 ## 11. Later: the workspace agent
 
+Now specified in [agent.md](agent.md) (proposed 2026-11-25), which keeps
+the decisions below.
+
 Retainer will have its own agent: a harness with a system prompt, model choice,
 Retainer's tools, and the connections people make (Gmail, calendar), with
 Retainer itself as its memory. Extensions will then hand it tasks instead of
