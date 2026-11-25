@@ -404,7 +404,10 @@ origins is possible later, as for the routine runner (`routines.md` §11.3).
   it gives `packages/agent` an in-process `fetch` over the proxy's own code
   path, serves the chat stream and task jobs next to the plain proxy
   routes, and is what the hosted `model` function and the self-hosted
-  `agent` container (`RETAINER_ROLE=agent`) run.
+  `agent` container (`RETAINER_ROLE=agent`) run. That role has an entry
+  path of its own that runs no migrations and opens no database pool:
+  today's server start opens the owner pool before it branches on the role,
+  and the image's command runs migrations, so the container overrides both.
 - **`packages/server/src/agent-sessions`** (Admin layer, next to
   `routines`): the session API, the storage endpoints over `@mastra/pg`,
   limits, approvals of record. The only server module that imports
@@ -494,6 +497,11 @@ knowledge and the rest) are disabled, so their tables are never created.
   one takes that key exclusively in its own transaction before it changes
   the claim generation (§6.3). So a mutation already past its check commits
   before the fence moves, and every later one sees the new generation.
+  Every other write a turn makes works the same way: a tool write, an
+  extension job's enqueue and a model reservation each take the session's
+  fence key shared in their own transaction, after the privacy lock (the
+  established order), check the generation there, and hold the key through
+  commit.
 - **Its pool and role.** Retainer's server uses postgres.js; `@mastra/pg`
   needs a `pg` pool, so `agent-sessions` opens a small one (two connections
   in the hosted `api` function). It connects as its own role,
@@ -501,10 +509,13 @@ knowledge and the rest) are disabled, so their tables are never created.
   bug in Mastra's store can't reach Retainer's tables.
 - **Erasure's access.** No other role gets grants on `mastra`. The erasure
   (§5.4) is one `security definer` function,
-  `retainer_erase_agent_content(workspace)`, owned by a role that can read
-  the session mapping and delete in `mastra`. `retainer_app` (for `forget`
-  and retention) and the control role (for the purge) may execute it, and
-  only it. This follows the existing `retainer_*` functions, such as
+  `retainer_erase_agent_content(workspace, sessions)`, owned by a role that
+  can read the session mapping and delete in `mastra`. `sessions` is null
+  for the whole workspace (`forget`, the purge) or a list of session IDs
+  (retention), each checked to belong to that workspace; every mapping it
+  reads is scoped to the workspace. `retainer_app` (for `forget` and
+  retention) and the control role (for the purge) may execute it, and only
+  it. This follows the existing `retainer_*` functions, such as
   `retainer_routine_admin`.
 - **Migrations.** At runtime the store runs no DDL. `pnpm db:migrate`, and
   the hosted migration step, run Mastra's `init()` for the two domains with
@@ -532,8 +543,8 @@ tokens and errors.
 - **A chat** is kept until its person deletes it. It is private to them:
   admins see that it exists and its usage, not its content.
 - **A task's** messages are kept while the task runs, then for 7 days so a
-  person can inspect it, then erased (below), the rule for routine run
-  results (`routines.md` §6.6).
+  person can inspect it, then erased (below) by its session ID alone, the
+  rule for routine run results (`routines.md` §6.6).
 - **`forget`** erases every session in the workspace, chats and tasks, in
   the same deletion, and fences every running turn, which ends as
   `cancelled` (decided 2026-11-25, the simpler option). Waiting runs and
@@ -584,14 +595,18 @@ tokens and errors.
   before each request, the one about to be sent, the agent runtime checks
   two things:
   - **its final serialized size**, against 5 MiB;
-  - **an estimate of its whole input**, against 900,000 tokens: the last
-    response's full input (uncached, cache-read and cache-written tokens
-    together) plus everything added since, counted conservatively at one
-    token per 3 bytes. Anthropic's token counting can't be used, since it
-    refuses requests with web server tools.
+  - **an upper bound on its whole input**, against 900,000 tokens: the
+    last response's full input (uncached, cache-read and cache-written
+    tokens together) plus everything added since, counted with Anthropic's
+    token counting. That endpoint refuses requests with web server tools,
+    so it counts the added content alone, which carries none. A first
+    request has no last response: it is counted without the web tool
+    definitions, plus a fixed allowance for them. A byte ratio is only an
+    estimate, so it isn't used.
 
-  Past either, the turn ends as `context_limit_reached` and the chat says
-  to start a new one. A task ends the same way. The 900,000 leaves room
+  Past either, or when the bound can't be computed (the count fails), the
+  turn ends as `context_limit_reached` before anything is sent, and the
+  chat says to start a new one. A task ends the same way. The 900,000 leaves room
   for the step's output (32,000 tokens) and the request's own web results
   (§10.1). Both thresholds are starting values, tuned from real chats.
 - **Later: compaction.** Server-side compaction (`compact-2026-01-12`,
@@ -674,9 +689,11 @@ these shapes through `useChat`'s request hook (PR 3).
 ### 6.3 One turn at a time
 
 A chat runs at most one turn at a time. A claim is a lease: the turn gets a
-new **claim generation** and a **deadline**, the claim time plus 14
+new **claim generation** and a **deadline**: the claim time plus 14
 minutes, for a chat turn and a task slice alike (a slice hands off earlier,
-§9.3).
+§9.3). It is never later than the invocation's remaining time less 30
+seconds for its final writes, or than a task's own expiry, so a claim made
+late in an invocation gets a shorter turn.
 
 - A claim succeeds when no turn is running, or when the running one is past
   its deadline; that one is closed as `timed_out` first, so a dead
@@ -686,10 +703,17 @@ minutes, for a chat turn and a task slice alike (a slice hands off earlier,
   stale generation is refused. A late write from an old invocation can't
   land after a new claim.
 - A claim or a cancel moves the generation only under the session's fence
-  lock, so a storage mutation already past its check commits first (§5.2).
+  lock, so a storage mutation, tool write, job enqueue or reservation
+  already past its check commits first (§5.2).
 - The turn's state is the API's. A turn the API ends itself (cancelled,
   timed out) is closed by the API; the old runtime's own close is refused
   as stale and changes nothing.
+- **Finishing after the deadline.** For 60 seconds past its deadline, a
+  turn token may still close its own turn, hand a slice off (§9.3) and
+  report its model requests (§10.2), for that exact claim only, and only if
+  no newer claim exists. It opens no tool, storage or model call. A turn
+  whose runtime never finishes is closed as `timed_out` by the next claim
+  or the sweep.
 - Task slices use the same lease.
 
 Tests send two messages at once and kill an invocation mid-turn (`CLAUDE.md`,
@@ -724,7 +748,7 @@ flow pauses the turn; Retainer keeps the record and checks it:
   approval without its job, or a job without its approval.
 - **A decision survives a crash.** A decided approval whose tool result
   isn't in the history yet keeps the chat closed to new messages. The API
-  queues a recovery turn under a new claim, which records the result before
+  queues a recovery job (§13) under a new claim, which records the result before
   the chat opens: the job's result if a job was recorded; otherwise the
   dispatch (approved) or the declined result; and if neither can be done,
   a terminal error result. A message sent meanwhile gets
@@ -753,12 +777,16 @@ shared PubSub, which is later.
 
 **Cancel.** `POST …/cancel` and `forget` fence the turn in the API (a new
 claim generation, under the session's fence lock) and record it as
-`cancelled` there and then. From then on its storage calls, tool calls,
-reservations and usage reports get `turn_cancelled`. A model request can
-stream for minutes without calling the API, so while one is in flight the
-runtime also asks the API for the turn's state every 5 seconds
-(`GET …/turn`). On `cancelled` it aborts the request's upstream signal,
-in-process (D6), and stops; its own close is refused as stale (§6.3).
+`cancelled` there and then. From then on its storage calls, tool calls and
+reservations get `turn_cancelled`; a request already reserved can still
+report its usage (§10.2). A model request can stream for minutes without
+calling the API, so while one is in flight the runtime also asks the API
+for the turn's state every 5 seconds (`GET …/turn`, with a 2-second
+timeout). On `cancelled`, `timed_out`, a stale generation or an erased
+workspace it aborts the request's upstream signal, in-process (D6), and
+stops; its own close is refused as stale (§6.3). A failed or slow poll
+changes nothing: the next one tries again, and the deadline still bounds
+the request.
 
 ### 6.6 What the agent knows
 
@@ -875,9 +903,11 @@ and never open anything of the agent's.
   container. Clients never see it.
 - **Turn token.** Audience `retainer:agent-turn`. Claims: workspace,
   session, turn, claim generation, caller and the access it was minted
-  with. It expires at the turn's deadline (§6.3). The agent runtime gets it
-  at claim by presenting the stream token (for a task, the job) with the
-  runtime credential. Only the runtime routes of §6.1 accept it (default
+  with. It expires at the turn's deadline (§6.3), but for a 60-second grace
+  to finish (§6.3). The agent runtime gets it at claim by presenting, with
+  the runtime credential, the stream token or an API-owned job: a task
+  slice, or a chat's approval recovery or expiry, bound to its pending
+  decision and the generation it replaces. Only the runtime routes of §6.1 accept it (default
   deny), and the API checks every call against the token and the caller's
   current access, so removing the person, ending an elevation, cancelling
   the run or erasing the workspace stops the agent at once.
@@ -968,7 +998,8 @@ A retried step must not repeat a write that has already committed.
 - **PR 1 checks** that Mastra can save a step before its tools run
   (`savePerStep` saves after the step). If it can't (D5), a turn or slice
   that crashed after a write may have been dispatched ends as
-  `outcome_unknown`, with no automatic replay.
+  `outcome_unknown`, with no automatic replay. It is terminal: no later
+  turn or slice resumes it.
 
 ## 9. Tasks (PR 2)
 
@@ -1074,7 +1105,9 @@ cancels its task. The extension SDK hides the plumbing: `start` and an
   delivery of that job, or a late report from the old slice, finds a stale
   claim and does nothing.
 - **A slice cut at its deadline** ends as `slice_interrupted`, not as an
-  ordinary failure. The next slice resumes from the checkpoint: a step whose
+  ordinary failure. Its handoff runs in the 60-second grace (§6.3); if it
+  never comes, the sweep closes the slice as `timed_out` and queues the
+  next one, which resumes the same way. The next slice resumes from the checkpoint: a step whose
   response was saved runs only its calls with no stored result; a step whose
   model request was cut dispatched nothing and is sampled again; a step
   that may have dispatched a write without a saved checkpoint ends the task
@@ -1130,9 +1163,10 @@ stays at 10 on every request, and both web tools must carry it: Anthropic
 sets no default cap for web fetch, so the agent list refuses a web tool
 without it (§12).
 
-- **Charged up front.** Each reservation charges the request's full
-  allowance, 10 searches and 10 fetches, against the turn's totals (the
-  task's, across its slices), counting requests still in flight. It is
+- **Charged up front.** Each reservation charges the full allowance (10)
+  of each web tool the request carries, against the turn's totals (the
+  task's, across its slices), counting requests still in flight. A task
+  without `web.fetch` is never charged for fetches. It is
   refused, and the turn ends as `limit_reached`, when the charged total has
   already reached the cap.
 - **Settled once.** When the request ends, its report settles the charge
@@ -1159,12 +1193,17 @@ request costs two API calls, both with the turn token:
   the API checks the claim generation, counts the request against the
   session's, the person's and the workspace's limits, charges the turn's
   web totals (§10.1), and takes the hosted writer lease that the proxy's
-  own requests take today. Or it refuses, and the turn ends as
-  `limit_reached`.
-- **Report** (`…/model/report`), after it. Usage goes to `ai_usage`, the
-  web charge is settled, and the lease is released. A lost report leaves
-  the full charge, and the lease ends with its grace period, as for the
-  proxy's other requests.
+  own requests take today, sized to the turn's deadline plus the report's
+  grace, not the 320 seconds a plain proxy request gets. It records a
+  request ID bound to the workspace, turn, generation and writer build. Or
+  it refuses, and the turn ends as `limit_reached`.
+- **Report** (`…/model/report`), after it, for that request ID with the
+  runtime credential. Usage goes to `ai_usage`, the web charge is settled
+  and the lease is released, once: a repeat changes nothing. A report for a
+  cancelled or expired turn, carrying metadata only, is still accepted for
+  its own reservation and never touches a newer claim. A lost report
+  leaves the full charge; when the upstream's end is uncertain the lease
+  is held to its ceiling, as the proxy does for its other requests.
 
 A retried request reserves again. This is the routine reservation
 (`routines.md` §6.3) moved to where every model request passes, including
@@ -1223,14 +1262,17 @@ extension list.
 - **Admission and metering.** The agent's requests pass the same checks
   as the proxy's others, but the reservation and the writer lease come from
   the reserve call, against the turn's claim generation, and usage goes in
-  the report call (§10.2), not through a model token.
+  the report call (§10.2), not through a model token. The length check's
+  token counts (§5.5) take the same in-process path to Anthropic's token
+  counting, which is free and not counted against the limits.
 - **Timeouts.** Today the proxy aborts its upstream request at 330 seconds
   (`UPSTREAM_TIMEOUT_MS`), which covers a handler's 300-second deadline. An
   agent request can rightly run longer. The chain: a turn's deadline is its
   claim plus 14 minutes; the runtime aborts the agent's in-process request
   at that deadline, or when it sees the turn cancelled (§6.5). The hosted
-  `model` function's timeout becomes 900 seconds, which always covers a
-  request started after the claim. The 330-second cutoff and the 300-second
+  `model` function's timeout becomes 900 seconds, and the deadline is
+  bounded by the invocation's remaining time (§6.3), so the request and its
+  final writes always fit. The 330-second cutoff and the 300-second
   handler deadline still apply to extension and routine tokens only.
 - **No payload capture.** `model/capture.ts` captures by workspace before it
   looks at the owner's kind. The agent's calls never take the capture path,
@@ -1250,7 +1292,11 @@ extension list.
   and memory sized for the agent. The URL serves the plain proxy routes for
   extension and routine model tokens and the chat stream for stream tokens,
   and allows the web app's origin (CORS) on the chat stream. The launcher
-  starts it for task jobs. It claims turns, reserves model requests and
+  starts it for API-owned jobs (task slices, approval recoveries and
+  expiries) with its native Lambda payload, which the function's entry
+  routes to the job handler, apart from function-URL events, and
+  authenticates with the launcher's credential. This ships in PR 1, for
+  approval recovery. It claims turns, reserves model requests and
   reports usage with its existing ingress secret (§7.3). There is no
   separate `agent` function. Infrastructure is in `retainer-cloud`.
 - **Accepted costs (D6).** The Anthropic key lives in the process that
@@ -1266,18 +1312,19 @@ extension list.
   usage through the API's ingress, as hosted. The server forwards
   `/v1/agent/chats/:id/stream` (stream token) to it without buffering, so
   the web app keeps one origin, and keeps the upstream turn running when
-  the client detaches; the worker hands it task jobs. Both prove
+  the client detaches; the worker hands it API-owned jobs (task slices,
+  approval recoveries and expiries). Both prove
   themselves to each other with the internal key. The server process keeps
   serving the plain proxy for extensions and routines. `RETAINER_ROLE=all`
   doesn't run agent turns.
 
 ## 14. Delivery
 
-| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Agent core and chat backend** | The agent in the `model` module (D6): the agent list, the in-process model path, reserve and report, timeouts and the capture refusal at the report ingress; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease, the runtime routes, the shared erasure for `forget`, retention and the workspace purge); `@mastra/pg` behind the session API, with the `retainer_mastra` role, the erasure function and the migration step; `packages/agent` with the pass-through store, pinned tools, Retainer's tools, web tools, approvals of record and their recovery, and the step checkpoint; the chat endpoints and stream; limits, reservations and the chat-length limit; the hosted `model` function's new timeout and memory (`retainer-cloud`) and the self-hosted `agent` container; `retainer agent chat` and the `cli.md` changes |
-| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included) and recorded reads; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1. Agent core and chat backend** | The agent in the `model` module (D6): the agent list, the in-process model path, reserve and report, timeouts and the capture refusal at the report ingress; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease, the runtime routes, the shared erasure for `forget`, retention and the workspace purge); `@mastra/pg` behind the session API, with the `retainer_mastra` role, the erasure function and the migration step; `packages/agent` with the pass-through store, pinned tools, Retainer's tools, web tools, approvals of record and their recovery, with the internal job entry on both hosts, and the step checkpoint; the chat endpoints and stream; limits, reservations and the chat-length limit; the hosted `model` function's new timeout and memory (`retainer-cloud`) and the self-hosted `agent` container; `retainer agent chat` and the `cli.md` changes |
+| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included) and recorded reads; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 Then: approvals for routines, extension `write` and `send` tools in tasks,
 the member agent with a person's connections, compaction instead of the
@@ -1309,7 +1356,9 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   signatures included: a 40-step chat and a long all-text chat load whole.
 - A request past either threshold ends as `context_limit_reached`,
   including one where only the newest input (a long message or a large tool
-  result) takes the estimate past 900,000 tokens.
+  result) takes it past 900,000 tokens, dense text with few bytes per
+  token, and a first request with a large task input and no history. A
+  failed count ends the turn before anything is sent.
 
 **Tokens and access**
 
@@ -1343,6 +1392,15 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - **Concurrent:** a cancel racing a storage mutation already past its
   check. The mutation commits before the fence moves, or is refused; none
   lands after.
+- **Concurrent:** a tool write or job enqueue admitted and blocked on a
+  lock while a cancel and a new claim compete: it commits before the new
+  generation exists, or not at all.
+- A poll that times out, and one that finds the turn fenced or the
+  workspace erased: the first changes nothing, the second aborts the
+  request.
+- A claim made late in an invocation gets a shorter deadline. A cut exactly at
+  the deadline still hands off or closes within the grace; a finalizer that
+  never comes leaves a `timed_out` the next claim or the sweep resolves.
 - **Concurrent:** an approval's decision, its expiry and a repeated click;
   one wins.
 - A new message while an approval is pending gets `409 approval_pending`.
@@ -1352,9 +1410,9 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   approval is used once.
 - An approval answered in a different function instance resumes the turn.
 - A crash right after a decision, and a crash while dispatching: the chat
-  stays closed to new messages until a recovery turn records the result
-  (the job's, the decline, or a terminal error); an approval is never used
-  without its job.
+  stays closed to new messages until a recovery job records the result
+  (the job's, the decline, or a terminal error), with no client connected,
+  on both hosts; an approval is never used without its job.
 - A CLI chat writes only while its login is elevated in that workspace; a
   window that ends mid-turn refuses the next write; the chat agent is
   refused on every decision route; its actor is `retainer-agent:<person>`.
@@ -1380,6 +1438,11 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   retry is charged again; spillover across slices stays within one
   request's allowance.
 - The agent list refuses a web tool without `max_uses`.
+- A search-only task with a low fetch cap and a lost report is never
+  refused on fetches.
+- A cancelled request's metadata-only report, and one arriving just after
+  the deadline, settle once and leave the newer claim alone; a deployment
+  drain during an agent stream past 330 seconds waits for its lease.
 - A fake upstream that returns `pause_turn`: the turn continues or ends as
   `incomplete`, never as a finished answer.
 - A slow agent stream past 330 seconds completes; the runtime ends it at
@@ -1408,7 +1471,9 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   restored workspace without its chats.
 - `forget` runs as `retainer_app` and the purge as the control role, both
   through the erasure function, with no direct grants on `mastra`.
-- The 7-day retention erases a task's workflow rows, not only its thread.
+- The 7-day retention erases a task's workflow rows, not only its thread,
+  and erases one expired task while a live task and a chat in the same
+  workspace stay whole.
 
 **Tasks (PR 2)**
 
@@ -1451,6 +1516,8 @@ or "PR 2 checks":
 - the storage calls Mastra's agent makes (§5.2);
 - `handleChatStream`'s approval path at the pinned version (§6.4);
 - saving a step before its tools run, with D5 if not (§8.4);
+- the fixed allowance for the web tool definitions in a first request's
+  count, measured from a real request (§5.5);
 - which structured output Mastra's `structuredOutput` sends (§3.4), and
   whether durable agents hold up (§9.3), both in PR 2.
 
