@@ -192,7 +192,10 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
     folders that the modules we load reach, and fails if that list grows
     beyond `requireFGA` and the permission constants, or if either licence
     file changes.
-  - We ask Mastra to confirm our reading in writing before PR 1 ships.
+  - We asked Mastra (legal@mastra.ai) to confirm our reading in writing
+    on 2026-11-25. Until they answer, we work on our reading (decided
+    2026-11-25); the work doesn't wait for the reply. If they disagree, we
+    take the way out below.
   - **The way out stays short.** The storage adapter, the tools and the
     session API are ours. If Mastra's terms change, the loop can move to the
     Anthropic SDK's tool runner (`@anthropic-ai/sdk`, MIT), and the chat
@@ -212,7 +215,7 @@ own model (`routines.md` §4.5). What it means for the harness:
 - **Thinking** is adaptive and always on (`thinking: { type: "disabled" }`
   is refused on this model). The chat shows it, so the request sets
   `display: "summarized"`; without it the reasoning streams as empty blocks.
-  Effort starts at `medium` and is tuned from use.
+  Effort is `medium` for every request (decided 2026-11-25).
 - **Thinking blocks go back unchanged, and history only grows.** On Sonnet
   5.5 a thinking block is valid only in the conversation that produced it,
   and edits to earlier history can invalidate it. So Mastra's history
@@ -420,6 +423,16 @@ in the terminal: reasoning dimmed, tool calls and results as short lines,
 approvals as a yes or no prompt. It exists so the backend can be used and
 tested before the web app has a chat screen.
 
+The CLI login only reads (`cli.md` §3: records stay with MCP), so a chat
+from the CLI is **read-only by default**: the agent can search, read
+records, read `me` and search the web, but can't write records, log events,
+remember facts or call extension tools. After `retainer elevate` in that
+workspace it gets the person's full role for the window (30 minutes by
+default), the CLI's existing way to act for the person (decided
+2026-11-25). Its writes are still the chat agent's (§7.1), never the
+person's. The session token's tools are set from the access at each
+renewal, so the window's end takes the write tools away.
+
 ## 7. Authority
 
 ### 7.1 A person's chat
@@ -431,7 +444,8 @@ The agent acts for the person the way an app connected through OAuth does
   agent for <name>". Never the person, so model output never outranks
   people's values (write rule 3).
 - **Access:** the person's, capped by their role. A person who can only read
-  gets an agent that can only read.
+  gets an agent that can only read. A chat from the CLI reads only, unless
+  the person ran `retainer elevate` (§6.7).
 - **Personal memory:** the chat works for its person, so it can read and
   write their `me` memory, as connected agents can
   (`user-and-workspace-memory.md` §4.3).
@@ -713,22 +727,19 @@ everything that touches it. Among them:
 
 ## 17. Open questions
 
-1. **Chats from the CLI.** The CLI login only reads (`cli.md` §3: records
-   stay with MCP). A chat started with `retainer agent chat` on that login
-   would be read-only: the agent can search, read records, read `me` and
-   search the web, but can't write records, log events, remember facts or
-   call extension tools. Proposed: read-only by default, with the person's
-   full role for 30 minutes after `retainer elevate`, the CLI's existing
-   way to act for the person.
-2. **Mastra's written confirmation** of the reading in §3.3, before PR 1
-   ships.
+1. **Mastra's reply** to our licence question (sent 2026-11-25, §3.3).
+   Until it comes, we work on our reading; the work doesn't wait.
 
 Answered 2026-11-25:
 
-- Model: Claude Sonnet 5.5 for every session; extensions don't choose (§3.4).
+- Model: Claude Sonnet 5.5 for every session, effort `medium`; extensions
+  don't choose (§3.4).
+- Chats from the CLI: read-only, with the person's full role after
+  `retainer elevate` (§6.7).
 - `forget`: deletes every session in the workspace (§5.4).
 - Licence: checked; free as long as no Enterprise feature is configured,
-  with the guards in §3.3.
+  with the guards in §3.3. The no-op `requireFGA` call is treated as not
+  using an Enterprise feature until Mastra says otherwise.
 - Web and Retainer writes in one session: yes.
 - Limits: generous at first, tightened from real usage (§10).
 - Waiting: suspend and resume, no polling (§2.2).
