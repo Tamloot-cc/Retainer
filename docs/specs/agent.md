@@ -447,7 +447,7 @@ UI message stream over server-sent events.
 A chat runs at most one turn at a time. Claiming a turn is a row lock in the
 API; a second message while a turn runs is refused with `409 turn_running`.
 A test sends two messages at once (`CLAUDE.md`, rules described as
-serialized).
+serialized). Steering a running turn comes later (§6.8).
 
 ### 6.4 Approvals
 
@@ -499,7 +499,29 @@ default), the CLI's existing way to act for the person (decided
 person's. The session token's tools are set from the access at each
 renewal, so the window's end takes the write tools away.
 
-## 7. Authority
+### 6.8 Later: steering
+
+Steering lets a person add to a turn while it runs ("also check their
+LinkedIn", "stop, wrong company") instead of waiting for it to end.
+Mastra's way, Signals (`sendMessage()` into an active run), reaches a turn
+in another process only through a shared PubSub such as Redis, which we
+don't run. The same result without it:
+
+- **The API keeps pending input.** A message sent while a turn runs is
+  saved on the session as pending, not refused, and the stream shows it at
+  once as pending.
+- **The running turn picks it up between steps.** A `prepareStep` hook
+  asks the API for pending input before each model call and appends it to
+  the conversation as the person's message, then marks it taken. The model
+  sees it at its next step; nothing interrupts a model call in progress.
+- **History still only grows.** The input is appended after the last tool
+  results, never inserted earlier, so thinking blocks stay valid (§3.4).
+- **Input that arrives after the last step** starts the next turn, like a
+  queued follow-up.
+- **"Stop"** stays the cancel endpoint (§6.1); steering only adds input.
+
+One extra API call per step. Planned with the web chat screen or after it;
+not in PR 1.
 
 ### 7.1 A person's chat
 
@@ -757,8 +779,8 @@ itself. Usage reports carry the session from the token.
 | **3. Web chat screen**             | The chat UI on `useChat`, the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                          |
 
 Then: approvals for routines, extension `write` and `send` tools in tasks,
-the member agent with a person's connections, and joining a running turn's
-stream again.
+the member agent with a person's connections, joining a running turn's
+stream again, and steering a running turn (§6.8).
 
 ## 15. Tests
 
