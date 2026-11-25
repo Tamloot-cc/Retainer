@@ -150,7 +150,7 @@ would be thrown away once suspend and resume exists.
 | Resumable streams                    | Off                  | They need a shared PubSub such as Redis. `durable: false`; reconnecting reads the saved history (§6.5)                                                         |
 | Durable agents                       | Evaluate in PR 2     | Beta. A candidate for long tasks (§9.3)                                                                                                                        |
 | Guardrail processors                 | Later                | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                                            |
-| Tracing                              | Off for now          | The saved messages are the trace (§5.3). A custom exporter can send spans to Retainer later                                                                    |
+| Tracing                              | Off                  | Decided 2026-11-25. The saved messages are the trace (§5.3)                                                                                                    |
 | Mastra's server, A2A, MCP server     | Not used             | Retainer's API is the only way in                                                                                                                              |
 
 ### 3.2 Storage: `@mastra/pg` behind the API
@@ -376,8 +376,15 @@ tables are never created.
 The saved messages are the trace: each step's reasoning, each tool call with
 its input and result, and the answer, in the format the UI will render.
 `agent_turns` adds counts and durations. The routine run page, the
-extension run list and the chat all read the same messages. Mastra's own
-tracing stays off (§3.1).
+extension run list and the chat all read the same messages.
+
+Mastra's own tracing (spans for each run, model call and tool call, sent to
+an exporter) stays off (decided 2026-11-25). It mostly repeats the saved
+messages, and its spans carry the model's inputs and outputs: one more copy
+of CRM data for `forget` and retention to reach, or data sent to an outside
+service. If per-step timing is needed later, tracing can be turned on with
+a filter that drops every input and output and keeps only types, timings,
+tokens and errors.
 
 ### 5.4 Retention and `forget`
 
