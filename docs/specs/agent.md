@@ -7,8 +7,9 @@ waiting inside their run, and Mastra's built-ins are used wherever they fit
 reviewers: their agreed fixes are in the sections they affect, and the
 product owner's five decisions on what they left open are D1 to D5 in §2.
 Revised a third time the same day: the agent runs inside the model proxy
-(D6), and a second review round's fixes are in place. §2 lists what is
-decided.
+(D6), and a second review round's fixes are in place. Later that day:
+soft limits (D7), and D4 and D5 relaxed to accept a rare `diverged` run and
+a rare repeated write. §2 lists what is decided.
 
 Builds on [extensions-model-calls.md](extensions-model-calls.md) (the model
 proxy, and §11 there, which first described this agent) and
@@ -28,7 +29,7 @@ If accepted this spec amends:
 - `routines.md` §4.4 and §4.5 (a new SDK call, `retainer.ai.agent`), §6.2 (a
   run can wait for a task), §6.6 (stored session content, waiting runs and
   their tasks), §10 (the "agent with tools" and "long runs and waits" rows)
-  and §11.4 (runs that use the agent record their reads). An extension tool
+  and §11.4 (a run that waits for a task may end as `diverged`). An extension tool
   job started by a routine's task is admitted while its run waits (§9.2).
 - `cli.md` §3, §5.2, §9.1 and §11: a chat from the CLI writes, as the agent,
   while the login is elevated (§6.7).
@@ -150,15 +151,19 @@ Decided 2026-11-25 by the product owner, on what the review left open:
   run in an `agent` Compose container with no database credential and no
   route to Postgres. It reaches Retainer only through the API, like the
   routine runner: the same isolation as hosted (§4.2, §13).
-- **D4. Runs that use the agent record their reads.** In a routine whose
-  manifest declares `agent`, reads before the `ai.agent` call are recorded
-  and replayed until the run passes its last recorded effect; after that,
-  reads are live. Recorded reads are CRM content: kept 7 days and erased by
-  `forget`. The effect's argument hash stays whole, input included (§9.2).
-- **D5. A write whose outcome is unknown isn't replayed.** If PR 1 finds
-  Mastra can't save a step before its tools run, a crashed turn or slice
-  that may have dispatched a write ends as `outcome_unknown`, with no
-  automatic replay (§8.4).
+- **D4. Reads aren't recorded (relaxed 2026-11-25).** A routine that waits
+  for a task replays from the top on resume, with live reads, as every
+  routine does. If a record it read changed during the wait, the run ends
+  as `diverged` and the task's answer is dropped; the next run starts
+  fresh. The effect's argument hash stays whole, input included (§9.2).
+  This is rare, and recording reads would store CRM content for each run.
+- **D5. A crashed step is sampled again (relaxed 2026-11-25).** A turn or
+  slice that dies mid-step resumes from the last saved step and asks the
+  model again. A Retainer write the dead step already made may be made a
+  second time; Retainer's writes are mostly safe to repeat (an upsert by
+  identity, an assertion of the same value), and a repeated fact or event
+  is acceptable. Extension `write` and `send` calls still run at most once,
+  through their one-use approval (§6.4, §8.4).
 
 Decided 2026-11-25 by the product owner, after the second review round:
 
@@ -440,12 +445,11 @@ calls a model.
 
 Ours, in Drizzle's schema like every other table:
 
-| Table                | Holds                                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent_sessions`     | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3), limits and use, created, last active                                                      |
-| `agent_turns`        | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches and fetches, error code, durations, the Mastra run IDs bound to it (§5.2). IDs and counts only |
-| `agent_approvals`    | One row per approval request: session, turn, Mastra run, tool call ID, a hash of the arguments, status, who answered, when and what, and when dispatch used it (§6.4)                                  |
-| `agent_tool_results` | One row per write tool call: session, tool call ID, a hash of the arguments, and the result, saved in the write's own transaction (§8.4)                                                               |
+| Table             | Holds                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent_sessions`  | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3), limits and use, created, last active                                                      |
+| `agent_turns`     | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches and fetches, error code, durations, the Mastra run IDs bound to it (§5.2). IDs and counts only |
+| `agent_approvals` | One row per approval request: session, turn, Mastra run, tool call ID, a hash of the arguments, status, who answered, when and what, and when dispatch used it (§6.4)                                  |
 
 Mastra's, in the `mastra` schema, created by `@mastra/pg`:
 
@@ -560,7 +564,7 @@ tokens and errors.
   deletes by real keys across every table in the `mastra` schema (threads,
   messages, resources, workflow snapshots, workflow runs, run entries, run
   owners), not with `deleteThread` alone, which leaves the workflow rows. It
-  also clears `agent_approvals`' arguments and `agent_tool_results`. It runs
+  also clears `agent_approvals`' arguments. It runs
   in the caller's transaction under the exclusive privacy lock, through the
   `security definer` function of §5.2: the one place Retainer writes
   Mastra's tables itself. A test lists every table in the `mastra` schema
@@ -982,27 +986,26 @@ changed between turns would lose its earlier thinking, or get a `400`.
   `elevation_required`, `role` or `extension_removed`.
 - **New tools reach new sessions.** An extension installed or upgraded, or
   a new Retainer tool, appears in chats created after it.
+- **Later: tools added mid-chat.** Sonnet 5.5 accepts `tool_addition` and
+  `tool_removal` blocks in an appended system message (beta
+  `mid-conversation-tool-changes-2026-07-01`), which change the tools
+  without invalidating earlier thinking. Once Mastra or the AI SDK can send
+  them, a new extension can reach existing chats.
 
-### 8.4 Writes happen once
+### 8.4 A crashed step runs again (D5)
 
-A retried step must not repeat a write that has already committed.
+Mastra saves each step after it ends (`savePerStep`). A turn or slice that
+dies mid-step resumes from the last saved step and samples the step again,
+so its tool calls may differ and may repeat.
 
-- **Checkpoint before dispatch.** The model's response, thinking included,
-  and its pending tool calls are saved before any tool runs, so the tool
-  call IDs are stable.
-- **The write and its result together.** Each Retainer write stores its
-  result in `agent_tool_results`, keyed by the session and the saved tool
-  call ID, in the write's own transaction. A replay checks the argument
-  hash against the stored one. An extension call records its job under the
-  same key, in the transaction that uses its approval (§6.4).
-- **Resume before sampling again.** A retried step or slice replays the
-  saved response and runs only the calls with no stored result; it doesn't
-  ask the model again.
-- **PR 1 checks** that Mastra can save a step before its tools run
-  (`savePerStep` saves after the step). If it can't (D5), a turn or slice
-  that crashed after a write may have been dispatched ends as
-  `outcome_unknown`, with no automatic replay. It is terminal: no later
-  turn or slice resumes it.
+- **Retainer writes may repeat.** An upsert by identity, a `remember` of
+  the same fact or a `log_event` with the same external ID lands as the
+  same claim or is deduplicated; anything else may be written twice. No
+  per-call result table, no checkpoint before dispatch.
+- **Extension writes and sends don't.** They run only against a one-use
+  approval, and using it and recording the job are one transaction keyed
+  by the tool call ID (§6.4). A resampled step has new tool call IDs, so it
+  asks for approval again rather than reusing the old one.
 
 ## 9. Tasks (PR 2)
 
@@ -1053,16 +1056,13 @@ Code never names a model; every task runs on Claude Sonnet 5.5 (§3.4).
 5. A retried run that reaches the same effect gets the same task back: the
    key makes creating it idempotent.
 
-**Reads are recorded (D4).** Routines replay effects, not reads
-(`routines.md` §11.4), so code before `ai.agent` would read again on
-resume, maybe hours later. If a record changed meanwhile, the code would
-compute different arguments, and the run would end as `diverged`
-(`routines.md` §6.2). Leaving `input` out of the hash wouldn't help: writes
-earlier in the run took their arguments from reads too. So in a routine
-whose manifest declares `agent`, reads are recorded with the effects and
-replayed until the run passes its last recorded effect; after that, reads
-are live. Recorded reads are CRM content: kept 7 days with the run's
-results and erased by `forget` (decided 2026-11-25).
+**Reads are live (D4).** Routines replay effects, not reads
+(`routines.md` §11.4), so code before `ai.agent` reads again on resume,
+maybe hours later. If a record changed meanwhile, the code computes
+different arguments and the run ends as `diverged` (`routines.md` §6.2);
+the task's answer is dropped and the next run starts fresh. This is
+accepted: it needs a change during the wait to data the run read before
+it, and recording reads would keep CRM content per run.
 
 Rules for waiting runs:
 
@@ -1104,17 +1104,14 @@ cancels its task. The extension SDK hides the plumbing: `start` and an
   **handoff point** about 10 minutes in: no new step starts after it, and
   the step in flight, which may run until the hard deadline, finishes
   first. Then one transaction closes the slice under its claim, with its
-  checkpoint saved (§8.4), and queues the next slice's job; a duplicate
+  last step saved (§8.4), and queues the next slice's job; a duplicate
   delivery of that job, or a late report from the old slice, finds a stale
   claim and does nothing.
 - **A slice cut at its deadline** ends as `slice_interrupted`, not as an
   ordinary failure. Its handoff runs in the 60-second grace (§6.3); if it
   never comes, the sweep closes the slice as `timed_out` and queues the
-  next one, which resumes the same way. The next slice resumes from the checkpoint: a step whose
-  response was saved runs only its calls with no stored result; a step whose
-  model request was cut dispatched nothing and is sampled again; a step
-  that may have dispatched a write without a saved checkpoint ends the task
-  as `outcome_unknown` (D5).
+  next one, which resumes the same way. The next slice resumes from the
+  last saved step and samples the cut step again (D5, §8.4).
 - **Mastra's durable agents** do this checkpointing themselves, on the
   `workflows` store already behind the API. They are in beta and their
   multi-process mode wants a PubSub that redelivers. PR 2 tries them in
@@ -1327,7 +1324,7 @@ extension list.
 | PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1. Agent core and chat backend** | The agent in the `model` module (D6): the agent list, the in-process model path, the usage report and its answer, timeouts and the capture refusal at the report ingress; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease, the runtime routes, the shared erasure for `forget`, retention and the workspace purge); `@mastra/pg` behind the session API, with the `retainer_mastra` role, the erasure function and the migration step; `packages/agent` with the pass-through store, pinned tools, Retainer's tools, web tools, approvals of record and their recovery, with the internal job entry on both hosts, and the step checkpoint; the chat endpoints and stream; limits, reservations and the chat-length limit; the hosted `model` function's new timeout and memory (`retainer-cloud`) and the self-hosted `agent` container; `retainer agent chat` and the `cli.md` changes |
-| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included) and recorded reads; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs included); `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 Then: approvals for routines, extension `write` and `send` tools in tasks,
@@ -1426,11 +1423,10 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 
 **Writes**
 
-- A crash after a write commits and before the history is saved: the retry
-  doesn't repeat the write.
-- **Concurrent:** two retry workers on one pending tool call make one write.
-- If PR 1 takes D5's path: a crashed turn whose write may have been
-  dispatched ends as `outcome_unknown`.
+- A crash mid-step: the retry resumes from the last saved step and samples
+  again; an extension write from the dead step isn't run again without a
+  new approval.
+- **Concurrent:** two retry workers on one session: one wins the claim.
 
 **Limits and the proxy**
 
@@ -1491,10 +1487,10 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   `read` tool jobs included; an ordinary routine tool job for a waiting run
   is still refused.
 - A slice whose step is cut at the deadline ends as `slice_interrupted` and
-  the next slice resumes from the checkpoint; a duplicate delivery of the
+  the next slice resumes from the last saved step; a duplicate delivery of the
   next slice's job, and a late report from the old slice, change nothing.
-- A run whose record changed during the wait replays its recorded reads and
-  doesn't end as `diverged`.
+- A run whose record changed during the wait ends as `diverged`, and the
+  next run starts fresh.
 - A task's deadline falls before its parent's expiry.
 - A dry run's task makes no write and calls no extension tool.
 
@@ -1518,7 +1514,6 @@ or "PR 2 checks":
   through Mastra as provider tools (§8.1);
 - the storage calls Mastra's agent makes (§5.2);
 - `handleChatStream`'s approval path at the pinned version (§6.4);
-- saving a step before its tools run, with D5 if not (§8.4);
 - the fixed allowance for the web tool definitions in a first request's
   count, measured from a real request (§5.5);
 - which structured output Mastra's `structuredOutput` sends (§3.4), and
@@ -1542,8 +1537,9 @@ Answered 2026-11-25:
 - Long chats: a hard length limit in PR 1, compaction later (D2, §5.5).
 - Self-hosted turns: in their own container, without database access (D3,
   §13).
-- Reads in routines that use the agent: recorded and replayed (D4, §9.2).
-- A write whose outcome is unknown after a crash: no automatic replay (D5,
+- Reads in routines that use the agent: live; a rare `diverged` is
+  accepted (D4, relaxed, §9.2).
+- A crashed step: sampled again; a Retainer write may repeat (D5, relaxed,
   §8.4).
 - Where the agent runs: inside the model proxy, the `model` function
   hosted and the `agent` container self-hosted, with the key in its process
