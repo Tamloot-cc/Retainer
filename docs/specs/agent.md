@@ -216,10 +216,17 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
     folders that the modules we load reach, and fails if that list grows
     beyond `requireFGA` and the permission constants, or if either licence
     file changes.
-  - We asked Mastra (legal@mastra.ai) to confirm our reading in writing
-    on 2026-11-25. Until they answer, we work on our reading (decided
-    2026-11-25); the work doesn't wait for the reply. If they disagree, we
-    take the way out below.
+  - **Mastra confirmed this reading in writing** (2026-11-25, in reply to
+    a question sent to legal@mastra.ai): the Enterprise licence is needed
+    in production only when fine-grained authorization is configured
+    (`server.fga` or `studio.fga`); with no FGA provider, `requireFGA`
+    returns at once and isn't use of an Enterprise feature, so this setup
+    is covered by Apache-2.0 alone, hosted and self-hosted. It depends on
+    the features configured, not the packages installed, so `@mastra/pg`
+    changes nothing. Code released under Apache-2.0 stays so in the
+    versions already released; a later designation applies only to
+    versions released after it. The guards above stay, because a later
+    version could move more code.
   - **The way out stays short.** The tools, the session API and
     `agent_sessions` are ours. If Mastra's terms change, the loop can move
     to the Anthropic SDK's tool runner (`@anthropic-ai/sdk`, MIT), and the
@@ -784,8 +791,7 @@ everything that touches it. Among them:
 
 ## 17. Open questions
 
-1. **Mastra's reply** to our licence question (sent 2026-11-25, §3.3).
-   Until it comes, we work on our reading; the work doesn't wait.
+None.
 
 Answered 2026-11-25:
 
@@ -795,9 +801,8 @@ Answered 2026-11-25:
   `retainer elevate` (§6.7).
 - `forget`: deletes every session in the workspace (§5.4).
 - Storage: `@mastra/pg`, run by the API, never by the agent function (§3.2).
-- Licence: checked; free as long as no Enterprise feature is configured,
-  with the guards in §3.3. The no-op `requireFGA` call is treated as not
-  using an Enterprise feature until Mastra says otherwise.
+- Licence: free as long as no Enterprise feature is configured; Mastra
+  confirmed in writing, and the guards in §3.3 stay.
 - Web and Retainer writes in one session: yes.
 - Limits: generous at first, tightened from real usage (§10).
 - Waiting: suspend and resume, no polling (§2.2).
