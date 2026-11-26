@@ -10,6 +10,7 @@ export type TurnCloseStatus =
   | 'history_rejected'
   | 'limit_reached'
   | 'cancelled'
+  | 'timed_out'
   | 'failed';
 
 export type TurnLimits = {
