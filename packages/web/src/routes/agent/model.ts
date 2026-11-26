@@ -322,15 +322,21 @@ export function stepsSummary(parts: ChatPart[]): string {
   let web = false;
   let noted = false;
   let other = false;
+  let wouldSave = false;
   let saved = 0;
   for (const part of tools) {
     const name = toolName(part);
+    // A routine's dry run answers writes without making them.
+    if (toolFinished(part) && dryRun(part)) {
+      wouldSave = true;
+      continue;
+    }
     // A bulk save that partly failed still saved some.
     if (name === 'upsert_records') {
       saved += upsertCounts(part)?.saved ?? 0;
       continue;
     }
-    if (!toolFinished(part) || toolError(part) !== undefined || dryRun(part)) continue;
+    if (!toolFinished(part) || toolError(part) !== undefined) continue;
     const kind = toolKind(part);
     if (kind === 'web') web = true;
     else if (kind === 'read' || kind === 'search') read = true;
@@ -342,6 +348,7 @@ export function stepsSummary(parts: ChatPart[]): string {
   if (read) said.push('checked your workspace');
   if (web) said.push('searched the web');
   if (saved) said.push(`saved ${records(saved)}`);
+  if (wouldSave) said.push('would save changes');
   if (noted) said.push('took notes');
   if (other) said.push('used other tools');
   if (said.length === 0)

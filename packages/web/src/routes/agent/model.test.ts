@@ -271,7 +271,16 @@ describe('stepsSummary', () => {
     ).toBe('Checked your workspace');
     expect(
       stepsSummary([tool('upsert_record', { output: { dryRun: true } }), tool('web_search')]),
-    ).toBe('Searched the web');
+    ).toBe('Searched the web and would save changes');
+  });
+
+  it('says what a dry run would save', () => {
+    expect(
+      stepsSummary([
+        tool('upsert_record', { output: { dryRun: true } }),
+        tool('remember', { output: { dryRun: true } }),
+      ]),
+    ).toBe('Would save changes');
   });
 });
 
