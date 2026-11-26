@@ -11,6 +11,12 @@ test('a new person signs in, names a workspace and lands in it as its admin', as
   await page.goto(`${a.url}/app/`);
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Use a passkey' })).toBeVisible();
+  const touchIcon = page.locator('link[rel="apple-touch-icon"]');
+  await expect(touchIcon).toHaveAttribute('href', '/app/apple-touch-icon.png');
+  await expect(touchIcon).toHaveAttribute('sizes', '180x180');
+  const icon = await page.request.get(`${a.url}/app/apple-touch-icon.png`);
+  expect(icon.ok()).toBe(true);
+  expect(icon.headers()['content-type']).toContain('image/png');
 
   await a.signIn(context, { email: 'ana@example.test', name: 'Ana Silva' });
   // The app extends the session each time it loads, so active people stay signed in.

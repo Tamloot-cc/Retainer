@@ -484,8 +484,8 @@ export function avatarMood(input: {
     }
     return 'thinking';
   }
+  if (input.running) return 'working';
   if (input.outcome === 'error') return 'error';
-  if (input.running && !input.outcome) return 'working';
   if (input.typing) return 'listening';
   return input.outcome ?? 'idle';
 }

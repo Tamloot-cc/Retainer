@@ -448,6 +448,7 @@ const AgentMessage = memo(function AgentMessage({
   last,
   actions,
   mood,
+  stopping,
   onRetry,
 }: {
   message: ChatMessage;
@@ -456,12 +457,13 @@ const AgentMessage = memo(function AgentMessage({
   actions: boolean;
   /** Set on the message that shows the mark. */
   mood?: LogoMood;
+  stopping: boolean;
   onRetry?: () => void;
 }) {
   const answer = answerText(message);
   return (
     <AgentTurn mark={mood ? <LogoMark mood={mood} size={32} className="shrink-0" /> : undefined}>
-      <AssistantParts message={message} streaming={answering} stopping={mood === 'stopping'} />
+      <AssistantParts message={message} streaming={answering} stopping={stopping} />
       {actions && !answering && (answer || onRetry) ? (
         <MessageFooter pinned={last}>
           {answer ? <CopyMessage text={answer} label="Copy answer" /> : null}
@@ -491,6 +493,7 @@ export function ChatMessages({
   mood = 'idle',
   mark = true,
   waiting = false,
+  stoppingMessageId,
   scroller = false,
   onEdit,
   onRetry,
@@ -503,6 +506,8 @@ export function ChatMessages({
   mark?: boolean;
   /** Sent, and nothing of the answer has arrived yet. */
   waiting?: boolean;
+  /** The saved answer whose runtime is still stopping. */
+  stoppingMessageId?: string;
   scroller?: boolean;
   /** Puts one of the person's messages back in the message box. */
   onEdit?: (text: string) => void;
@@ -531,6 +536,7 @@ export function ChatMessages({
             last={last}
             actions={mark}
             mood={last && mark && !waiting ? mood : undefined}
+            stopping={message.id === stoppingMessageId}
             onRetry={last ? onRetry : undefined}
           />
         ),

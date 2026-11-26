@@ -179,10 +179,14 @@ describe('avatarMood', () => {
   it('listens while the person types, and marks a finished or failed turn', () => {
     expect(mood({ typing: true })).toBe('listening');
     expect(mood({ outcome: 'done' })).toBe('done');
-    expect(mood({ outcome: 'error', running: true, typing: true })).toBe('error');
+    expect(mood({ outcome: 'error', typing: true })).toBe('error');
     expect(mood({ status: 'error' })).toBe('error');
     expect(mood({ running: true })).toBe('working');
     expect(mood({})).toBe('idle');
+  });
+  it('shows another running turn over the outcome of an earlier turn', () => {
+    expect(mood({ running: true, outcome: 'done' })).toBe('working');
+    expect(mood({ running: true, outcome: 'error' })).toBe('working');
   });
   it('shows stopping while the cancelled turn settles', () => {
     expect(mood({ status: 'streaming', stopping: true })).toBe('stopping');

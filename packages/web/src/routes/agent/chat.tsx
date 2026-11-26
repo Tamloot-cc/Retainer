@@ -400,9 +400,12 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
   const showIntro = messages.length === 0 && refused.length === 0 && !awaitingAnswer;
   const avatarInThread =
     showIntro || (refused.length === 0 && messages.at(-1)?.role === 'assistant');
-  const showProgress = mood === 'stopping' || (mood === 'working' && runningBefore);
-  const moodText =
-    mood === 'working' && runningBefore ? 'Still working on your last message…' : MOOD_TEXT[mood];
+  const showProgress = stopping || (mood === 'working' && runningBefore);
+  const moodText = stopping
+    ? MOOD_TEXT.stopping
+    : mood === 'working' && runningBefore
+      ? 'Still working on your last message…'
+      : MOOD_TEXT[mood];
   // The last answer ended short of done and the chat can go on: offer to ask again.
   const retryable =
     !locked &&
@@ -461,6 +464,7 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
             messages={refused.length > 0 ? [...messages, ...refused] : messages}
             streaming={status === 'streaming'}
             waiting={awaitingAnswer}
+            stoppingMessageId={chat.stopping ? chat.messages.at(-1)?.id : undefined}
             mood={mood}
             onEdit={locked ? undefined : edit}
             onRetry={retryable && lastQuestion ? retry : undefined}
@@ -477,7 +481,7 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
               showProgress ? 'flex items-center gap-2 text-xs text-muted-foreground' : 'sr-only'
             }
           >
-            {showProgress && !avatarInThread ? <LogoMark mood={mood} /> : null}
+            {showProgress && !avatarInThread && mood !== 'error' ? <LogoMark mood={mood} /> : null}
             {moodText ?? ''}
           </p>
           {error ? (

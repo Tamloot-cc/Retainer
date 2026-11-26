@@ -535,9 +535,12 @@ describe('ChatPage', () => {
     expect(await screen.findByText('Stopping…')).toBeTruthy();
     await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
     expect(await screen.findByText(/still stopping/)).toBeTruthy();
+    expect(screen.getByText('Stopping…')).toBeTruthy();
+    expect(screen.queryByText('Stopped.')).toBeNull();
     runtimeStopped = true;
     expect(await screen.findByText('Dana is a buyer at Acme.', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText('Hi', { selector: 'div' })).toBeTruthy();
+    expect(screen.getByText('Stopped.')).toBeTruthy();
   }, 10_000);
 
   it('shows a turn still running from before, and stops it', async () => {
