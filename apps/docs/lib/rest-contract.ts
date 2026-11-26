@@ -498,23 +498,7 @@ endpoint({
   operationId: 'list-templates',
   summary: 'List workspace templates',
   access: 'read',
-  response: {
-    schema: object({
-      templates: array(
-        object({
-          name: text,
-          version: integer,
-          label: text,
-          description: text,
-          applied: boolean,
-          adds: object({
-            objects: array(object({ name: text, fields: array(text) })),
-            fields: array(object({ object: text, field: text })),
-          }),
-        }),
-      ),
-    }),
-  },
+  response: { schema: object({ templates: array(ref('TemplateView')) }) },
 });
 endpoint({
   tag: 'Schema',
@@ -526,7 +510,6 @@ endpoint({
   response: { schema: schemaResult },
 });
 
-const impactedRecords = array(object({ object: text, count: integer }));
 endpoint({
   tag: 'Records',
   method: 'get',
@@ -534,7 +517,7 @@ endpoint({
   operationId: 'get-delete-impact',
   summary: 'Preview the impact of a record deletion',
   access: 'read',
-  response: { schema: object({ id, records: impactedRecords }) },
+  response: { schema: ref('DeleteImpact') },
 });
 endpoint({
   tag: 'Records',
@@ -543,7 +526,7 @@ endpoint({
   operationId: 'get-bulk-delete-impact',
   summary: 'Preview the impact of several record deletions',
   access: 'read',
-  response: { schema: object({ ids: array(id), records: impactedRecords }) },
+  response: { schema: ref('BulkDeleteImpact') },
 });
 endpoint({
   tag: 'Records',
@@ -607,19 +590,7 @@ endpoint({
   summary: 'Erase a person',
   access: 'admin',
   description: 'A user with admin scope can permanently erase a person for a privacy request.',
-  response: {
-    schema: object(
-      {
-        id,
-        forgotten: { const: true },
-        counts: map(integer),
-        storage: object({ pending: integer, deletionIds: array(id) }),
-        recomputedRecordIds: array(id),
-        reviewCandidates: object({ records: array(id), facts: array(id), events: array(id) }),
-      },
-      ['id', 'forgotten', 'counts', 'recomputedRecordIds', 'reviewCandidates'],
-    ),
-  },
+  response: { schema: ref('ForgetResult') },
 });
 
 endpoint({
@@ -661,18 +632,7 @@ endpoint({
   request: {
     example: { from: 'meeting', to: 'conversation', defaults: { medium: 'meeting' }, dryRun: true },
   },
-  response: {
-    schema: object({
-      id: nullString,
-      dryRun: boolean,
-      from: text,
-      to: text,
-      eventIds: array(id),
-      fields: array(object({ from: text, to: text, events: integer })),
-      dropped: array(object({ field: text, events: integer, assertions: integer })),
-      defaults: array(object({ field: text, events: integer })),
-    }),
-  },
+  response: { schema: ref('MoveEventsResult') },
 });
 endpoint({
   tag: 'Events',
@@ -830,14 +790,7 @@ endpoint({
   summary: 'List comments',
   access: 'read',
   parameters: pageParams(50, 200),
-  response: {
-    schema: object({
-      record: id,
-      items: array(ref('Comment')),
-      total: integer,
-      nextCursor: nullString,
-    }),
-  },
+  response: { schema: ref('CommentPage') },
 });
 const commentBody = {
   example: { body: 'Loop in legal before renewal.' },
@@ -953,7 +906,7 @@ endpoint({
   summary: 'Dismiss a merge suggestion',
   access: 'write',
   description: 'The caller must act as a user.',
-  response: { schema: object({ id, status: choice('dismissed') }) },
+  response: { schema: ref('MergeSuggestionDecision') },
 });
 
 endpoint({

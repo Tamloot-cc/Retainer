@@ -5,8 +5,11 @@ import {
   type AssertionView,
   type AttachedEventPage,
   actorSchema,
+  type BulkDeleteImpact,
   CORE_ROLES,
+  type CommentPage,
   type ContextPack,
+  type DeleteImpact,
   type DeleteRecordResult,
   EVENT_COLUMNS,
   type EventContentPage,
@@ -16,11 +19,14 @@ import {
   type FactPlace,
   FIELD_TYPES,
   type FieldView,
+  type ForgetResult,
   type LinkedRecordPage,
   type LogEventResult,
   type MatchedParticipant,
   type MergeResult,
   type MergeSuggestion,
+  type MergeSuggestionDecision,
+  type MoveEventsResult,
   moneyValueSchema,
   OBJECT_CLASSES,
   type ObjectView,
@@ -44,6 +50,7 @@ import {
   type SchemaDiffOperation,
   type SearchResult,
   type Session,
+  type TemplateView,
   type TimelineItem,
   type TimelinePage,
   type UnmatchedParticipant,
@@ -429,6 +436,18 @@ const schemaChange = response<StoredSchemaChange>()(
   }),
 );
 
+const comment = response<PresentedComment>()(
+  z.object({
+    id,
+    record: id,
+    body: text,
+    author: actorSchema,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    editedAt: timestamp.nullable(),
+  }),
+);
+
 const responses = {
   Workspace: workspace,
   Actor: actorSchema,
@@ -528,15 +547,14 @@ const responses = {
   HistoricalFact: response<PresentedFact & { status: NonNullable<PresentedFact['status']> }>()(
     z.intersection(fact, z.object({ status: factStatus })),
   ),
-  Comment: response<PresentedComment>()(
+
+  Comment: comment,
+  CommentPage: response<CommentPage>()(
     z.object({
-      id,
       record: id,
-      body: text,
-      author: actorSchema,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      editedAt: timestamp.nullable(),
+      items: z.array(comment),
+      total: z.int(),
+      nextCursor: text.nullable(),
     }),
   ),
   DeleteRecord: response<DeleteRecordResult>()(
@@ -675,6 +693,69 @@ const responses = {
         }),
       ),
       references: references.optional(),
+    }),
+  ),
+  ForgetResult: response<ForgetResult>()(
+    z.object({
+      id,
+      forgotten: z.literal(true),
+      storage: z.object({ pending: z.int(), deletionIds: z.array(id) }).optional(),
+      counts: z.object({
+        records: z.int(),
+        events: z.int(),
+        facts: z.int(),
+        assertions: z.int(),
+        inboundRelations: z.int(),
+        suppressedHandles: z.int(),
+        comments: z.int(),
+        files: z.int().optional(),
+        sourceItems: z.int().optional(),
+      }),
+      recomputedRecordIds: z.array(id),
+      reviewCandidates: z.object({ records: z.array(id), facts: z.array(id), events: z.array(id) }),
+    }),
+  ),
+  DeleteImpact: response<DeleteImpact>()(
+    z.object({
+      id,
+      records: z.array(z.object({ object: text, count: z.int() })),
+    }),
+  ),
+  BulkDeleteImpact: response<BulkDeleteImpact>()(
+    z.object({
+      ids: z.array(id),
+      records: z.array(z.object({ object: text, count: z.int() })),
+    }),
+  ),
+  MergeSuggestionDecision: response<MergeSuggestionDecision>()(
+    z.object({
+      id,
+      status: z.literal('dismissed'),
+    }),
+  ),
+  MoveEventsResult: response<MoveEventsResult>()(
+    z.object({
+      id: id.nullable(),
+      dryRun: z.boolean(),
+      from: text,
+      to: text,
+      eventIds: z.array(id),
+      fields: z.array(z.object({ from: text, to: text, events: z.int() })),
+      dropped: z.array(z.object({ field: text, events: z.int(), assertions: z.int() })),
+      defaults: z.array(z.object({ field: text, events: z.int() })),
+    }),
+  ),
+  TemplateView: response<TemplateView>()(
+    z.object({
+      name: text,
+      version: z.int(),
+      label: text,
+      description: text,
+      applied: z.boolean(),
+      adds: z.object({
+        objects: z.array(z.object({ name: text, fields: z.array(text) })),
+        fields: z.array(z.object({ object: text, field: text })),
+      }),
     }),
   ),
   // File responses extend this component with the file ID and state.

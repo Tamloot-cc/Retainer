@@ -166,3 +166,24 @@ test('event reads and schema history expose their concrete response shapes', asy
     '#/components/schemas/SchemaOperation',
   );
 });
+
+test('privacy erasure exposes its named counts', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const forget = contract.paths['/v1/records/{id}/forget'].post;
+  assert.equal(
+    forget.responses['200'].content['application/json'].schema.$ref,
+    '#/components/schemas/ForgetResult',
+  );
+  const counts = contract.components.schemas.ForgetResult.properties.counts;
+  assert.deepEqual(counts.required, [
+    'records',
+    'events',
+    'facts',
+    'assertions',
+    'inboundRelations',
+    'suppressedHandles',
+    'comments',
+  ]);
+  assert.equal(counts.properties.files.type, 'integer');
+  assert.equal(counts.properties.sourceItems.type, 'integer');
+});
