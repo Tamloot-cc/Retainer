@@ -12,6 +12,12 @@ import {
 } from '@retainer/extension';
 import { sourceScanSchema } from '@retainer/shared';
 import { z } from 'zod';
+import {
+  createTask,
+  dropStagedTasks,
+  parseTaskRequest,
+  publishTask,
+} from '../agent-runtime/tasks.js';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import { overtaken, retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
@@ -1395,9 +1401,11 @@ export class ExtensionQueue {
       retryAfterSeconds?: number;
       releaseIncomplete?: string[];
       output?: unknown;
+      wait?: string;
     },
   ) {
     z.strictObject({
+      wait: z.uuid().optional(),
       status: z.enum(['succeeded', 'retry', 'failed']),
       code: z
         .string()
@@ -1411,6 +1419,25 @@ export class ExtensionQueue {
       lease,
       async (tx, installation, job) => {
         if (job.trigger_kind === 'tool') return this.completeTool(tx, installation, job, result);
+        // `{ wait }` parks the invocation on its staged task and publishes the
+        // task's job, in this transaction (agent spec §9.2). Any other ending
+        // drops the tasks it staged.
+        if (result.wait && result.status === 'succeeded') {
+          const [staged] = await tx<{ session_id: string }[]>`
+            select session_id from agent_tasks where session_id=${result.wait}
+              and extension_job_id=${job.id} and state='staged'`;
+          if (staged) {
+            await tx`update extension_jobs set status='waiting',code=null,agent_task_id=${staged.session_id},
+              lease_owner=null,lease_until=null,run_until=null,fence=fence+1,updated_at=now() where id=${job.id}`;
+            await tx`update extension_attempts set status='succeeded',code='waiting',finished_at=now()
+              where job_id=${job.id} and attempt=${job.attempt}`;
+            await publishTask(tx, staged.session_id);
+            await dropStagedTasks(tx, job.id);
+            return { status: 'waiting' as const, activated: false };
+          }
+          result = { status: 'failed', code: 'agent_task_unknown' };
+        }
+        await dropStagedTasks(tx, job.id);
         const status =
           result.status === 'retry'
             ? job.cycle_attempt >= 10
@@ -1495,6 +1522,68 @@ export class ExtensionQueue {
       },
       true,
     );
+  }
+  /**
+   * Stages an agent task for this run (agent spec §9.2): nothing runs until
+   * the run returns `{ wait: taskId }`. The function must declare
+   * `uses: ['agent']`, the installation's grant must include it, and the
+   * task's tools must be within the function's `agent.tools`. Its tools are
+   * pinned by the caller (`pin`), under the installation's own grant.
+   */
+  async stageAgentTask(
+    lease: Lease,
+    raw: unknown,
+    pin: (
+      tx: Tx,
+      groups: string[],
+    ) => Promise<{
+      tools: unknown[];
+      extensionTools: Record<string, { registrationId: string; tool: string }>;
+      baseSystemPrompt: string;
+    }>,
+  ) {
+    const request = parseTaskRequest(raw);
+    return this.withLease(lease, async (tx, installation, job) => {
+      const fn = this.manifest({
+        ...installation,
+        release_digest: job.release_digest,
+      }).functions.find((f) => f.universalId === job.function_id);
+      const uses = (await this.jobReleaseUses(tx, installation, job)) ?? [];
+      if (!fn?.uses?.includes('agent') || !fn.agent || !uses.includes('agent'))
+        throw new AppError(
+          403,
+          'agent_not_granted',
+          "the function must declare uses: ['agent'] and the installation's grant must include it",
+        );
+      const granted = fn.agent.tools as string[];
+      const extra = request.tools.filter((group) => !granted.includes(group));
+      if (extra.length)
+        throw new AppError(
+          403,
+          'agent_tool_not_granted',
+          `the function's agent.tools does not list ${extra.map((group) => `"${group}"`).join(', ')}`,
+        );
+      const [count] = await tx<{ count: number }[]>`
+        select count(*)::int as count from agent_tasks where extension_job_id=${job.id} and state='staged'`;
+      if ((count?.count ?? 0) >= 10)
+        throw new AppError(429, 'agent_task_limit', 'a run stages at most 10 agent tasks');
+      const pinned = await pin(tx, request.tools);
+      const created = await createTask(tx, lease.workspaceId, {
+        key: `extension:${job.id}:${job.attempt}:${count?.count ?? 0}`,
+        parent: { kind: 'extension', jobId: job.id, installationId: installation.id },
+        mode: 'run',
+        request,
+        owner: `installation:${installation.id}`,
+        tools: pinned.tools,
+        extensionTools: pinned.extensionTools,
+        baseSystemPrompt: pinned.baseSystemPrompt,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        cause: job.cause,
+        causeDepth: job.cause_depth ?? job.cause.length,
+        state: 'staged',
+      });
+      return { taskId: created.sessionId };
+    });
   }
   async checkpoint(
     lease: Lease,

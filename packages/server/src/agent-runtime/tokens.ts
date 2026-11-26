@@ -19,8 +19,17 @@ import { isUuid } from '../db/ids.js';
  */
 export const STREAM_TOKEN_PREFIX = 'rt_agent_stream_';
 export const TURN_TOKEN_PREFIX = 'rt_agent_turn_';
+/**
+ * A task job's delivery (agent spec §9.3): the dispatcher hands it to the
+ * runtime, which trades it, with the runtime credential, for a turn. Its
+ * row is the task's own; a new delivery replaces it.
+ */
+export const JOB_TOKEN_PREFIX = 'rt_agent_job_';
 
-export type TokenPrefix = typeof STREAM_TOKEN_PREFIX | typeof TURN_TOKEN_PREFIX;
+export type TokenPrefix =
+  | typeof STREAM_TOKEN_PREFIX
+  | typeof TURN_TOKEN_PREFIX
+  | typeof JOB_TOKEN_PREFIX;
 
 export type ParsedToken = { workspaceId: string; id: string; secret: string };
 

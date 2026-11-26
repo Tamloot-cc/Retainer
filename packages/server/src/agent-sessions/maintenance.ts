@@ -1,4 +1,5 @@
 import { eraseAgentContent, sweepAgentOrphans } from '../agent-runtime/erasure.js';
+import { expireTasks } from '../agent-runtime/tasks.js';
 import { GRACE_MS, timeOutTurns } from '../agent-runtime/turns.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace } from '../db/tx.js';
@@ -24,11 +25,15 @@ export async function maintainAgents(sql: Sql, discovery: Sql, deadline: number)
     if (Date.now() >= deadline) return;
     await inWorkspace(sql, workspace, async (tx) => {
       await timeOutTurns(tx);
+      // Tasks past their expiry or attempts, and runs waiting past theirs (§9.2).
+      await expireTasks(tx);
       await tx`delete from agent_stream_tokens where expires_at <= clock_timestamp()`;
       const expired = await tx<{ id: string }[]>`
         select s.id from agent_sessions s
         where s.kind = 'task' and s.last_active_at <= now() - ${TASK_RETENTION}::interval
           and not exists (select 1 from agent_turns t where t.session_id = s.id and t.status = 'running')
+          and not exists (select 1 from agent_tasks k where k.session_id = s.id
+            and k.state in ('staged', 'queued', 'running'))
         limit 100`;
       // A chat deleted mid-turn, once its runtime has stopped or run out of time.
       const deleted = await tx<{ id: string }[]>`

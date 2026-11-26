@@ -256,6 +256,8 @@ export async function closeTurn(
   token: string,
   sessionId: string,
   input: CloseInput,
+  /** Runs in the close's transaction; `closed` is whether this close ended the running turn. */
+  after?: (tx: Tx, closed: boolean) => Promise<void>,
 ): Promise<{ status: TurnStatus }> {
   return inWorkspace(sql, turnTokenWorkspace(token), async (tx) => {
     const verified = await verifyTurnToken(tx, token, sessionId, { lock: true });
@@ -272,6 +274,7 @@ export async function closeTurn(
     }
     await releaseLease(tx, turn);
     const status = turn.status === 'running' ? input.status : turn.status;
+    await after?.(tx, turn.status === 'running');
     return { status };
   });
 }
@@ -320,4 +323,20 @@ export async function admitAgentTurn(tx: Tx, binding: AgentBinding): Promise<voi
     where t.id = ${binding.turnId} and t.session_id = ${binding.sessionId}
     for share of t`;
   if (!row?.ok) throw turnCancelled();
+  // A task's grant is bound to its waiting parent (spec §9.2): a run that was
+  // cancelled, erased or expired, or replayed past the effect, ends it.
+  if (binding.task) {
+    const [grant] = await tx<{ ok: boolean }[]>`
+      select t.state = 'running' and t.expires_at > clock_timestamp() and (
+        (t.caller_kind = 'routine' and exists (
+          select 1 from routine_runs r join routine_run_results x on x.run_id = r.id
+          where r.id = t.routine_run_id and r.status = 'waiting'
+            and x.position = t.position and x.agent_task_id = t.session_id and x.state = 'started'))
+        or (t.caller_kind = 'extension' and exists (
+          select 1 from extension_jobs j where j.id = t.extension_job_id and j.status = 'waiting'
+            and j.agent_task_id = t.session_id))
+      ) as ok
+      from agent_tasks t where t.session_id = ${binding.sessionId} for share of t`;
+    if (!grant?.ok) throw turnCancelled("the task's caller no longer waits for it");
+  }
 }

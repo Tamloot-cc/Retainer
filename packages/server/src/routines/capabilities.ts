@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  AGENT_TOOL_GROUPS,
   aggregateOps,
   filterOperatorsFor,
   generateRoutineTypes,
@@ -23,6 +24,8 @@ export type RoutineConfig = {
   catalog?: RuntimeCatalog | undefined;
   /** Whether the server has a model key (§4.5). */
   modelAvailable: boolean;
+  /** Whether the workspace agent runs on this server, for `retainer.ai.agent` (agent spec §9.4). */
+  agentAvailable?: boolean | undefined;
 };
 
 /** The workspace's objects as routine code sees them: fields by key (§4.4). */
@@ -87,12 +90,28 @@ export async function capabilities(
   const tools = installed.map(
     ({ installationId, registrationId, functionId, releaseDigest, ...tool }) => tool,
   );
-  const types = generateRoutineTypes({ objects, tools, model: config.modelAvailable });
+  const agentAvailable = config.agentAvailable === true;
+  const types = generateRoutineTypes({
+    objects,
+    tools,
+    model: config.modelAvailable,
+    agent: agentAvailable,
+  });
   return {
     objects,
     tools,
     installed,
     model: { available: config.modelAvailable },
+    // The agent's tool groups (agent spec §9.4): extension tools only if they read.
+    agent: {
+      available: agentAvailable,
+      tools: [
+        ...AGENT_TOOL_GROUPS,
+        ...tools
+          .filter((tool) => tool.effect === 'read' && tool.status !== 'conflict')
+          .map((tool) => `tools.${tool.name}`),
+      ],
+    },
     timezone: workspace?.settings.timeZone ?? 'UTC',
     triggers: ['record', 'schedule', 'manual'],
     limits: ROUTINE_LIMITS,

@@ -201,6 +201,9 @@ importers:
       '@mastra/pg':
         specifier: 1.38.0
         version: 1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))
+      '@retainer/shared':
+        specifier: workspace:*
+        version: link:../shared
       hono:
         specifier: ^4.13.19
         version: 4.13.19

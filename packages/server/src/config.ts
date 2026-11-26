@@ -114,6 +114,20 @@ const configSchema = z
     RETAINER_AGENT_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
     /** Self-hosted: the agent container the server forwards a chat's stream to (agent spec §13). */
     RETAINER_AGENT_UPSTREAM: z.preprocess(emptyToUndefined, z.url().optional()),
+    /**
+     * Hosted: the `agent` function's name or ARN, invoked asynchronously with
+     * each task job (agent spec §9.3, §13). Self-hosted, task jobs go to
+     * RETAINER_AGENT_UPSTREAM.
+     */
+    RETAINER_AGENT_FUNCTION: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(
+          /^(arn:aws:lambda:[a-z0-9-]+:\d{12}:function:)?[A-Za-z0-9_-]{1,64}(:[A-Za-z0-9_$-]+)?$/,
+        )
+        .optional(),
+    ),
     RETAINER_AGENT_PERSON_DAILY_STEPS: z.coerce.number().int().min(1).default(2000),
     RETAINER_AGENT_WORKSPACE_DAILY_STEPS: z.coerce.number().int().min(1).default(20000),
     RETAINER_EXECUTOR_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
@@ -466,5 +480,6 @@ export function agentApiConfig(config: Config) {
     readStoreUrl: config.RETAINER_MASTRA_DATABASE_URL,
     personDailySteps: config.RETAINER_AGENT_PERSON_DAILY_STEPS,
     workspaceDailySteps: config.RETAINER_AGENT_WORKSPACE_DAILY_STEPS,
+    tasks: !!(config.RETAINER_AGENT_FUNCTION || config.RETAINER_AGENT_UPSTREAM),
   };
 }

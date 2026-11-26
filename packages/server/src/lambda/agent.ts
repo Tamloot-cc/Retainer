@@ -1,4 +1,10 @@
-import { createAgentApp, loadAgentRuntimeConfig, quietMastra } from '@retainer/agent/runtime';
+import {
+  createAgentApp,
+  loadAgentRuntimeConfig,
+  quietMastra,
+  RuntimeApi,
+  runTask,
+} from '@retainer/agent/runtime';
 import { streamHandle } from 'hono/aws-lambda';
 import { HOSTED_WRITER_BUILD } from '../db/writer-build.js';
 
@@ -14,12 +20,10 @@ const FINAL_WRITES_MS = 30_000;
 
 type LambdaEnv = { lambdaContext?: { getRemainingTimeInMillis?: () => number } };
 
-declare const awslambda: unknown;
 const inLambda = typeof awslambda !== 'undefined';
 
 function createApp() {
-  quietMastra();
-  const config = loadAgentRuntimeConfig();
+  if (!config) throw new Error('no agent runtime configuration');
   return createAgentApp({
     apiOrigin: config.apiOrigin,
     runtimeSecret: config.runtimeSecret,
@@ -35,9 +39,60 @@ function createApp() {
   });
 }
 
+type LambdaContext = { getRemainingTimeInMillis(): number };
+type ResponseStream = { end(): void };
+declare const awslambda: {
+  streamifyResponse(
+    handler: (event: unknown, stream: ResponseStream, context: LambdaContext) => Promise<void>,
+  ): unknown;
+};
+
+/** A task job's native event, sent by the dispatcher's asynchronous invoke (spec §9.3). */
+function taskEvent(event: unknown): { sessionId: string; job: string } | undefined {
+  if (!event || typeof event !== 'object') return undefined;
+  const { kind, sessionId, job } = event as Record<string, unknown>;
+  if (kind !== 'agent-task' || typeof sessionId !== 'string' || typeof job !== 'string')
+    return undefined;
+  return { sessionId, job };
+}
+
 /** Built at initialization, so a function missing its configuration fails to start. */
-const app = inLambda ? createApp() : undefined;
-/** The Lambda entry point (`dist/lambda/agent.handler`), streamed through the function URL. */
-export const handler: ReturnType<typeof streamHandle> | undefined = app
-  ? streamHandle(app)
-  : undefined;
+const config = inLambda ? (quietMastra(), loadAgentRuntimeConfig()) : undefined;
+const app = config ? createApp() : undefined;
+const stream = app ? streamHandle(app) : undefined;
+
+/**
+ * The Lambda entry point (`dist/lambda/agent.handler`): a chat's stream
+ * through the function URL, or a task job's native event, which runs to its
+ * close within this invocation.
+ */
+export const handler =
+  inLambda && config && stream
+    ? awslambda.streamifyResponse(async (event, responseStream, context) => {
+        const task = taskEvent(event);
+        if (!task)
+          return (stream as never as (...args: unknown[]) => Promise<void>)(
+            event,
+            responseStream,
+            context,
+          );
+        try {
+          await runTask(
+            {
+              api: new RuntimeApi({
+                origin: config.apiOrigin,
+                runtimeSecret: config.runtimeSecret,
+              }),
+              mastraUrl: config.mastraUrl,
+            },
+            {
+              ...task,
+              notAfter: new Date(Date.now() + context.getRemainingTimeInMillis() - FINAL_WRITES_MS),
+              build: HOSTED_WRITER_BUILD || undefined,
+            },
+          );
+        } finally {
+          responseStream.end();
+        }
+      })
+    : undefined;

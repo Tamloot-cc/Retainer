@@ -2,6 +2,7 @@ import { runsHostedCode } from '@retainer/extension';
 import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { importJWK, importPKCS8, importSPKI } from 'jose';
 import { z } from 'zod';
+import { AgentTaskDispatcher, agentTaskDriver } from '../agent-sessions/dispatch.js';
 import { type Config, EXECUTOR_ROLE, ownerDatabaseUrl, SECRET_BROKER_ROLE } from '../config.js';
 import { createSql, type Sql } from '../db/client.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
@@ -23,7 +24,14 @@ import {
 } from '../worker/lambda-driver.js';
 import { LauncherDriver } from '../worker/launch-driver.js';
 import { RoutineExecutor, RoutineMaintenance } from '../worker/routines.js';
+
 import { LauncherVerifier } from '../worker/verifier-driver.js';
+
+/** The task dispatcher (agent spec §9.3), where a runtime takes task jobs. */
+export function agentTasks(config: Config, sql: Sql, discovery: Sql) {
+  const driver = agentTaskDriver(config);
+  return driver ? new AgentTaskDispatcher(sql, discovery, driver) : undefined;
+}
 
 /** These are operator-provisioned release inputs. Workspace APIs cannot change them. */
 export async function extensionServices(
@@ -274,7 +282,12 @@ export async function extensionServices(
     // runs execute only where the routine runner bundle is deployed.
     const routineMaintenance =
       options.workerSql && discovery
-        ? new RoutineMaintenance(options.workerSql, discovery, routinesAvailable)
+        ? new RoutineMaintenance(
+            options.workerSql,
+            discovery,
+            routinesAvailable,
+            agentTasks(config, options.workerSql, discovery),
+          )
         : undefined;
     let routineExecutor: RoutineExecutor | undefined;
     if (options.workerSql && discovery && tokens && routinesAvailable) {

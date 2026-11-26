@@ -97,6 +97,7 @@ const RUN_STATUS: Record<RoutineRunStatus, { label: string; tone: Tone }> = {
   queued: { label: 'Waiting to start', tone: 'pending' },
   held: { label: 'Held', tone: 'pending' },
   running: { label: 'Running', tone: 'pending' },
+  waiting: { label: 'Waiting for the agent', tone: 'pending' },
   succeeded: { label: 'Done', tone: 'success' },
   failed: { label: 'Failed', tone: 'error' },
   skipped: { label: 'Skipped', tone: 'neutral' },
@@ -110,11 +111,13 @@ const RUN_STATUS: Record<RoutineRunStatus, { label: string; tone: Tone }> = {
 export const runStatus = (status: RoutineRunStatus) =>
   RUN_STATUS[status] ?? { label: plain(status), tone: 'neutral' as Tone };
 export const runFinished = (status: RoutineRunStatus) =>
-  !['queued', 'held', 'running'].includes(status);
+  !['queued', 'held', 'running', 'waiting'].includes(status);
 
 /** What a run's status means, when the word alone is not enough. */
 export const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
   held: 'It waits for an admin to run or discard it.',
+  waiting:
+    'It handed the workspace agent a task and continues from the start when the answer arrives.',
   skipped: 'Its condition did not match when it started, or it had already acted on this record.',
   expired: 'It ran past its time limit and did nothing more.',
   stopped: 'The routine was paused or archived while it ran, so it did nothing more.',
@@ -143,6 +146,7 @@ const OPERATIONS: Record<string, string> = {
   remember: 'Remember a fact',
   tool: 'Call a tool',
   'ai.generate': 'Ask the model',
+  'ai.agent': 'Ask the agent',
 };
 export const operationText = (operation: string) => OPERATIONS[operation] ?? operation;
 

@@ -1,4 +1,5 @@
 import { type Actor, ROUTINE_LIMITS, type RoutineRunMode } from '@retainer/shared';
+import { cancelRunTasks } from '../agent-runtime/tasks.js';
 import { jsonValue, type Tx } from '../db/tx.js';
 
 /** A run's lease outlasts its deadline by this much, to record the outcome. */
@@ -66,11 +67,20 @@ export async function pauseRoutine(
   if (!paused) return false;
   await tx`update routine_runs set status='held',code=${reason}
     where routine_id=${routineId} and mode='run' and status='queued' and attempt=0`;
-  await tx`update routine_runs set status='stopped',code=${reason},fence=fence+1,
+  const stopped = await tx<
+    { id: string }[]
+  >`update routine_runs set status='stopped',code=${reason},fence=fence+1,
     finished_at=clock_timestamp(),lease_owner=null,lease_until=null,
     input=nullif(input-'triggerRecord','{}'::jsonb)
     where routine_id=${routineId} and mode='run'
-      and (status='running' or (status='queued' and attempt>0))`;
+      and (status in ('running','waiting') or (status='queued' and attempt>0))
+    returning id`;
+  // A run waiting on an agent task stops, and so does its task (agent spec §9.2).
+  await cancelRunTasks(
+    tx,
+    stopped.map((run) => run.id),
+    'routine_paused',
+  );
   return true;
 }
 

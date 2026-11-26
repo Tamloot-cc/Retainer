@@ -27,7 +27,7 @@ export async function moveRoutineRecord(tx: Tx, workspace: string, from: string,
   // running: both started before the merge, and this one keeps the old ID
   // until it ends. The claim resolves it again for a retry.
   await tx`update routine_runs f set record_id=${to},updated_at=clock_timestamp()
-    where f.workspace_id=${workspace} and f.record_id=${from} and f.mode='run' and f.status='running'
+    where f.workspace_id=${workspace} and f.record_id=${from} and f.mode='run' and f.status in ('running','waiting')
       and not exists(select 1 from routine_runs s where s.workspace_id=${workspace}
-        and s.routine_id=f.routine_id and s.record_id=${to} and s.mode='run' and s.status='running')`;
+        and s.routine_id=f.routine_id and s.record_id=${to} and s.mode='run' and s.status in ('running','waiting'))`;
 }

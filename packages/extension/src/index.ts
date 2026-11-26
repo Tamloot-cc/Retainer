@@ -11,7 +11,7 @@ export {
   satisfiesServerRange,
 } from './semver.js';
 
-import { type Actor, FIELD_TYPES, isInverseRelation } from '@retainer/shared';
+import { type Actor, agentToolGroupSchema, FIELD_TYPES, isInverseRelation } from '@retainer/shared';
 import { z } from 'zod';
 
 /** The icons a sidebar link may name; the web app draws each. */
@@ -28,7 +28,7 @@ export type SidebarIcon = (typeof SIDEBAR_ICONS)[number];
 /** The query parameter a sidebar link carries, naming the installation, for the app's sign-in. */
 export const SIDEBAR_INSTALLATION_PARAM = 'retainer_installation';
 /** Capabilities a function may declare in `uses`; open for later ones (model calls spec 11). */
-export const EXTENSION_USES = ['model'] as const;
+export const EXTENSION_USES = ['model', 'agent'] as const;
 export type ExtensionUse = (typeof EXTENSION_USES)[number];
 /**
  * What approving `model` means, in plain words, wherever access is shown
@@ -37,6 +37,25 @@ export type ExtensionUse = (typeof EXTENSION_USES)[number];
  */
 export const MODEL_USE_NOTICE =
   'When this extension uses a model, it sends the workspace data involved to Anthropic for processing.';
+/**
+ * What approving `agent` means (agent spec §9.4): the agent's tool groups in
+ * plain words, then the model notice, since what it reads goes to Anthropic.
+ */
+export function agentUseNotice(tools: readonly string[]): string {
+  const can = [
+    tools.includes('retainer.read') ? 'read this workspace' : undefined,
+    tools.includes('retainer.write') ? 'write to it' : undefined,
+    tools.includes('web.search') ? 'search the web' : undefined,
+    tools.some((tool) => tool.startsWith('tools.'))
+      ? "call this workspace's read tools"
+      : undefined,
+  ].filter(Boolean);
+  const list =
+    can.length > 1 ? `${can.slice(0, -1).join(', ')} and ${can.at(-1)}` : (can[0] ?? 'work');
+  return `Uses an agent that can ${list}.${
+    tools.includes('web.search') ? ' Workspace data it reads can appear in its searches.' : ''
+  } ${MODEL_USE_NOTICE}`;
+}
 export const TAMLOOT_REGISTRATION_ID = '54326882-cc28-4983-a5fe-cf0298520b68';
 /**
  * The installation setting that chooses what happens when the source deletes
@@ -220,11 +239,25 @@ const functionDefinition = z.strictObject({
    * its function declares it and the installation's grant includes it.
    */
   uses: z.array(z.enum(EXTENSION_USES)).min(1).optional(),
+  /**
+   * The workspace agent's tool groups for this function's tasks (agent spec
+   * §9.4), with `uses: ['agent']`. Reviewed and approved with the release.
+   */
+  agent: z.strictObject({ tools: z.array(agentToolGroupSchema).min(1).max(20) }).optional(),
 });
-export const functionSchema = functionDefinition.refine(
-  (fn) => (fn.trigger.kind === 'tool' ? toolName : name).safeParse(fn.name).success,
-  { path: ['name'], message: 'invalid name for function trigger' },
-);
+export const functionSchema = functionDefinition
+  .refine((fn) => (fn.trigger.kind === 'tool' ? toolName : name).safeParse(fn.name).success, {
+    path: ['name'],
+    message: 'invalid name for function trigger',
+  })
+  .refine((fn) => !!fn.agent === !!fn.uses?.includes('agent'), {
+    path: ['agent'],
+    message: "a function that uses the agent lists its tools in agent.tools, with uses: ['agent']",
+  })
+  .refine((fn) => !fn.agent || fn.trigger.kind !== 'tool', {
+    path: ['agent'],
+    message: 'a tool cannot hand tasks to the agent',
+  });
 const toolDefinition = functionDefinition
   .omit({ trigger: true })
   .extend({ ...toolTrigger.omit({ kind: true }).shape, name: toolName });
@@ -1250,6 +1283,7 @@ export type ExtensionAppLink = {
   url: string;
 };
 
+export * from './agent.js';
 export * from './model.js';
 export * from './protocol.js';
 export * from './webhook.js';

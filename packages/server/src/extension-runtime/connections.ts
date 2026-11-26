@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { cancelJobTasks } from '../agent-runtime/tasks.js';
 import type { Tx } from '../db/tx.js';
 import { requestHash } from '../idempotency.js';
 import { lockExtension, lockQueue } from './locks.js';
@@ -16,8 +17,14 @@ export async function disconnectConnection(tx: Tx, workspace: string, id: string
   if (!connection || connection.state === 'disconnected') return false;
   await tx`update extension_attempts set status='cancelled',code='connection_disconnected',finished_at=clock_timestamp()
     where finished_at is null and job_id in(select id from extension_jobs where connection_id=${id})`;
-  await tx`update extension_jobs set status='cancelled',code='connection_disconnected',lease_owner=null,lease_until=null,run_until=null,updated_at=now()
-    where connection_id=${id} and status in ('queued','running')`;
+  const cancelled = await tx<
+    { id: string }[]
+  >`update extension_jobs set status='cancelled',code='connection_disconnected',lease_owner=null,lease_until=null,run_until=null,updated_at=now()
+    where connection_id=${id} and status in ('queued','running','waiting') returning id`;
+  await cancelJobTasks(
+    tx,
+    cancelled.map((job) => job.id),
+  );
   await tx`delete from extension_schedules where connection_id=${id}`;
   await tx`delete from source_bindings where connection_id=${id}`;
   await tx`delete from source_sync_state where connection_id=${id}`;

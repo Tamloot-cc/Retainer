@@ -32,7 +32,8 @@ The manifest is JSON:
     { "kind": "manual", "object": "<object name>", "label": "<button label>", "oncePerRecord"?: true }
   "if"?: <filter>,           // checked by Retainer before the code runs; the code never starts when it fails
   "expiry"?: { "field": "<date field key>" },  // the run is dropped once this date passes
-  "uses": { "tools": ["<tool name>"], "model": true | false }
+  "uses": { "tools": ["<tool name>"], "model": true | false },
+  "agent"?: { "tools": ["retainer.read" | "retainer.write" | "web.search" | "tools.<tool name>"] }  // only when the code calls retainer.ai.agent
 }
 "links" fires when an event gains a participant or about link (event types only).
 A filter uses field keys: { "<key>": { "eq" | "neq" | "in" | "contains" | "gt" | "gte" | "lt" | "lte" | "isNull": value }, "and"?: [...], "or"?: [...], "not"?: {...} }. Only filterable fields can be filtered.
@@ -48,7 +49,9 @@ The code:
 - returns a short JSON summary of what it did.
 - keeps conditions that only depend on the record in the manifest's "if", not in the code.
 - in a model call's output schema, uses only type, description, enum, properties, required, items and maxItems; Retainer enforces maxItems on the answer.
-- in a dry run (run.dryRun), gets writes back in their usual shape, but nothing is written.`;
+- in a dry run (run.dryRun), gets writes back in their usual shape, but nothing is written.
+- uses retainer.ai.agent only when the work needs a lookup the code can't make itself (searching the web, reading around the workspace); for anything a single answer from the given data can do, it uses retainer.ai.generate. It lists in agent.tools only the groups the task needs, and a tools.<name> group only for a read tool that is also in uses.tools.
+- before retainer.ai.agent, takes the task's input from the trigger record (record, which replays unchanged) and doesn't read or write what the run or its task writes: the run waits for the answer and then runs again from the top, and if what it read changed meanwhile it stops.`;
 
 function instructions(
   caps: Omit<RoutineCapabilities, 'types' | 'typesFingerprint'>,
@@ -58,7 +61,7 @@ function instructions(
 
 ${MANIFEST_GUIDE}
 
-The workspace's time zone is ${caps.timezone}. ${caps.model.available ? 'A model is available to routine code.' : 'No model is available: routine code cannot call retainer.ai.generate.'}
+The workspace's time zone is ${caps.timezone}. ${caps.model.available ? 'A model is available to routine code.' : 'No model is available: routine code cannot call retainer.ai.generate.'} ${caps.agent?.available ? `The workspace agent is available to routine code, with these tool groups: ${caps.agent.tools.join(', ')}.` : 'No workspace agent is available: routine code cannot call retainer.ai.agent.'}
 Limits: ${JSON.stringify(caps.limits)}.
 
 The SDK's types, generated from this workspace:

@@ -584,6 +584,8 @@ function Runs({ routineId, runs }: { routineId: string; runs: RoutineRunView[] }
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm hover:bg-hover"
             >
               <Badge tone={tone}>{label}</Badge>
+              {run.needsAttention ? <Badge tone="error">Needs attention</Badge> : null}
+              {run.agentAnswerUnused ? <Badge>Agent answer unused</Badge> : null}
               <span>{triggerText(run.trigger)}</span>
               {run.recordId ? (
                 <Muted small>

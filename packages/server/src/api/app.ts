@@ -106,6 +106,8 @@ export type AppDeps = {
     workspaceDailySteps?: number;
     /** How long one extension tool request waits before answering `pending`. */
     extensionWaitMs?: number;
+    /** Whether task jobs reach a runtime (agent spec §9.3); defaults to true. */
+    tasks?: boolean;
   };
   routines?: {
     available?: boolean;
@@ -151,27 +153,31 @@ export function createApp(deps: AppDeps) {
   });
 
   // Before /v1's authentication: these routes take their own credentials.
-  const agent = deps.agent?.runtimeSecret
-    ? new AgentSessions(
-        deps.sql,
-        agentToolHost(deps.sql, {
-          extensionCatalog: deps.extensionCatalog,
-          extensionActivation: deps.extensionActivation,
-          fileStorage: deps.fileStorage,
-          fileQuota: deps.fileQuota,
-        }),
-        {
-          runtimeSecret: deps.agent.runtimeSecret,
-          agentOrigin: deps.agent.origin,
-          readStoreUrl: deps.agent.readStoreUrl,
-          personDailySteps: deps.agent.personDailySteps ?? 2000,
-          workspaceDailySteps: deps.agent.workspaceDailySteps ?? 20000,
-          keys: !deps.accountsSecret,
-          extensionWaitMs: deps.agent.extensionWaitMs,
-        },
-        agentExtensions(deps.sql, deps.extensionCatalog ?? new ExtensionCatalog()),
-      )
+  const agentTools = deps.agent?.runtimeSecret
+    ? agentToolHost(deps.sql, {
+        extensionCatalog: deps.extensionCatalog,
+        extensionActivation: deps.extensionActivation,
+        fileStorage: deps.fileStorage,
+        fileQuota: deps.fileQuota,
+      })
     : undefined;
+  const agent =
+    deps.agent?.runtimeSecret && agentTools
+      ? new AgentSessions(
+          deps.sql,
+          agentTools,
+          {
+            runtimeSecret: deps.agent.runtimeSecret,
+            agentOrigin: deps.agent.origin,
+            readStoreUrl: deps.agent.readStoreUrl,
+            personDailySteps: deps.agent.personDailySteps ?? 2000,
+            workspaceDailySteps: deps.agent.workspaceDailySteps ?? 20000,
+            keys: !deps.accountsSecret,
+            extensionWaitMs: deps.agent.extensionWaitMs,
+          },
+          agentExtensions(deps.sql, deps.extensionCatalog ?? new ExtensionCatalog()),
+        )
+      : undefined;
   if (agent) agentRuntimeRoutes(app, agent);
   if (!deps.agent?.origin) agentStreamForward(app, agent ? deps.agent?.upstream : undefined);
 
@@ -222,13 +228,22 @@ export function createApp(deps: AppDeps) {
   );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
   changeRoutes(v1, deps.sql, extensions.catalog);
-  runtimeRoutes(v1, deps.sql, extensions.catalog, deps.extensionSecrets, extensions.oauthClients);
+  runtimeRoutes(
+    v1,
+    deps.sql,
+    extensions.catalog,
+    deps.extensionSecrets,
+    extensions.oauthClients,
+    deps.agent?.tasks === false ? undefined : agentTools,
+  );
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
   const routineConfig = {
     catalog: extensions.catalog.runtime,
     modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
+    // `retainer.ai.agent` needs the agent's runtime and a way to deliver task jobs.
+    agentAvailable: !!agent && (deps.agent?.tasks ?? true),
   };
   if (routinesAvailable && deps.runTokens) {
     routineRoutes(v1, new Routines(deps.sql, routineConfig));
@@ -243,6 +258,7 @@ export function createApp(deps: AppDeps) {
         modelOrigin: deps.routines?.modelOrigin ?? MODEL_PROXY_PATH,
         modelName: deps.routines?.modelName ?? 'claude-opus-5-5',
         modelCallsPerDay: deps.routines?.modelCallsPerDay ?? ROUTINE_LIMITS.modelCallsPerDay,
+        agentTools,
       }),
     );
   }
