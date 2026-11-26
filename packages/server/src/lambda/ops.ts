@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { migrateAgentStore } from '../agent-runtime/store-migration.js';
 import { type Config, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createSql, type Sql } from '../db/client.js';
 import { applyLogins, loginsPending } from '../db/logins.js';
@@ -382,7 +383,7 @@ export function createOpsHandler(
     if (command.command === 'migrate') {
       const sql = createSql(databaseUrl, { max: 1, keepConnections: true });
       try {
-        return await withMigrationLock(sql, command.waitSeconds, async (tx) => {
+        const migrated = await withMigrationLock(sql, command.waitSeconds, async (tx) => {
           const admission = await requireMigrationOwnership(
             tx,
             command.writerAdmission,
@@ -408,7 +409,7 @@ export function createOpsHandler(
           if (command.writerAdmission)
             await tx`update retainer_deploy.admission set migrated = true where singleton`;
           return {
-            command: 'migrate',
+            command: 'migrate' as const,
             logins,
             rebuiltSearchText,
             workspaceUpgrade,
@@ -418,6 +419,10 @@ export function createOpsHandler(
               : {}),
           };
         });
+        // Mastra's tables for the workspace agent, once Drizzle's journal has
+        // committed (agent spec §5.2). Idempotent, so a retry repeats it.
+        await migrateAgentStore(databaseUrl);
+        return migrated;
       } finally {
         await sql.end({ timeout: 5 });
       }

@@ -308,6 +308,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.4.0
         version: 2.4.0
+      '@retainer/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@retainer/extension':
         specifier: workspace:*
         version: link:../extension

@@ -1,7 +1,7 @@
 import { handle, type LambdaContext, type LambdaEvent } from 'hono/aws-lambda';
 import type { AppDeps } from '../api/app.js';
 import { createApp } from '../api/app.js';
-import { type Config, loadConfig, rateLimitPerMinute } from '../config.js';
+import { agentApiConfig, type Config, loadConfig, rateLimitPerMinute } from '../config.js';
 import { createApiSql, type Sql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
@@ -39,6 +39,7 @@ export function createApiHandler(
     accountsSecret: config.RETAINER_AUTH_SECRET,
     rateLimit: { limit: rateLimitPerMinute(config) },
     clientIp: (c) => clientIpOf((c.env as { event?: unknown }).event, config.RETAINER_EDGE_SECRET),
+    agent: agentApiConfig(config),
     // The API issues routine-only credentials for the hosted model proxy.
     routines: {
       available: routinesAvailable,

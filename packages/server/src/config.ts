@@ -34,6 +34,8 @@ export const RUNTIME_ROLE = 'retainer_app';
 export const CONTROL_ROLE = 'retainer_control';
 export const SECRET_BROKER_ROLE = 'retainer_secret_broker';
 export const EXECUTOR_ROLE = 'retainer_executor';
+/** The workspace agent's store role (agent spec §3.2): DML on the `mastra` schema only. */
+export const MASTRA_ROLE = 'retainer_mastra';
 
 export const emptyToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
@@ -94,6 +96,26 @@ const configSchema = z
     RETAINER_CONTROL_DATABASE_URL: loginUrl(CONTROL_ROLE),
     RETAINER_SECRET_BROKER_DATABASE_URL: loginUrl(SECRET_BROKER_ROLE),
     RETAINER_EXECUTOR_DATABASE_URL: loginUrl(EXECUTOR_ROLE),
+    /**
+     * A login as `retainer_mastra` (agent spec §3.2, D8): the agent runtime's
+     * only database credential, and the API's read-only store for the chat
+     * read endpoint. The owner sets its password on boot or migration.
+     */
+    RETAINER_MASTRA_DATABASE_URL: loginUrl(MASTRA_ROLE),
+    /**
+     * The secret the API and the agent runtime share (agent spec §7.3). Unset
+     * turns the workspace agent off: chats answer 503 agent_unavailable.
+     */
+    RETAINER_AGENT_RUNTIME_SECRET: z.preprocess(
+      emptyToUndefined,
+      z.string().min(32, 'use at least 32 characters').optional(),
+    ),
+    /** Hosted: the agent function URL's origin, which clients stream from (agent spec §13). */
+    RETAINER_AGENT_ORIGIN: z.preprocess(emptyToUndefined, publicOriginSchema.optional()),
+    /** Self-hosted: the agent container the server forwards a chat's stream to (agent spec §13). */
+    RETAINER_AGENT_UPSTREAM: z.preprocess(emptyToUndefined, z.url().optional()),
+    RETAINER_AGENT_PERSON_DAILY_STEPS: z.coerce.number().int().min(1).default(2000),
+    RETAINER_AGENT_WORKSPACE_DAILY_STEPS: z.coerce.number().int().min(1).default(20000),
     RETAINER_EXECUTOR_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),
     RETAINER_EXTENSION_DRIVER: z.enum(['launcher', 'lambda']).default('launcher'),
     RETAINER_EXTENSION_LAMBDA_PREFIX: z.preprocess(
@@ -433,4 +455,16 @@ const client = (clientId?: string, clientSecret?: string): OAuthClient | undefin
 /** The providers an accounts config turns on, in the sign-in page's order. */
 export function signInProviders(config: AccountsConfig): SignInProvider[] {
   return SIGN_IN_PROVIDERS.filter((provider) => config[provider]);
+}
+
+/** The workspace agent's settings for the API (agent spec §6.1, §10.1, §13). */
+export function agentApiConfig(config: Config) {
+  return {
+    runtimeSecret: config.RETAINER_AGENT_RUNTIME_SECRET,
+    origin: config.RETAINER_AGENT_ORIGIN,
+    upstream: config.RETAINER_AGENT_UPSTREAM,
+    readStoreUrl: config.RETAINER_MASTRA_DATABASE_URL,
+    personDailySteps: config.RETAINER_AGENT_PERSON_DAILY_STEPS,
+    workspaceDailySteps: config.RETAINER_AGENT_WORKSPACE_DAILY_STEPS,
+  };
 }

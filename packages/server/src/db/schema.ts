@@ -3081,6 +3081,15 @@ export const aiUsage = pgTable(
     /** Routine calls (routines spec §6.3): the routine and the run that made it. */
     routineId: uuid('routine_id'),
     routineRunId: uuid('routine_run_id'),
+    /**
+     * Workspace agent steps (agent spec §10.3): the session, its turn and the
+     * step the runtime reported, and the person a chat works for. A repeated
+     * report of one step is a no-op.
+     */
+    agentSessionId: uuid('agent_session_id'),
+    agentTurnId: uuid('agent_turn_id'),
+    agentStepId: text('agent_step_id'),
+    userId: uuid('user_id'),
     /** The model named in the response, which can differ from the one requested. */
     model: text('model').notNull(),
     inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
@@ -3100,8 +3109,11 @@ export const aiUsage = pgTable(
     check('ai_usage_kind', sql`${t.kind} in ('model', 'agent', 'routine')`),
     check(
       'ai_usage_caller',
-      sql`(${t.kind} = 'routine' and ${t.routineRunId} is not null) or (${t.kind} <> 'routine' and ${t.installationId} is not null and ${t.registrationId} is not null and ${t.releaseDigest} is not null and ${t.functionId} is not null and ${t.jobId} is not null)`,
+      sql`(${t.kind} = 'routine' and ${t.routineRunId} is not null) or (${t.kind} = 'agent' and ${t.agentSessionId} is not null and ${t.agentStepId} is not null) or (${t.kind} = 'model' and ${t.installationId} is not null and ${t.registrationId} is not null and ${t.releaseDigest} is not null and ${t.functionId} is not null and ${t.jobId} is not null)`,
     ),
+    uniqueIndex('ai_usage_agent_step_uq')
+      .on(t.agentSessionId, t.agentStepId)
+      .where(sql`${t.kind} = 'agent'`),
     index('ai_usage_routine_idx').on(t.workspaceId, t.routineId, t.createdAt),
     check(
       'ai_usage_tokens',
@@ -3518,5 +3530,151 @@ export const routineModelDays = pgTable(
     primaryKey({ columns: [t.workspaceId, t.day] }),
     check('routine_model_days_count', sql`${t.count} >= 0`),
     tenantPolicy('routine_model_days_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * A workspace agent session (agent spec §5.1): a chat a person opens, or
+ * later a task code hands the agent. Its tools and system blocks are pinned
+ * when it is created (§3.5, §8.3); its history lives in Mastra's tables in
+ * the `mastra` schema, keyed by this ID.
+ */
+export const agentSessions = pgTable(
+  'agent_sessions',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text('kind').notNull(),
+    /** Who the session belongs to: `user:<id>` for a person, `key:<actor id>` in key mode. */
+    owner: text('owner').notNull(),
+    /** The person a chat works for, whose `me` memory it reaches. Null in key mode. */
+    personId: uuid('person_id'),
+    title: text('title').notNull().default(''),
+    status: text('status').notNull().default('open'),
+    /** The pinned tool definitions, in order, as the runtime builds them. */
+    tools: jsonb('tools').notNull(),
+    /** Pinned extension tool names to the installation and tool they call. */
+    extensionTools: jsonb('extension_tools')
+      .$type<Record<string, { registrationId: string; tool: string }>>()
+      .notNull()
+      .default({}),
+    /** The system prompt blocks, pinned so the prompt cache and thinking stay valid. */
+    systemBlocks: jsonb('system_blocks').$type<string[]>().notNull(),
+    /** The workspace date (YYYY-MM-DD) the last turn told the agent. */
+    lastDate: text('last_date'),
+    /** The claim generation: each claim takes the next one (§6.3). */
+    generation: integer('generation').notNull().default(0),
+    limits: jsonb('limits').$type<Record<string, number>>().notNull(),
+    createdAt: createdAt(),
+    lastActiveAt: timestamptz('last_active_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique('agent_sessions_ws_id_uq').on(t.workspaceId, t.id),
+    index('agent_sessions_owner_idx').on(t.workspaceId, t.owner, t.lastActiveAt),
+    check('agent_sessions_kind', sql`${t.kind} in ('chat', 'task')`),
+    check('agent_sessions_status', sql`${t.status} in ('open')`),
+    tenantPolicy('agent_sessions_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * One claimed turn of a session (§6.3): its lease, its credential's hash and
+ * what it used. IDs and counts only, never content.
+ */
+export const agentTurns = pgTable(
+  'agent_turns',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    sessionId: uuid('session_id').notNull(),
+    generation: integer('generation').notNull(),
+    status: text('status').notNull().default('running'),
+    /** The Mastra run ID the claim issued, so the erasure can find the run's rows. */
+    runId: uuid('run_id').notNull(),
+    /** SHA-256 of the turn token's secret. */
+    tokenHash: text('token_hash').notNull(),
+    /** The credential that minted the turn, re-checked on every call (§7.3). */
+    access: jsonb('access').notNull(),
+    claimedAt: timestamptz('claimed_at').notNull().defaultNow(),
+    deadline: timestamptz('deadline').notNull(),
+    /** The runtime closed its side: it saves nothing more (§6.3). */
+    stoppedAt: timestamptz('stopped_at'),
+    finishedAt: timestamptz('finished_at'),
+    /** The hosted writer lease the claim took for the agent function's build (§10.2). */
+    leaseId: uuid('lease_id'),
+    leaseBuild: text('lease_build'),
+    steps: integer('steps').notNull().default(0),
+    toolCalls: integer('tool_calls').notNull().default(0),
+    webSearches: integer('web_searches').notNull().default(0),
+    webFetches: integer('web_fetches').notNull().default(0),
+    inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+    outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
+    cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),
+    cacheWriteTokens: bigint('cache_write_tokens', { mode: 'number' }).notNull().default(0),
+    errorCode: text('error_code'),
+    durationMs: integer('duration_ms'),
+  },
+  (t) => [
+    unique('agent_turns_ws_id_uq').on(t.workspaceId, t.id),
+    unique('agent_turns_generation_uq').on(t.sessionId, t.generation),
+    tenantFk(
+      'agent_turns_session_fk',
+      [t.workspaceId, t.sessionId],
+      [agentSessions.workspaceId, agentSessions.id],
+    ),
+    index('agent_turns_workspace_idx').on(t.workspaceId),
+    index('agent_turns_run_idx').on(t.runId),
+    index('agent_turns_open_idx')
+      .on(t.deadline)
+      .where(sql`${t.status} = 'running' or ${t.stoppedAt} is null`),
+    check(
+      'agent_turns_status',
+      sql`${t.status} in ('running', 'completed', 'refused', 'incomplete', 'context_limit_reached', 'model_unavailable', 'history_rejected', 'limit_reached', 'cancelled', 'timed_out', 'failed')`,
+    ),
+    tenantPolicy('agent_turns_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * A client's credential for a chat's stream (§7.3): it can start a turn on
+ * one chat and nothing else. Only its hash is kept; it lasts 15 minutes.
+ */
+export const agentStreamTokens = pgTable(
+  'agent_stream_tokens',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    sessionId: uuid('session_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    /** The credential it was minted from (a person's session, the CLI login or a key). */
+    access: jsonb('access').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    tenantFk(
+      'agent_stream_tokens_session_fk',
+      [t.workspaceId, t.sessionId],
+      [agentSessions.workspaceId, agentSessions.id],
+    ),
+    index('agent_stream_tokens_session_idx').on(t.workspaceId, t.sessionId),
+    index('agent_stream_tokens_expiry_idx').on(t.expiresAt),
+    tenantPolicy('agent_stream_tokens_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/** Agent steps per UTC day, for the workspace (`workspace`) and each owner (§10.1). */
+export const agentDays = pgTable(
+  'agent_days',
+  {
+    workspaceId: workspaceId(),
+    day: date('day').notNull(),
+    subject: text('subject').notNull(),
+    steps: integer('steps').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.day, t.subject] }),
+    check('agent_days_steps', sql`${t.steps} >= 0`),
+    tenantPolicy('agent_days_workspace', t.workspaceId),
   ],
 ).enableRLS();

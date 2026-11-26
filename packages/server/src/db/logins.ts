@@ -4,6 +4,7 @@ import {
   CONTROL_ROLE,
   type Config,
   EXECUTOR_ROLE,
+  MASTRA_ROLE,
   passwordOf,
   SECRET_BROKER_ROLE,
 } from '../config.js';
@@ -14,6 +15,7 @@ const LOGIN_ROLES = {
   [RUNTIME_ROLE]: null,
   [SECRET_BROKER_ROLE]: null,
   [EXECUTOR_ROLE]: null,
+  [MASTRA_ROLE]: null,
   // Seeds a new workspace by switching to the runtime role, without
   // inheriting its privileges (drizzle/0027_accounts_security.sql).
   [CONTROL_ROLE]: RUNTIME_ROLE,
@@ -76,6 +78,8 @@ export async function applyLogins(
     );
   if (config.RETAINER_EXECUTOR_DATABASE_URL)
     await setRoleLogin(owner, EXECUTOR_ROLE, passwordOf(config.RETAINER_EXECUTOR_DATABASE_URL));
+  if (config.RETAINER_MASTRA_DATABASE_URL)
+    await setRoleLogin(owner, MASTRA_ROLE, passwordOf(config.RETAINER_MASTRA_DATABASE_URL));
   return { runtime: runtime !== undefined, control: control !== undefined };
 }
 
@@ -147,6 +151,7 @@ export async function loginsPending(config: Config, owner: Sql): Promise<boolean
     [CONTROL_ROLE, config.RETAINER_CONTROL_DATABASE_URL],
     [SECRET_BROKER_ROLE, config.RETAINER_SECRET_BROKER_DATABASE_URL],
     [EXECUTOR_ROLE, config.RETAINER_EXECUTOR_DATABASE_URL],
+    [MASTRA_ROLE, config.RETAINER_MASTRA_DATABASE_URL],
   ] as const) {
     if (!url) continue;
     if ((await owner.begin((tx) => roleProblems(tx, role))).length > 0) return true;

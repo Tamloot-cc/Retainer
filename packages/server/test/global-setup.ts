@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import postgres from 'postgres';
 import type { TestProject } from 'vitest/node';
+import { migrateAgentStore } from '../src/agent-runtime/store-migration.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { databaseUrl } from './helpers/db.js';
 
@@ -41,6 +42,7 @@ export default async function setup(project: TestProject) {
   await admin.unsafe(`create database "${template}"`);
   try {
     await runMigrations(databaseUrl(adminUrl, template));
+    await migrateAgentStore(databaseUrl(adminUrl, template));
   } catch (error) {
     await admin.unsafe(`drop database if exists "${template}" with (force)`);
     await admin.end();

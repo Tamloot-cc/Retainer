@@ -4,6 +4,7 @@ import { createApp } from './api/app.js';
 import {
   accountsMode,
   accountsOrigin,
+  agentApiConfig,
   loadConfig,
   ownerDatabaseUrl,
   rateLimitPerMinute,
@@ -125,6 +126,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
             upstream: config.RETAINER_MODEL_UPSTREAM_ORIGIN,
           },
           modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
+          agent: agentApiConfig(config),
           routines: {
             available: extensions.routinesAvailable,
             modelAvailable: !!(config.RETAINER_MODEL_API_KEY || config.RETAINER_MODEL_ORIGIN),

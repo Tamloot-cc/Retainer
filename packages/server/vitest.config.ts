@@ -35,6 +35,7 @@ const alias = {
     new URL('../runner/src/enrichment.ts', import.meta.url),
   ),
   '@retainer/extension': fileURLToPath(new URL('../extension/src/index.ts', import.meta.url)),
+  '@retainer/agent': fileURLToPath(new URL('../agent/src/index.ts', import.meta.url)),
   '@retainer/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
   '@retainer/sdk': fileURLToPath(new URL('../sdk/src/index.ts', import.meta.url)),
 };

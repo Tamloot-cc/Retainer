@@ -1037,6 +1037,20 @@
       "when": 1795538454137,
       "tag": "0147_index_extension_jobs_by_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1795659685216,
+      "tag": "0148_agent_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1795659894142,
+      "tag": "0149_agent_security",
+      "breakpoints": true
     }
   ]
 }

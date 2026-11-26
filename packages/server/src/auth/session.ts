@@ -28,6 +28,7 @@ export async function lookupKey(sql: Sql, raw: string): Promise<Caller> {
     workspaceId: key.workspace_id,
     actor: key.actor,
     scopes: key.scopes,
+    apiKey: { hash },
     // A key made with "This agent works for me" (personal memory spec 4.3),
     // while its person still has a role in the workspace.
     ...(key.acts_for_user

@@ -1,4 +1,6 @@
+import { admitAgentTurn } from '../agent-runtime/turns.js';
 import type { Caller, InstallationBinding, RunBinding } from '../caller.js';
+import { recheckElevation } from '../db/cli.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
 import { admitRoutine } from '../routine-runtime/admission.js';
@@ -213,4 +215,9 @@ export async function admitCaller(
   if (caller.routine) await admitRoutine(tx, caller.workspaceId, caller.routine, write);
   if (caller.installation)
     await admitInstallation(tx, caller.workspaceId, caller.installation, write);
+  if (caller.agent) {
+    await admitAgentTurn(tx, caller.agent);
+    // A chat from the CLI writes only while that login is elevated here (agent spec §6.7).
+    if (write) await recheckElevation(tx, caller.agent.cli, 'editor');
+  }
 }

@@ -29,12 +29,16 @@ const LAYERS = [
       'schema',
       'extension-runtime',
       'routine-runtime',
+      'agent-runtime',
       'file-storage',
     ],
   ],
   ['core', ['records', 'memory', 'privacy', 'files', 'sources', 'changes']],
   ['features', ['views', 'comments', 'retrieval', 'reads']],
-  ['admin', ['schema-engine', 'templates', 'workspaces', 'extensions', 'routines']],
+  [
+    'admin',
+    ['schema-engine', 'templates', 'workspaces', 'extensions', 'routines', 'agent-sessions'],
+  ],
   [
     'interfaces',
     [
@@ -67,6 +71,11 @@ const ACCOUNTS_ENTRIES = ['packages/server/src/index.ts', 'packages/server/src/l
  * a model, so nothing else may import it.
  */
 const MODEL_IMPORTERS = ['api', 'extension-control', 'operator', 'lambda'];
+/**
+ * The core never reaches the workspace agent: `forget` doesn't touch agent
+ * sessions (agent spec §5.4), and the core never calls a model.
+ */
+const AGENT_MODULES = ['agent-runtime', 'agent-sessions'];
 
 const layerOf = new Map(LAYERS.flatMap(([, modules], i) => modules.map((m) => [m, i])));
 const layerName = (module) => LAYERS[layerOf.get(module)][0];
@@ -171,6 +180,9 @@ for (const file of sourceFiles(SERVER)) {
     }
     if (to === 'model' && from !== 'model' && !MODEL_IMPORTERS.includes(from)) {
       problems.push(`${name}: only ${MODEL_IMPORTERS.join(', ')} may import model`);
+    }
+    if (AGENT_MODULES.includes(to) && layerName(from) === 'core') {
+      problems.push(`${name}: the core must not import ${to}`);
     }
     if (to === from) continue;
     if (layerOf.get(to) > layerOf.get(from)) {

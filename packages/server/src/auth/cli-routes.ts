@@ -12,12 +12,28 @@ const v1Decisions = new RegExp(
   `^/v1/(assertions/${id}/(?:accept|reject)|review/merges/${id}/(?:merge|dismiss)|schema/changes/${id}/(?:approve|reject)|routines/${id}/(?:versions/${id}/reject|pause|resume)|extensions/${id}/(?:disable|uninstall))$`,
 );
 
+/**
+ * Chats with the workspace agent (agent spec §6.7): the CLI reaches them as
+ * itself, never as the person. The agent writes only while the login is
+ * elevated, checked at each write, and never reaches a decision route.
+ */
+const agentChats = new RegExp(`^/v1/agent/chats(?:/${id}(?:/(token|cancel))?)?$`);
+function agentChatRoute(method: string, path: string): boolean {
+  const match = agentChats.exec(path);
+  if (!match) return false;
+  const action = match[1];
+  if (path === '/v1/agent/chats') return method === 'GET' || method === 'POST';
+  if (action) return method === 'POST';
+  return method === 'GET' || method === 'DELETE';
+}
+
 export function admitCliRoutes() {
   return createMiddleware<AppEnv>(async (c, next) => {
     const caller = c.get('caller');
     if (!caller.cli) return next();
     const { method, path } = c.req;
     if (method === 'GET' && v1Reads.test(path)) return next();
+    if (agentChatRoute(method, path)) return next();
     if (method !== 'POST' || !v1Decisions.test(path)) {
       throw forbidden('The Retainer CLI cannot call this route.');
     }

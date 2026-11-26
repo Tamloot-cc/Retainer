@@ -7,6 +7,7 @@ import {
   type RoutineRunMode,
   type ToolContract,
 } from '@retainer/shared';
+import { maintainAgents } from '../agent-sessions/maintenance.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
@@ -481,6 +482,8 @@ export class RoutineMaintenance {
       }
     }
     await this.retention(deadline).catch(() => failed++);
+    // The workspace agent's upkeep rides the same tick (agent spec §5.4, §6.3).
+    await maintainAgents(this.sql, this.discoverySql, deadline).catch(() => failed++);
     return { queued, failed };
   }
 

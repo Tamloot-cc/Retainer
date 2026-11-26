@@ -42,7 +42,7 @@ export const MODEL_PROXY_PATH = '/v1/extensions/runtime/model';
 const modelPrefix = 'rt_model_';
 export const isModelToken = (token: string) => token.startsWith(modelPrefix);
 const extensionModelClaims = z.strictObject({
-  kind: z.enum(['model', 'agent']),
+  kind: z.literal('model'),
   workspaceId: z.uuid(),
   installationId: z.uuid(),
   registrationId: z.uuid(),
