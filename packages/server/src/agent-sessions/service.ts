@@ -76,6 +76,8 @@ export type AgentConfig = {
   workspaceDailySteps: number;
   /** Key mode: an API key may open chats, since nobody signs in. */
   keys: boolean;
+  /** How long one tool request waits for an extension job; tests shorten it. */
+  extensionWaitMs?: number | undefined;
 };
 
 const unavailable = () =>
@@ -184,7 +186,7 @@ export class AgentSessions {
     const row = lock
       ? await lockSession<SessionRow>(tx, id)
       : (await tx<SessionRow[]>`select * from agent_sessions where id = ${id}`)[0];
-    if (!row || row.kind !== 'chat' || row.owner !== owner) throw notFound('chat');
+    if (row?.kind !== 'chat' || row.owner !== owner) throw notFound('chat');
     return row;
   }
 
@@ -510,7 +512,7 @@ export class AgentSessions {
       }
     });
     if ('ok' in started) return started;
-    const waitUntil = Date.now() + EXTENSION_WAIT_MS;
+    const waitUntil = Date.now() + (this.config.extensionWaitMs ?? EXTENSION_WAIT_MS);
     for (;;) {
       const polled = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
         await admitAgentTurn(tx, binding);

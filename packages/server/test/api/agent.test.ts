@@ -12,7 +12,7 @@ import { useTestDatabase } from '../helpers/db.js';
 
 const db = useTestDatabase();
 let t: TestApp;
-let keys: { writer: string; reader: string; other: string; second: string };
+let keys: { writer: string; reader: string; other: string; second: string; admin: string };
 let workspaceId: string;
 
 beforeAll(async () => {
@@ -25,6 +25,7 @@ beforeAll(async () => {
       writer: { actor: { type: 'agent', id: 'desk', name: 'Desk' }, scopes: ['read', 'write'] },
       reader: { actor: { type: 'agent', id: 'reader' }, scopes: ['read'] },
       second: { actor: { type: 'agent', id: 'second' }, scopes: ['read', 'write'] },
+      admin: { actor: { type: 'user', id: 'ada', name: 'Ada' }, scopes: ['admin'] },
     },
   );
   const other = await t.setupWorkspace(
@@ -552,5 +553,32 @@ describe('without the agent', () => {
         })
       ).status,
     ).toBe(401);
+  });
+});
+
+describe('forget', () => {
+  it('leaves agent sessions as they are (§5.4)', async () => {
+    const id = await newChat();
+    const turn = await claimed(id);
+    const written = await runtime(id, turn.turnToken, '/tools/upsert_record', {
+      toolCallId: 'toolu_forget',
+      input: { object: 'person', values: { name: { first: 'Rina', last: 'Erased' } } },
+    });
+    expect(written.body.ok, JSON.stringify(written.body)).toBe(true);
+    await saveChatHistory(db.url, id, 'Tell me about Rina Erased');
+    expect((await close(id, turn.turnToken)).status).toBe(200);
+
+    const forgotten = await t.request(`/v1/records/${written.body.output.id}/forget`, {
+      key: keys.admin,
+      method: 'POST',
+    });
+    expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200);
+
+    const [session] = await db.owner`select id from agent_sessions where id = ${id}`;
+    expect(session).toBeDefined();
+    const [thread] = await db.owner`select id from mastra.mastra_threads where id = ${id}`;
+    expect(thread).toBeDefined();
+    const chat = await t.request(`/v1/agent/chats/${id}`, { key: keys.writer });
+    expect(JSON.stringify(chat.body.messages)).toContain('Rina Erased');
   });
 });

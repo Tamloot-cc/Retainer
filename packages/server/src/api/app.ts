@@ -104,6 +104,8 @@ export type AppDeps = {
     readStoreUrl?: string | undefined;
     personDailySteps?: number;
     workspaceDailySteps?: number;
+    /** How long one extension tool request waits before answering `pending`. */
+    extensionWaitMs?: number;
   };
   routines?: {
     available?: boolean;
@@ -165,6 +167,7 @@ export function createApp(deps: AppDeps) {
           personDailySteps: deps.agent.personDailySteps ?? 2000,
           workspaceDailySteps: deps.agent.workspaceDailySteps ?? 20000,
           keys: !deps.accountsSecret,
+          extensionWaitMs: deps.agent.extensionWaitMs,
         },
         agentExtensions(deps.sql, deps.extensionCatalog ?? new ExtensionCatalog()),
       )

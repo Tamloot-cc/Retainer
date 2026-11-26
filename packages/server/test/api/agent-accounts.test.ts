@@ -238,3 +238,55 @@ it('writes from a CLI chat only while the login is elevated, as the agent', asyn
     401,
   );
 });
+
+it('sends a CLI chat the same tools block before and after an elevation (§8.3)', async () => {
+  const t = await fixture();
+  const login = await connect(app.accounts, {
+    cookie: t.person.cookie,
+    clientId: 'retainer-cli',
+    redirectUri: redir,
+    scope: 'read offline_access',
+    resource: `${ORIGIN}/cli`,
+    state: `${randomBytes(32).toString('base64url')}.VGVzdCBNYWM`,
+  });
+  const cli = {
+    authorization: `Bearer ${login.access_token}`,
+    'x-retainer-workspace': t.workspace.id,
+  };
+  const chat = await t.turn(cli);
+  const before = JSON.stringify(chat.claimed.session.tools);
+  // Read-only, the write tools are still pinned: they answer elevation_required.
+  expect(before).toContain('"upsert_record"');
+  const closed = await t.request(
+    `/v1/agent/runtime/sessions/${chat.id}/close`,
+    'POST',
+    { status: 'completed', errorCode: null, durationMs: 1 },
+    { authorization: `Bearer ${chat.turnToken}` },
+  );
+  expect(closed.status).toBe(200);
+
+  const started = await t.request(
+    '/account/cli/approvals',
+    'POST',
+    { workspaceId: t.workspace.id },
+    cli,
+  );
+  expect(started.status).toBe(201);
+  const decided = await t.request(
+    `/account/cli/approvals/${started.body.id}/decide`,
+    'POST',
+    { allow: true },
+    { cookie: t.person.cookie, origin: ORIGIN, 'x-retainer-client': 'web' },
+  );
+  expect(decided.status).toBe(200);
+
+  const token = await t.request(`/v1/agent/chats/${chat.id}/token`, 'POST', undefined, cli);
+  const again = await t.request(
+    `/v1/agent/runtime/sessions/${chat.id}/claim`,
+    'POST',
+    { streamToken: token.body.token },
+    { authorization: `Bearer ${RUNTIME_SECRET}` },
+  );
+  expect(again.status, JSON.stringify(again.body)).toBe(200);
+  expect(JSON.stringify(again.body.session.tools)).toBe(before);
+});
