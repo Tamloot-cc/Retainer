@@ -900,6 +900,7 @@ export function aggregateOps(field: {
   if (isInverseRelation(field)) return [];
   const ops = [...EMPTINESS];
   if (isCollectionRelation(field)) return ops;
+  // Count distinct stored values, including both the amount and currency for money.
   if (field.type === 'relation' || SORTABLE_TYPES.includes(field.type)) ops.push('countUnique');
   if (field.type === 'number' || field.type === 'money') ops.push('sum', 'avg');
   // The ordered types, which take `gt` and `lt` filters.
@@ -1014,6 +1015,7 @@ export type UpdateViewInput = ViewConfig & {
 export const SORTABLE_TYPES: readonly FieldType[] = [
   'text',
   'number',
+  'money',
   'boolean',
   'date',
   'date_time',

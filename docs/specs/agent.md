@@ -961,9 +961,11 @@ can still report its usage, which counts, and the answer is `stop`
 
 ### 6.6 What the agent knows
 
-- A base system prompt: what Retainer is, how to read and write it (the MCP
-  server's instructions and `get_guide`), to answer from what it found, and
-  to say what it doesn't know.
+- A [static base system prompt](../../packages/agent/src/prompt.ts), pinned when
+  the session is created. It explains how to read and write Retainer, when to
+  research public facts while keeping private workspace data out of web search,
+  how to verify and cite outside facts before writing, and how to recover from
+  tool errors that offer allowed values.
 - The person: their name, the workspace, and their `me` memory through
   `get_context("me")`, as any agent connected for them would.
 - It logs what it learns the way any agent does: `get_guide("log_from_chat")`.

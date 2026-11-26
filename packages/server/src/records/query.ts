@@ -456,6 +456,7 @@ export function compileSort(tx: Tx, object: CompiledObject, sort: QueryInput['so
         ],
       });
     }
+    // Like Twenty, sort money by amountMicros across currencies without conversion.
     parts.push(tx`${typed(tx, field)} ${dir} nulls last`);
   }
   // A stable order makes cursors deterministic.

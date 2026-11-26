@@ -411,6 +411,27 @@ test('finds records, facts and events across objects with the command palette', 
 test.describe('Sales workspace', () => {
   test.use({ workspaceTemplate: 'sales' });
 
+  test('sorts a money column from its heading with missing values last', async ({
+    page,
+    retainer: r,
+  }) => {
+    await r.request('/objects/deal/records', { values: { name: 'Expansion', amount: usd(10) } });
+    await r.request('/objects/deal/records', { values: { name: 'Unscoped' } });
+    await r.request('/objects/deal/records', { values: { name: 'Pilot', amount: usd(9) } });
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/o/deals`);
+
+    const grid = page.getByRole('region', { name: 'Deals' });
+    const header = grid.getByRole('columnheader', { name: 'Amount' });
+    const deals = grid.getByRole('link', { name: /^(Expansion|Unscoped|Pilot)$/ });
+    await header.getByRole('button').click();
+    await expect(header).toHaveAttribute('aria-sort', 'ascending');
+    await expect(deals).toHaveText(['Pilot', 'Expansion', 'Unscoped']);
+    await header.getByRole('button').click();
+    await expect(header).toHaveAttribute('aria-sort', 'descending');
+    await expect(deals).toHaveText(['Expansion', 'Pilot', 'Unscoped']);
+  });
+
   test('saves a board view, totals its columns, and moves a card from the keyboard', async ({
     page,
     retainer: r,

@@ -114,19 +114,26 @@ describe('POST /v1/objects/:object/aggregate', () => {
     expect(all.body.values[0].value).toBe(emptyFilter.body.total);
   });
 
-  it('refuses to add up money in several currencies', async () => {
+  it('counts distinct money values across currencies while refusing to add them up', async () => {
     await create('deal', {
       name: 'Euro deal',
       stage: 'won',
-      amount: { amountMicros: 10_000_000, currency: 'EUR' },
+      amount: { amountMicros: 50_000_000, currency: 'EUR' },
     });
-    const res = await aggregate('deal', { aggregates: [{ field: 'amount', op: 'sum' }] });
-    expect(res.body.values[0]).toEqual({
-      field: 'amount',
-      op: 'sum',
-      value: null,
-      mixedCurrencies: true,
+    await create('deal', {
+      name: 'Another Euro deal',
+      amount: { amountMicros: 50_000_000, currency: 'EUR' },
     });
+    const res = await aggregate('deal', {
+      aggregates: [
+        { field: 'amount', op: 'sum' },
+        { field: 'amount', op: 'countUnique' },
+      ],
+    });
+    expect(res.body.values).toEqual([
+      { field: 'amount', op: 'sum', value: null, mixedCurrencies: true },
+      { field: 'amount', op: 'countUnique', value: 4 },
+    ]);
   });
 
   it('names the field and the allowed operations on a bad request', async () => {
