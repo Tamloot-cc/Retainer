@@ -5,12 +5,17 @@ import {
   chatRequestBody,
   errorCode,
   groupTraceParts,
+  hostname,
+  segmentParts,
   sendErrorText,
+  sourceLinks,
+  stepsSummary,
   type ToolPart,
   toolError,
   toolGroupLine,
   toolLine,
   turnEnd,
+  webResults,
 } from './model.js';
 
 const assistant = (parts: unknown[]): ChatMessage =>
@@ -195,5 +200,89 @@ describe('errors in plain words', () => {
       'context_limit_reached',
     );
     expect(turnEnd({ type: 'text' })).toBeUndefined();
+  });
+});
+
+const tool = (name: string, over: Partial<ToolPart> = {}) =>
+  ({ type: `tool-${name}`, toolCallId: name, state: 'output-available', ...over }) as never;
+
+describe('segmentParts', () => {
+  it('splits a reply into runs of steps and the answer between them, in order', () => {
+    const parts = assistant([
+      { type: 'step-start' },
+      { type: 'reasoning', text: 'Look first.', state: 'done' },
+      tool('search'),
+      { type: 'text', text: 'Found her.' },
+      { type: 'step-start' },
+      tool('upsert_record'),
+      { type: 'text', text: '' },
+      { type: 'source-url', sourceId: 's', url: 'https://a.example' },
+      { type: 'text', text: 'Saved.' },
+    ]).parts;
+    expect(
+      segmentParts(parts).map((s) => (s.kind === 'steps' ? s.parts.length : s.part.type)),
+    ).toEqual([2, 'text', 1, 'text']);
+  });
+
+  it('drops thinking that finished empty', () => {
+    const parts = assistant([
+      { type: 'reasoning', text: ' ', state: 'done' },
+      tool('search'),
+    ]).parts;
+    const [run] = segmentParts(parts);
+    expect(run?.kind === 'steps' && run.parts.map((p) => p.type)).toEqual(['tool-search']);
+  });
+});
+
+describe('stepsSummary', () => {
+  it('says what the agent did in plain words, counting saved records', () => {
+    expect(stepsSummary([{ type: 'reasoning', text: 'x', state: 'done' }] as never)).toBe(
+      'Thought it through',
+    );
+    expect(
+      stepsSummary([
+        tool('search'),
+        tool('get_record'),
+        tool('web_search'),
+        tool('upsert_record'),
+        tool('upsert_records', { output: { results: [{}, {}, { error: 'x' }] } }),
+        tool('remember'),
+      ]),
+    ).toBe('Checked your workspace, searched the web, saved 3 records and took notes');
+    expect(
+      stepsSummary([tool('upsert_record', { state: 'output-error', errorText: 'role' })]),
+    ).toBe('Tried to save changes');
+  });
+});
+
+describe('web results and sources', () => {
+  it('takes each page a web search found once, with http links only', () => {
+    const part = tool('web_search', {
+      output: [
+        { type: 'web_search_result', url: 'https://www.acme.com/about', title: 'About' },
+        { url: 'https://www.acme.com/about' },
+        { url: 'javascript:alert(1)' },
+        { url: 'https://news.example/acme', title: ' ' },
+      ],
+    });
+    expect(webResults(part)).toEqual([
+      { url: 'https://www.acme.com/about', title: 'About' },
+      { url: 'https://news.example/acme', title: undefined },
+    ]);
+    expect(webResults(tool('search', { output: [{ url: 'https://a.example' }] }))).toEqual([]);
+    expect(hostname('https://www.acme.com/about')).toBe('acme.com');
+    expect(hostname('not a url')).toBe('not a url');
+  });
+
+  it('lists the links a reply used once each', () => {
+    const parts = assistant([
+      { type: 'source-url', sourceId: '1', url: 'https://a.example', title: 'A' },
+      { type: 'source-url', sourceId: '2', url: 'https://a.example' },
+      { type: 'source-url', sourceId: '3', url: 'https://b.example' },
+    ]).parts;
+    expect(sourceLinks(parts)).toEqual([
+      { url: 'https://a.example', title: 'A' },
+      { url: 'https://b.example', title: undefined },
+    ]);
   });
 });

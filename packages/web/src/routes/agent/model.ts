@@ -225,6 +225,114 @@ export function toolLine(part: ToolPart): string {
   }
 }
 
+/** What kind of step a tool call is, for its icon. */
+export type ToolKind = 'search' | 'web' | 'read' | 'save' | 'remember' | 'other';
+
+export function toolKind(part: ToolPart): ToolKind {
+  const name = toolName(part);
+  if (name === 'web_search') return 'web';
+  if (name === 'search' || name === 'query_records') return 'search';
+  if (name === 'remember') return 'remember';
+  if (WRITE_TOOLS.has(name)) return 'save';
+  if (READ_TOOLS.has(name)) return 'read';
+  return 'other';
+}
+
+/** The pages a web search found: the provider's results, each with a URL. */
+export function webResults(part: ToolPart): { url: string; title?: string }[] {
+  if (toolName(part) !== 'web_search' || !Array.isArray(part.output)) return [];
+  const seen = new Set<string>();
+  return part.output.flatMap((item) => {
+    const { url, title } = (item ?? {}) as { url?: unknown; title?: unknown };
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || seen.has(url)) return [];
+    seen.add(url);
+    return [{ url, title: typeof title === 'string' && title.trim() ? title : undefined }];
+  });
+}
+
+/** A URL's site, without `www.`; the URL itself if it doesn't parse. */
+export function hostname(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+/** The links a reply used, once each (`source-url` parts). */
+export function sourceLinks(parts: ChatPart[]) {
+  const seen = new Set<string>();
+  return parts.flatMap((part) => {
+    if (part.type !== 'source-url' || seen.has(part.url)) return [];
+    seen.add(part.url);
+    return [{ url: part.url, title: part.title }];
+  });
+}
+
+/** A run of the agent's steps between pieces of its answer, or a piece of the answer. */
+type Segment =
+  | { kind: 'steps'; index: number; parts: ChatPart[] }
+  | { kind: 'part'; index: number; part: ChatPart };
+
+/**
+ * Splits a reply into runs of steps (thinking and tool calls) and the parts
+ * between them (text, endings), in order. Step boundaries and sources aren't
+ * shown in place.
+ */
+export function segmentParts(parts: ChatPart[]): Segment[] {
+  const segments: Segment[] = [];
+  let run: Extract<Segment, { kind: 'steps' }> | undefined;
+  for (const [index, part] of parts.entries()) {
+    if (part.type === 'step-start' || part.type === 'source-url') continue;
+    if (part.type === 'reasoning' || isToolPart(part)) {
+      if (part.type === 'reasoning' && !part.text.trim() && part.state === 'done') continue;
+      if (!run) {
+        run = { kind: 'steps', index, parts: [] };
+        segments.push(run);
+      }
+      run.parts.push(part);
+      continue;
+    }
+    if (part.type === 'text' && !part.text) continue;
+    run = undefined;
+    segments.push({ kind: 'part', index, part });
+  }
+  return segments;
+}
+
+/**
+ * The line a finished run of steps folds into: what the agent did, in plain
+ * words. Thinking alone is "Thought it through".
+ */
+export function stepsSummary(parts: ChatPart[]): string {
+  const tools = parts.filter(isToolPart);
+  if (tools.length === 0) return 'Thought it through';
+  let read = false;
+  let web = false;
+  let noted = false;
+  let other = false;
+  let saved = 0;
+  for (const part of tools) {
+    const kind = toolKind(part);
+    if (kind === 'web') web = true;
+    else if (kind === 'read' || kind === 'search') read = true;
+    else if (kind === 'other') other = true;
+    else if (toolName(part) === 'upsert_record') saved += toolError(part) || dryRun(part) ? 0 : 1;
+    else if (toolName(part) === 'upsert_records') saved += upsertCounts(part)?.saved ?? 0;
+    else noted = true;
+  }
+  const said: string[] = [];
+  if (read) said.push('checked your workspace');
+  if (web) said.push('searched the web');
+  if (saved) said.push(`saved ${records(saved)}`);
+  if (noted) said.push('took notes');
+  if (other) said.push('used other tools');
+  // Every save failed or was a dry run: the steps inside say how.
+  if (said.length === 0) said.push('tried to save changes');
+  const text = said.join(', ').replace(/, ([^,]*)$/, ' and $1');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /** Why a tool call failed, in plain words. */
 export function toolErrorText(code: string) {
   switch (code) {
@@ -255,6 +363,15 @@ export const TURN_ENDINGS: Record<string, string> = {
   timed_out: 'The agent ran out of time on this message.',
   failed: 'Something went wrong while answering.',
 };
+
+/** Endings worth asking again after: something went wrong, not the agent's choice. */
+export const RETRYABLE = new Set([
+  'incomplete',
+  'model_unavailable',
+  'timed_out',
+  'failed',
+  'cancelled',
+]);
 
 /** Endings after which the chat can't go on: the person starts a new one. */
 export const CHAT_OVER = new Set(['context_limit_reached', 'history_rejected']);

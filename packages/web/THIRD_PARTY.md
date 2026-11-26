@@ -2,6 +2,12 @@
 
 `src/ui/index.tsx`: Button's class-variance-authority and Slot composition is
 adapted from [shadcn/ui](https://github.com/shadcn-ui/ui), MIT.
+`src/ui/trace.tsx` (Trace) and `src/ui/message.tsx` (Message, Bubble and the
+Message Scroller wrapper) are adapted from shadcn/ui's Radix components and
+its Nova style, MIT. `src/style.css`: the `shimmer` utility and the
+collapsible keyframes are adapted from shadcn/ui's `tailwind.css`, MIT. The chat's layout follows shadcn/ui's AI
+Elements patterns (Chat, Message, Reasoning, Tool, Chain of Thought, Sources,
+Suggestion, Prompt Input).
 Other UI components are original wrappers around installed Radix primitives and cmdk.
 No Twenty or Comp AI source files were copied or translated.
 
