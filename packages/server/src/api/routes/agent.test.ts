@@ -2,9 +2,9 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import { MAX_STREAM_BODY_BYTES } from '../../agent-sessions/service.js';
+import { type AgentSessions, MAX_STREAM_BODY_BYTES } from '../../agent-sessions/service.js';
 import type { AppEnv } from '../../http/response.js';
-import { agentStreamForward } from './agent.js';
+import { agentRuntimeRoutes, agentStreamForward } from './agent.js';
 
 describe('the self-hosted stream forward', () => {
   it('refuses an oversized body before buffering it or calling the agent', async () => {
@@ -28,5 +28,34 @@ describe('the self-hosted stream forward', () => {
     } finally {
       await new Promise<void>((resolve) => upstream.close(() => resolve()));
     }
+  });
+});
+
+describe('the runtime routes', () => {
+  it('refuse an oversized body before any credential is checked', async () => {
+    const touched: string[] = [];
+    const agent = new Proxy({} as AgentSessions, {
+      get: (_target, name) => () => {
+        touched.push(String(name));
+        throw new Error('not reached');
+      },
+    });
+    const app = new Hono<AppEnv>();
+    agentRuntimeRoutes(app, agent);
+    const base = `/v1/agent/runtime/sessions/${crypto.randomUUID()}`;
+    for (const [path, size] of [
+      ['/claim', 64 * 1024],
+      ['/report', 64 * 1024],
+      ['/close', 64 * 1024],
+      ['/tools/search', 6 * 1024 * 1024],
+    ] as const) {
+      const response = await app.request(`${base}${path}`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer nope', 'content-type': 'application/json' },
+        body: 'x'.repeat(size + 1),
+      });
+      expect(response.status, path).toBe(413);
+    }
+    expect(touched).toEqual([]);
   });
 });

@@ -6,6 +6,17 @@ import { bearerToken } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
 import { type AppEnv, errorResponse, toAppError } from '../../http/response.js';
 
+/**
+ * Bodies the runtime routes read, refused with 413 before they are buffered
+ * or parsed: the routes sit outside `/v1`'s authentication, so the check
+ * comes before any credential is looked at. A tool call carries the model's
+ * input for one Retainer or extension tool; the rest carry a few fields.
+ */
+const TOOL_BODY_BYTES = 6 * 1024 * 1024;
+const RUNTIME_BODY_BYTES = 64 * 1024;
+const limitBody = (maxSize: number) =>
+  bodyLimit({ maxSize, onError: (c) => c.json({ code: 'payload_too_large' }, 413) });
+
 /** The runtime routes answer errors as `{ code, message }` (agent spec §6.1). */
 function runtimeError(c: Context, error: unknown) {
   const appError = toAppError(error);
@@ -45,12 +56,15 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
     if (!token) throw new AppError(401, 'unauthorized', 'send the turn token');
     return token;
   };
+  const small = limitBody(RUNTIME_BODY_BYTES);
   app.post(
     `${base}/claim`,
+    small,
     run(async (c, token) => c.json(await agent.claim(token, param(c, 'id'), await jsonBody(c)))),
   );
   app.post(
     `${base}/tools/:name`,
+    limitBody(TOOL_BODY_BYTES),
     run(async (c, token) =>
       c.json(
         await agent.tool(turnToken(token), param(c, 'id'), param(c, 'name'), await jsonBody(c)),
@@ -59,6 +73,7 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
   );
   app.post(
     `${base}/report`,
+    small,
     run(async (c, token) =>
       c.json(await agent.report(turnToken(token), param(c, 'id'), await jsonBody(c))),
     ),
@@ -69,6 +84,7 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
   );
   app.post(
     `${base}/close`,
+    small,
     run(async (c, token) =>
       c.json(await agent.close(turnToken(token), param(c, 'id'), await jsonBody(c))),
     ),
@@ -84,11 +100,7 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
  */
 export function agentStreamForward(app: Hono<AppEnv>, upstream: string | undefined) {
   // Refused before it is buffered: this route is outside `/v1`'s authentication.
-  const limit = bodyLimit({
-    maxSize: MAX_STREAM_BODY_BYTES,
-    onError: (c) => c.json({ code: 'payload_too_large' }, 413),
-  });
-  app.post('/v1/agent/chats/:id/stream', limit, async (c) => {
+  app.post('/v1/agent/chats/:id/stream', limitBody(MAX_STREAM_BODY_BYTES), async (c) => {
     if (!upstream)
       return errorResponse(
         c,
