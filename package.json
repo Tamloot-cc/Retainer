@@ -32,7 +32,8 @@
     "test:extensions:last-contact": "node scripts/test-extension-compose.mjs --last-contact",
     "test:extensions:files": "node scripts/test-extension-compose.mjs --webhook --files",
     "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs",
-    "check:mastra-licence": "node scripts/check-mastra-licence.mjs"
+    "check:mastra-licence": "node scripts/check-mastra-licence.mjs",
+    "test:agent:compose": "node scripts/test-agent-compose.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
