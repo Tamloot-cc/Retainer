@@ -237,7 +237,7 @@ export class Routines {
       if (!runs.length) throw notFound('routine preview');
       return {
         previewId,
-        done: runs.every((run) => !['queued', 'running'].includes(run.status)),
+        done: runs.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
         runs: await Promise.all(runs.map((run) => presentRun(tx, run, true))),
       };
     });

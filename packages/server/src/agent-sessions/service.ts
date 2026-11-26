@@ -562,7 +562,10 @@ export class AgentSessions {
       return toolError('tool_not_available', `"${name}" is not one of this session's tools`);
     let caller: Caller;
     try {
-      caller = await agentCaller(this.sql, workspaceId, verified.access, verified.binding);
+      // In the workspace: a task's grant is read from its row (§7.3).
+      caller = await inWorkspace(this.sql, workspaceId, (tx) =>
+        agentCaller(tx, workspaceId, verified.access, verified.binding),
+      );
     } catch (error) {
       if (error instanceof AppError) return toolError(error.code, error.message);
       throw error;

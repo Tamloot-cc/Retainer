@@ -1789,6 +1789,34 @@ upstream in `test/turn.test.ts`):
 - **Not checked here:** the VPC-attached function URL (§13), which needs
   the hosted deploy.
 
+Checked in PR 2 (2026-11-26, same versions, `packages/agent/test/live.test.ts`
+"PR 2" and the fake upstream in `test/turn.test.ts`):
+
+- **Structured output.** Mastra's `structuredOutput` sends Anthropic's
+  native format: `output_config.format` with `type: "json_schema"` and the
+  closed schema, beside `effort`, with `tool_choice: auto` and the session's
+  tools unchanged; no forced tool and no prompt injection. Live, Sonnet 5.5
+  answered a task with a schema-valid object in one step (`end_turn`).
+  The runtime sets `errorStrategy: 'warn'` and checks the answer itself, so
+  a miss gets its one repair turn and a refusal reads as `refused` instead
+  of a parse error.
+
+Built differently in PR 2:
+
+- **Extension handlers.** Extensions are bundled into the runner and
+  dispatched by function ID, so there's no handler object to hang
+  `onAgentResult` on: the SDK gives `agentClient`, `waitFor(taskId)` and
+  `withAgentResult(invocation, { run, onAgentResult })`.
+- **A task's extension expiry.** A task from an extension expires an hour
+  after it is staged (a routine's at its run's expiry less 15 minutes).
+- **Task job delivery.** The change-maintenance tick hands due task jobs
+  out (`retainer_agent_tasks_due`), each with a fresh job token
+  (`rt_agent_job_`), to `POST /tasks/:id/run` on the self-hosted `agent`
+  container or by an asynchronous invoke of the hosted `agent` function
+  (`RETAINER_AGENT_FUNCTION`, native event `{ kind: "agent-task" }`). A
+  delivery that never claims is handed out again after 2 minutes; three
+  deliveries end the task as `timed_out`.
+
 Answered 2026-11-25:
 
 - Model: Claude Sonnet 5.5 for every session, effort `medium`; extensions

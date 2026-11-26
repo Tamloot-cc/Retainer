@@ -1,4 +1,5 @@
 import {
+  agentUseNotice,
   bindingChoicesSchema,
   compareVersions,
   disconnectHook,
@@ -545,11 +546,17 @@ export class Extensions {
           !approval &&
           !existing?.granted_uses.includes('model')));
     const uses = releaseUses(manifest).filter((use) => use !== 'model' || !withholdModel);
-    const modelNotice = uses.includes('model')
-      ? optionalModel
-        ? 'To suggest where your meetings, tasks, and contacts should go, Tamloot sends Anthropic your workspace structure, any existing mappings, and the names or titles of up to three recently updated records per possible destination. Tamloot uses Anthropic only for these suggestions.'
-        : MODEL_USE_NOTICE
+    // The agent's grant in plain words, with the model notice (agent spec §9.4).
+    const agentNotice = uses.includes('agent')
+      ? agentUseNotice([...new Set(manifest.functions.flatMap((fn) => fn.agent?.tools ?? []))])
       : undefined;
+    const modelNotice = agentNotice
+      ? agentNotice
+      : uses.includes('model')
+        ? optionalModel
+          ? 'To suggest where your meetings, tasks, and contacts should go, Tamloot sends Anthropic your workspace structure, any existing mappings, and the names or titles of up to three recently updated records per possible destination. Tamloot uses Anthropic only for these suggestions.'
+          : MODEL_USE_NOTICE
+        : undefined;
     const refs = { ...(input.accessOnly ? {} : approval?.secret_refs), ...input.secretRefs };
     const pending = await pendingSecrets(tx, Object.values(refs));
     if (pending.length !== Object.keys(refs).length)

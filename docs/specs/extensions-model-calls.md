@@ -420,6 +420,20 @@ Self-hosted Compose serves the same module at
 `/v1/extensions/runtime/model/` in the server process, outside the run-token
 caller chain, with the same token checks, and writes `ai_usage` directly.
 
+### 3.7 The agent (`uses: ['agent']`)
+
+Added with agent tasks ([agent.md](agent.md) §9.2, §9.4). A function that
+declares `uses: ['agent']` lists the agent's tool groups in
+`agent: { tools: [...] }`; both are reviewed with the release and approved
+like `model`, with the agent's notice (what it can do, and the model
+notice). `agentClient(invocation).start(request)` stages a task through
+`POST /v1/extensions/:id/runtime/agent-tasks` with the run token; the
+function returns `{ status: 'succeeded', wait: taskId }`, which parks the
+job as `waiting` and publishes the task in one transaction. The task's end
+queues one child job with the same input and `invocation.agentResult`;
+`withAgentResult` routes it to the function's `onAgentResult`. Tools can't
+hand tasks to the agent.
+
 ## 4. Draft runs (replaced)
 
 Draft runs were dropped for installation in two steps

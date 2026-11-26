@@ -117,8 +117,12 @@ async function setup() {
     },
   });
   const company = async (name = 'Acme') =>
-    (await app.request('/v1/objects/company/records', { key: keys.admin, body: { values: { name } } }))
-      .body.id as string;
+    (
+      await app.request('/v1/objects/company/records', {
+        key: keys.admin,
+        body: { values: { name } },
+      })
+    ).body.id as string;
   /** Presses the button and runs the run until it parks. */
   const park = async (recordId?: string) => {
     const record = recordId ?? (await company());
@@ -147,12 +151,20 @@ async function setup() {
     run: async (id: string) =>
       (
         await db.owner<
-          { status: string; attempt: number; output: Record<string, unknown> | null; code: string | null; expires_at: Date }[]
+          {
+            status: string;
+            attempt: number;
+            output: Record<string, unknown> | null;
+            code: string | null;
+            expires_at: Date;
+          }[]
         >`select status, attempt, output, code, expires_at from routine_runs where id = ${id}`
       )[0],
     effect: async (id: string) =>
       (
-        await db.owner<{ state: string; result: unknown; code: string | null; delivered: boolean }[]>`
+        await db.owner<
+          { state: string; result: unknown; code: string | null; delivered: boolean }[]
+        >`
           select state, result, code, delivered from routine_run_results where run_id = ${id} and operation = 'ai.agent'`
       )[0],
     view: async (id: string) =>
@@ -177,7 +189,12 @@ async function claimJob(s: Setup, taskId: string) {
     body: {
       turnToken: string;
       deadline: string;
-      session: { kind: string; firstTurn: boolean; systemBlocks: string[]; tools: { name: string }[] };
+      session: {
+        kind: string;
+        firstTurn: boolean;
+        systemBlocks: string[];
+        tools: { name: string }[];
+      };
       task: { firstMessage: string; outputSchema: unknown; repaired: boolean };
       limits: { maxSteps: number };
     };
@@ -272,7 +289,13 @@ describe('agent tasks from a routine', () => {
     if (!claimed) throw new Error('not claimed');
     const token = await tokens.issueRoutine(
       s.workspace,
-      { runId: claimed.runId, routineId: s.routineId, fence: claimed.fence, mode: 'run', tools: claimed.tools },
+      {
+        runId: claimed.runId,
+        routineId: s.routineId,
+        fence: claimed.fence,
+        mode: 'run',
+        tools: claimed.tools,
+      },
       new Date(Date.now() + 60_000),
     );
     const args = {
@@ -321,7 +344,7 @@ describe('agent tasks from a routine', () => {
     const claimed = await claimJob(s, taskId);
     expect(claimed.status).toBe(200);
     await inWorkspace(s.app.sql, s.workspace, (tx) =>
-      pauseRoutine(tx, s.routineId, 'paused', 'paused_by_admin', null),
+      pauseRoutine(tx, s.routineId, 'paused', 'paused_by_admin'),
     );
     expect(await s.run(runId)).toMatchObject({ status: 'stopped' });
     const [task] = await db.owner<{ state: string }[]>`
@@ -372,7 +395,7 @@ describe('agent tasks from a routine', () => {
     const s = await setup();
     const { runId, record, taskId } = await s.park();
     // The task writes the record its run read for its input.
-    await s.app.request(`/v1/objects/company/records/${record}`, {
+    await s.app.request(`/v1/records/${record}`, {
       key: s.keys.admin,
       method: 'PATCH',
       body: { values: { name: 'Acme Holdings' } },
@@ -391,7 +414,7 @@ describe('agent tasks from a routine', () => {
   it('notes an answer the resumed run returned before reaching', async () => {
     const s = await setup();
     const { runId, record, taskId } = await s.park();
-    await s.app.request(`/v1/objects/company/records/${record}`, {
+    await s.app.request(`/v1/records/${record}`, {
       key: s.keys.admin,
       method: 'PATCH',
       body: { values: { name: 'Stop' } },
@@ -407,7 +430,7 @@ describe('agent tasks from a routine', () => {
 
   it('runs a dry run’s task without writing', async () => {
     const s = await setup();
-    const record = await s.company();
+    await s.company();
     const preview = await s.app.request('/v1/routines/preview', {
       key: s.keys.admin,
       body: {
@@ -417,7 +440,6 @@ describe('agent tasks from a routine', () => {
           agent: { tools: ['retainer.read', 'retainer.write'] },
         },
         code: CODE,
-        recordId: record,
       },
     });
     expect(preview.status, JSON.stringify(preview.body)).toBeLessThan(300);
@@ -428,10 +450,13 @@ describe('agent tasks from a routine', () => {
     const claimed = await claimJob(s, task?.session_id as string);
     expect(claimed.status).toBe(200);
     const before = await db.owner`select 1 from record_changes where workspace_id = ${s.workspace}`;
-    const write = await s.app.request(`${runtimeBase(task?.session_id as string)}/tools/upsert_record`, {
-      key: claimed.body.turnToken,
-      body: { toolCallId: 'w', input: { object: 'company', values: { name: 'Dry Co' } } },
-    });
+    const write = await s.app.request(
+      `${runtimeBase(task?.session_id as string)}/tools/upsert_record`,
+      {
+        key: claimed.body.turnToken,
+        body: { toolCallId: 'w', input: { object: 'company', values: { name: 'Dry Co' } } },
+      },
+    );
     expect(write.body).toMatchObject({ ok: true, output: { dryRun: true } });
     const after = await db.owner`select 1 from record_changes where workspace_id = ${s.workspace}`;
     expect(after.length).toBe(before.length);
@@ -528,7 +553,9 @@ describe('agent tasks from an extension', () => {
     const e = await extensionSetup();
     const { job, client } = await e.start();
     const { taskId } = await client.start(request);
-    const [staged] = await db.owner<{ state: string }[]>`select state from agent_tasks where session_id = ${taskId}`;
+    const [staged] = await db.owner<
+      { state: string }[]
+    >`select state from agent_tasks where session_id = ${taskId}`;
     expect(staged?.state).toBe('staged');
     const due = await db.connect({ role: 'retainer_executor', max: 1 })<{ session_id: string }[]>`
       select session_id from retainer_agent_tasks_due(100)`;
@@ -569,7 +596,9 @@ describe('agent tasks from an extension', () => {
     const { taskId } = await client.start(request);
     await e.queue.complete(job, { status: 'succeeded', wait: taskId });
     await inWorkspace(e.app.sql, e.workspace, (tx) => cancelRuns(tx, e.installationId));
-    const [task] = await db.owner<{ state: string }[]>`select state from agent_tasks where session_id = ${taskId}`;
+    const [task] = await db.owner<
+      { state: string }[]
+    >`select state from agent_tasks where session_id = ${taskId}`;
     expect(task?.state).toBe('cancelled');
     const [parent] = await db.owner<{ status: string }[]>`
       select status from extension_jobs where id = ${job.jobId}`;

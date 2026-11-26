@@ -558,7 +558,14 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
               // A task's typed answer: native structured output, never a forced
               // tool, which Sonnet 5.5 refuses (spec §3.4).
               ...(input.task
-                ? { structuredOutput: { schema: providerSchema(input.task.outputSchema) as never } }
+                ? {
+                    structuredOutput: {
+                      schema: providerSchema(input.task.outputSchema) as never,
+                      // The runtime checks the answer itself, so a miss gets its
+                      // repair turn and a refusal reads as one (§9.3).
+                      errorStrategy: 'warn',
+                    },
+                  }
                 : {}),
               requestContext,
               abortSignal: abort.signal,
