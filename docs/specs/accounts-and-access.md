@@ -462,6 +462,10 @@ workspace in its own statement, and the control function's timeout is now 300
 seconds. A container runs the same purge hourly in its `control` or `all` process.
 The CLI has `workspace restore` and `workspace purge`, and `workspace list` shows
 when a deleted workspace goes for good.
+The purge erases the workspace agent's stored chats in the same transaction
+that deletes the workspace, since Mastra's tables have no workspace column for
+the cascade to follow; a restore that wins rolls the erasure back with the
+delete ([agent.md](agent.md) §5.4).
 
 **API keys in the web app** are for agents and integrations only: `read`,
 `write` and `schema:write`. The actor is `agent:<slug of the name>` and cannot

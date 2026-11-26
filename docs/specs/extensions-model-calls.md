@@ -293,7 +293,10 @@ The extension handles them, for example by throwing `RetryLater` on a 429.
 New table `ai_usage`, one row per request Anthropic answered:
 
 - `id`: a UUID the proxy makes per request.
-- `kind`: from the token. `model` in v1; `agent` later (§11).
+- `kind`: from the token, `model`. Rows of kind `agent` come from the
+  workspace agent's step reports, not the proxy, and name the session, turn
+  and step ([agent.md](agent.md) §10.3); the extension model token has no
+  `agent` kind.
 - From the token, never from the extension: workspace, installation,
   registration, release digest, function ID, job ID and attempt.
 - `model`: the model named in the response. It can differ from the one

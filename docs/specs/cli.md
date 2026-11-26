@@ -608,6 +608,13 @@ tokens to the listed `/account` routes and refuses them everywhere else.
 person gets 404. The browser's `POST /account/cli/approvals/:id/decide` is
 cookie-only, with the web app's CSRF header, and never accepts a CLI token.
 
+**Chats with the workspace agent.** `GET` and `POST /v1/agent/chats`, `GET`
+and `DELETE /v1/agent/chats/:id`, and `POST /v1/agent/chats/:id/token` and
+`/cancel` ([agent.md](agent.md) §6.7). The chat's agent acts as
+`retainer-agent:<user>` within the person's role, never as the person; it
+writes only while the login is elevated in that workspace, checked at each
+write, and it reaches no decision route.
+
 **Logged in (as the agent, `read` only).**
 
 - `/account`: `GET /account`, `GET /account/organizations/:id`, the
