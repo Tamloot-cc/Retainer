@@ -41,7 +41,6 @@ export class FakeApi {
       },
     },
     { kind: 'web_search', name: 'web_search', maxUses: 10 },
-    { kind: 'web_fetch', name: 'web_fetch', maxUses: 10 },
   ];
   systemBlocks = [BASE_SYSTEM_PROMPT];
   addedParts: string[] = [
@@ -54,6 +53,8 @@ export class FakeApi {
     action: 'continue',
   });
   reportStatus = 200;
+  /** The turn route's status: 401 when the turn's chat was deleted outright. */
+  turnStatus = 200;
   toolAnswer: (
     name: string,
     input: unknown,
@@ -126,7 +127,10 @@ export class FakeApi {
       if (this.reportStatus !== 200) return json(this.reportStatus, { code: 'boom' });
       return json(200, await this.reportAnswer(body as StepReport));
     }
-    if (rest === 'turn') return json(200, this.turnState);
+    if (rest === 'turn')
+      return this.turnStatus === 200
+        ? json(200, this.turnState)
+        : json(this.turnStatus, { code: 'unauthorized' });
     if (rest === 'close') return json(200, { status: (body as { status: string }).status });
     if (rest.startsWith('tools/')) {
       const name = decodeURIComponent(rest.slice('tools/'.length));

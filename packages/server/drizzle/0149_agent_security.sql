@@ -137,7 +137,8 @@ GRANT EXECUTE ON FUNCTION public.retainer_sweep_agent_orphans() TO retainer_app;
 --> statement-breakpoint
 -- Workspaces with agent upkeep due (§5.4, §6.3): a turn whose runtime
 -- vanished (running past its deadline plus the 60-second grace), an expired
--- stream token, or a task session past its 7 days. IDs only.
+-- stream token, a task session past its 7 days, or a chat deleted mid-turn
+-- whose runtime has stopped or run out of time. IDs only.
 CREATE FUNCTION public.retainer_agent_maintenance_due(batch_limit integer)
 RETURNS TABLE(workspace_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
   SELECT DISTINCT x.workspace_id FROM (
@@ -149,6 +150,11 @@ RETURNS TABLE(workspace_id uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search
     SELECT s.workspace_id FROM public.agent_sessions s
     WHERE s.kind = 'task' AND s.last_active_at <= now() - interval '7 days'
       AND NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.session_id = s.id AND t.status = 'running')
+    UNION ALL
+    SELECT s.workspace_id FROM public.agent_sessions s
+    WHERE s.status = 'deleted'
+      AND NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.session_id = s.id
+        AND t.stopped_at IS NULL AND t.deadline + interval '60 seconds' > now())
   ) x
   LIMIT least(greatest(batch_limit, 1), 1000)
 $$;

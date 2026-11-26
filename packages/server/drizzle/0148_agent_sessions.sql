@@ -26,7 +26,7 @@ CREATE TABLE "agent_sessions" (
 	"last_active_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "agent_sessions_ws_id_uq" UNIQUE("workspace_id","id"),
 	CONSTRAINT "agent_sessions_kind" CHECK ("agent_sessions"."kind" in ('chat', 'task')),
-	CONSTRAINT "agent_sessions_status" CHECK ("agent_sessions"."status" in ('open'))
+	CONSTRAINT "agent_sessions_status" CHECK ("agent_sessions"."status" in ('open', 'deleted'))
 );
 --> statement-breakpoint
 ALTER TABLE "agent_sessions" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -59,7 +59,6 @@ CREATE TABLE "agent_turns" (
 	"steps" integer DEFAULT 0 NOT NULL,
 	"tool_calls" integer DEFAULT 0 NOT NULL,
 	"web_searches" integer DEFAULT 0 NOT NULL,
-	"web_fetches" integer DEFAULT 0 NOT NULL,
 	"input_tokens" bigint DEFAULT 0 NOT NULL,
 	"output_tokens" bigint DEFAULT 0 NOT NULL,
 	"cache_read_tokens" bigint DEFAULT 0 NOT NULL,

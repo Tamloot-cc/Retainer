@@ -105,13 +105,9 @@ describe('a chat turn', () => {
     const system = first.body.system as Array<Record<string, unknown>>;
     expect(system.at(-1)?.cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
     const tools = first.body.tools as Array<Record<string, unknown>>;
-    expect(tools.map((t) => t.name)).toEqual(['search', 'web_search', 'web_fetch']);
+    expect(tools.map((t) => t.name)).toEqual(['search', 'web_search']);
     expect(tools.find((t) => t.name === 'web_search')).toMatchObject({
-      type: 'web_search_20260209',
-      max_uses: 10,
-    });
-    expect(tools.find((t) => t.name === 'web_fetch')).toMatchObject({
-      type: 'web_fetch_20260209',
+      type: 'web_search_20250305',
       max_uses: 10,
     });
     // The person's message and the server-added context go to the model.
@@ -134,7 +130,6 @@ describe('a chat turn', () => {
     expect(reports[0]).toMatchObject({
       usage: { input: 40, cacheRead: 500, cacheWrite: 20, output: 5 },
       webSearches: 0,
-      webFetches: 0,
       toolCalls: 1,
       finishReason: 'tool-calls',
       rawFinishReason: 'tool_use',
@@ -388,6 +383,39 @@ describe('a chat turn', () => {
     expect(api.ofPath('/close')[0]!.body).toMatchObject({ status: 'cancelled' });
   });
 
+  it('ends a turn whose deadline passes in a silent request as timed_out', async () => {
+    anthropic.enqueue({ ...answerStep(), delayMs: 5_000 });
+    api.deadlineMs = 300;
+    const { outcome } = await turn(crypto.randomUUID(), 'Hello');
+    expect(outcome).toMatchObject({ status: 'timed_out', errorCode: 'deadline' });
+    expect(api.ofPath('/close')[0]!.body).toMatchObject({ status: 'timed_out' });
+  });
+
+  it('stops when the poll finds the turn gone (401)', async () => {
+    anthropic.enqueue({ ...answerStep(), delayMs: 5_000 });
+    setTimeout(() => {
+      api.turnStatus = 401;
+    }, 200);
+    const started = Date.now();
+    const { outcome } = await turn(crypto.randomUUID(), 'Hello', { pollIntervalMs: 100 });
+    expect(outcome).toMatchObject({ status: 'cancelled', errorCode: 'gone' });
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  it('closes the turn before the stream ends', async () => {
+    anthropic.enqueue(answerStep());
+    const claim = await client.claim(crypto.randomUUID(), { streamToken: 'stream-token' });
+    const running = await runTurn(
+      { api: client, mastraUrl: db.mastraUrl },
+      { claim, text: 'Hello' },
+    );
+    const sse = await new Response(running.stream).text();
+    // A hosted invocation is frozen once its response ends: the close is already in.
+    expect(api.ofPath('/close')).toHaveLength(1);
+    expect(sse).toContain('data: [DONE]');
+    expect((await running.done).status).toBe('completed');
+  });
+
   it('ends the turn on turn_cancelled from a tool call; Mastra goes no further', async () => {
     api.toolAnswer = () => 'fenced';
     anthropic.enqueue(toolStep, answerStep());
@@ -450,17 +478,17 @@ describe('a chat turn', () => {
     });
     await turn(crypto.randomUUID(), 'Search the web');
     const [report] = api.ofPath('/report').map((c) => c.body as Record<string, unknown>);
-    expect(report).toMatchObject({ webSearches: null, webFetches: 0 });
+    expect(report).toMatchObject({ webSearches: null });
   });
 
   it('uses the web counts Anthropic sends, zeros included', async () => {
     anthropic.enqueue({
       ...answerStep(),
-      usage: { server_tool_use: { web_search_requests: 3, web_fetch_requests: 0 } },
+      usage: { server_tool_use: { web_search_requests: 3 } },
     });
     await turn(crypto.randomUUID(), 'Search the web');
     const [report] = api.ofPath('/report').map((c) => c.body as Record<string, unknown>);
-    expect(report).toMatchObject({ webSearches: 3, webFetches: 0 });
+    expect(report).toMatchObject({ webSearches: 3 });
   });
 
   it('refuses nothing when the API refuses the claim, and starts no model request', async () => {

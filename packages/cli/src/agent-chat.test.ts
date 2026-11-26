@@ -82,6 +82,15 @@ describe('sending a message', () => {
       res.end(
         JSON.stringify({ token: 'st', expiresAt: '', streamUrl: `${origin}/chats/c1/stream` }),
       );
+    } else if (req.url === '/v1/agent/chats/c2/token') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({ token: 'st', expiresAt: '', streamUrl: `${origin}/chats/c2/stream` }),
+      );
+    } else if (req.url === '/chats/c2/stream') {
+      // Cut before its `finish`.
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end('data: {"type":"text-delta","id":"a","delta":"Hel"}\n\n');
     } else if (req.url === '/chats/c1/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end(
@@ -108,5 +117,13 @@ describe('sending a message', () => {
     expect(JSON.parse(stream?.body ?? '')).toEqual({
       message: { parts: [{ type: 'text', text: 'Hi' }] },
     });
+  });
+
+  it('reports a stream cut before its finish as incomplete, never completed', async () => {
+    const api = new RetainerClient({ baseUrl: origin, accessToken: 'cli-token', workspace: 'w1' });
+    let out = '';
+    const result = await sendMessage(api, 'c2', 'Hi', { write: (t) => (out += t), color: false });
+    expect(result).toEqual({ status: 'incomplete', code: 'stream_cut', text: 'Hel' });
+    expect(out).toContain('The answer was cut short.');
   });
 });

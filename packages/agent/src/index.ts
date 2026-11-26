@@ -5,6 +5,7 @@ export {
   UI_MESSAGE_VERSION,
   withoutServerAddedParts,
 } from './history.js';
+export { MAX_MESSAGE_CHARS, MAX_STREAM_BODY_BYTES } from './limits.js';
 export { isServerAddedPart, type ServerAddedTextPart, serverAddedTextPart } from './parts.js';
 export { BASE_SYSTEM_PROMPT } from './prompt.js';
 export {

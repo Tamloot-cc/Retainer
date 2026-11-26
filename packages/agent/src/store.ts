@@ -18,12 +18,16 @@ export class StoreFencedError extends Error {
   }
 }
 
+type FencedClient = pg.PoolClient & { connectionParameters: { query_timeout?: number } };
+
 /**
  * A pool that hands out no connection after its fence, and gives each query
- * no longer than the time left before it: a turn's saves end by its deadline
- * plus the grace, so steps from two turns never interleave.
+ * no longer than the time left before it, measured when the client is handed
+ * out for that query (`pool.query` takes a client per query): a turn's saves
+ * end by its deadline plus the grace, so steps from two turns never
+ * interleave.
  */
-class FencedPool extends pg.Pool {
+export class FencedPool extends pg.Pool {
   readonly #fence: number;
 
   constructor(config: pg.PoolConfig, fence: number) {
@@ -31,19 +35,36 @@ class FencedPool extends pg.Pool {
     this.#fence = fence;
   }
 
+  /** The time left before the fence, for the wait for a connection and for its queries. */
+  #left(): number {
+    return Math.max(1, this.#fence - Date.now());
+  }
+
+  #limit(client: FencedClient): FencedClient {
+    // pg reads it on every `client.query` without its own timeout.
+    client.connectionParameters.query_timeout = this.#left();
+    return client;
+  }
+
   // biome-ignore lint/suspicious/noExplicitAny: pg's overloads (promise and callback forms).
   override connect(...args: any[]): any {
+    const callback = args[0];
     if (Date.now() >= this.#fence) {
       const error = new StoreFencedError();
-      const callback = args[0];
       if (typeof callback === 'function') {
         process.nextTick(() => callback(error));
         return undefined;
       }
       return Promise.reject(error);
     }
-    // biome-ignore lint/suspicious/noExplicitAny: forwards pg's overloads unchanged.
-    return (super.connect as any)(...args);
+    this.options.connectionTimeoutMillis = this.#left();
+    if (typeof callback === 'function') {
+      // biome-ignore lint/suspicious/noExplicitAny: pg's callback form.
+      return super.connect((error: Error | undefined, client: any, release: any) =>
+        callback(error, client ? this.#limit(client) : client, release),
+      );
+    }
+    return super.connect().then((client) => this.#limit(client as FencedClient));
   }
 }
 
@@ -67,11 +88,7 @@ export function createMastraStore(opts: {
   };
   let pool: pg.Pool;
   if (opts.fence !== undefined) {
-    const left = Math.max(1, opts.fence - Date.now());
-    pool = new FencedPool(
-      { ...config, query_timeout: left, connectionTimeoutMillis: left },
-      opts.fence,
-    );
+    pool = new FencedPool(config, opts.fence);
   } else {
     pool = new pg.Pool(config);
   }

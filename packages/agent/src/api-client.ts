@@ -41,7 +41,6 @@ export type StepReport = {
   stepId: string;
   usage: { input: number; cacheRead: number; cacheWrite: number; output: number };
   webSearches: number | null;
-  webFetches: number | null;
   toolCalls: number;
   finishReason: string;
   rawFinishReason: string | null;

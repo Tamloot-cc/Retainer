@@ -226,6 +226,31 @@ describe('maintenance', () => {
     ).toHaveLength(0);
   });
 
+  it('removes a chat deleted mid-turn once its runtime has stopped, erasing a late step', async () => {
+    const w = await workspace('Deleted');
+    const stopped = await session(w.id, { running: true });
+    const stillRunning = await session(w.id, { running: true });
+    for (const chat of [stopped, stillRunning])
+      await db.owner`update agent_sessions set status = 'deleted', title = '' where id = ${chat.id}`;
+    // The first runtime saved one more step after the erasure, then stopped.
+    await db.owner`
+      update agent_turns set status = 'cancelled', stopped_at = now() where session_id = ${stopped.id}`;
+    const app = db.connect({ role: RUNTIME_ROLE, max: 2 });
+    const executor = db.connect({ role: EXECUTOR_ROLE, max: 1 });
+    try {
+      await maintainAgents(app, executor, Date.now() + 30_000);
+    } finally {
+      await app.end();
+      await executor.end();
+    }
+    expect(await rowsOf(stopped)).toBe(0);
+    expect(await db.owner`select 1 from agent_sessions where id = ${stopped.id}`).toHaveLength(0);
+    // A runtime still inside its deadline keeps the row, so its late report counts.
+    expect(await db.owner`select 1 from agent_sessions where id = ${stillRunning.id}`).toHaveLength(
+      1,
+    );
+  });
+
   it('sweeps Mastra rows that belong to no session, such as a step saved after its erasure', async () => {
     const w = await workspace('Orphans');
     const kept = await session(w.id);

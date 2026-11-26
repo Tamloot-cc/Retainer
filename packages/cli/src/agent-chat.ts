@@ -159,9 +159,18 @@ export async function sendMessage(
     return { status: 'refused_to_start', code, text: '' };
   }
   const state = renderState(io.color);
+  let finished = false;
   for await (const chunk of sseChunks(response.body)) {
+    if (chunk.type === 'finish') finished = true;
     if (io.json) io.json(chunk);
     else io.write(renderChunk(state, chunk));
+  }
+  // A stream that ends without its `finish` was cut on the way (a proxy, a
+  // dropped connection): what arrived is never reported as a finished answer.
+  if (!finished && !state.ended) {
+    const cut = { type: 'data-turn-end', data: { status: 'incomplete', code: 'stream_cut' } };
+    if (io.json) io.json(cut);
+    else io.write(renderChunk(state, cut));
   }
   if (!io.json && state.at !== 'start' && state.at !== 'line') io.write('\n');
   return { ...(state.ended ?? { status: 'completed', code: null }), text: state.text };

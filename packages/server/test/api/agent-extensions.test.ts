@@ -139,9 +139,9 @@ describe('extension read tools in a chat', () => {
     expect(second.tools).toBe(first.tools);
     expect((await close(before, second.turnToken)).status).toBe(200);
 
-    // A chat created after the install gets the tool, after the web tools.
+    // A chat created after the install gets the tool, after web search.
     const after = await claim(await newChat());
-    expect(after.names.slice(-3)).toEqual(['web_search', 'web_fetch', 'ext_check_address']);
+    expect(after.names.slice(-2)).toEqual(['web_search', 'ext_check_address']);
   });
 
   it('runs a call as the extension’s job: pending while it runs, then its output', async () => {

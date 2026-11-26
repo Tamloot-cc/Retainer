@@ -22,7 +22,7 @@ export const RETAINER_TOOL_NAMES: readonly string[] = [
   ...RETAINER_WRITE_TOOL_NAMES,
 ];
 
-/** Searches or fetches in one request: a constant, so the tool definitions never change (§10.1). */
+/** Searches in one request: a constant, so the tool definitions never change (§10.1). */
 export const WEB_MAX_USES = 10;
 
 /**
@@ -32,8 +32,7 @@ export const WEB_MAX_USES = 10;
 export type PinnedTool =
   | { kind: 'retainer'; name: string; description: string; inputSchema: JSONSchema7 }
   | { kind: 'extension'; name: string; description: string; inputSchema: JSONSchema7 }
-  | { kind: 'web_search'; name: 'web_search'; maxUses: number }
-  | { kind: 'web_fetch'; name: 'web_fetch'; maxUses: number };
+  | { kind: 'web_search'; name: 'web_search'; maxUses: number };
 
 /** Anthropic's tool names. */
 export const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -64,13 +63,12 @@ export function parsePinnedTools(value: unknown): PinnedTool[] {
           inputSchema: tool.inputSchema as JSONSchema7,
         };
       case 'web_search':
-      case 'web_fetch':
-        if (name !== tool.kind) throw new Error(`${tool.kind} must be named ${tool.kind}`);
+        if (name !== 'web_search') throw new Error('web_search must be named web_search');
         return {
-          kind: tool.kind,
-          name: tool.kind,
+          kind: 'web_search',
+          name: 'web_search',
           maxUses: typeof tool.maxUses === 'number' ? tool.maxUses : WEB_MAX_USES,
-        } as PinnedTool;
+        };
       default:
         throw new Error(`unknown pinned tool kind for ${name}`);
     }

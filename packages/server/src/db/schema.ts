@@ -3572,7 +3572,7 @@ export const agentSessions = pgTable(
     unique('agent_sessions_ws_id_uq').on(t.workspaceId, t.id),
     index('agent_sessions_owner_idx').on(t.workspaceId, t.owner, t.lastActiveAt),
     check('agent_sessions_kind', sql`${t.kind} in ('chat', 'task')`),
-    check('agent_sessions_status', sql`${t.status} in ('open')`),
+    check('agent_sessions_status', sql`${t.status} in ('open', 'deleted')`),
     tenantPolicy('agent_sessions_workspace', t.workspaceId),
   ],
 ).enableRLS();
@@ -3606,7 +3606,6 @@ export const agentTurns = pgTable(
     steps: integer('steps').notNull().default(0),
     toolCalls: integer('tool_calls').notNull().default(0),
     webSearches: integer('web_searches').notNull().default(0),
-    webFetches: integer('web_fetches').notNull().default(0),
     inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
     outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
     cacheReadTokens: bigint('cache_read_tokens', { mode: 'number' }).notNull().default(0),

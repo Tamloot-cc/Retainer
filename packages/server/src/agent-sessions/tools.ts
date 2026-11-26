@@ -35,7 +35,7 @@ export const extensionToolName = (tool: string) => `${EXTENSION_PREFIX}${tool}`;
 
 /**
  * The tools a new session pins, in order (agent spec §8.3): Retainer's
- * read and write tools as MCP defines them, the two web tools with their
+ * read and write tools as MCP defines them, web search with its
  * constant `max_uses`, then the workspace's extension tools declared `read`,
  * sorted by name. Every tool the caller could use is pinned, write tools
  * included even for a chat that starts read-only: access is checked when a
@@ -55,10 +55,7 @@ export async function pinnedTools(
     description: tool.description,
     inputSchema: tool.inputSchema as Extract<PinnedTool, { kind: 'retainer' }>['inputSchema'],
   }));
-  tools.push(
-    { kind: 'web_search', name: 'web_search', maxUses: WEB_MAX_USES },
-    { kind: 'web_fetch', name: 'web_fetch', maxUses: WEB_MAX_USES },
-  );
+  tools.push({ kind: 'web_search', name: 'web_search', maxUses: WEB_MAX_USES });
   const extensionTools: Record<string, ExtensionToolRef> = {};
   if (catalog) {
     const installed = (await installedTools(tx, catalog))
@@ -87,5 +84,4 @@ export const CHAT_LIMITS = {
   maxToolCalls: 200,
   webMaxUses: WEB_MAX_USES,
   webSearches: 30,
-  webFetches: 30,
 } as const;

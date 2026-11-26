@@ -2,7 +2,7 @@ import { Memory } from '@mastra/memory';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readChatMessages } from '../src/history.js';
 import { serverAddedTextPart } from '../src/parts.js';
-import { createMastraStore, type MastraStoreHandle } from '../src/store.js';
+import { createMastraStore, FencedPool, type MastraStoreHandle } from '../src/store.js';
 import { createMastraTestDatabase, type MastraTestDatabase } from './db.js';
 
 let db: MastraTestDatabase;
@@ -97,6 +97,20 @@ describe('the store fence', () => {
       );
     } finally {
       await fenced.close();
+    }
+  });
+
+  it('ends a query at the fence, not at the time left when the store was made', async () => {
+    const pool = new FencedPool({ connectionString: db.mastraUrl, max: 1 }, Date.now() + 1_500);
+    pool.on('error', () => {});
+    try {
+      await pool.query('select 1');
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      const started = Date.now();
+      await expect(pool.query('select pg_sleep(5)')).rejects.toThrow(/timeout/i);
+      expect(Date.now() - started).toBeLessThan(1_000);
+    } finally {
+      await pool.end().catch(() => {});
     }
   });
 });

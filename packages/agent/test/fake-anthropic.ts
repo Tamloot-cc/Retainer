@@ -9,7 +9,7 @@ export type FakeBlock =
   | {
       type: 'server_tool_use';
       id: string;
-      name: 'web_search' | 'web_fetch';
+      name: 'web_search';
       input: unknown;
     }
   | { type: 'web_search_tool_result'; tool_use_id: string; content: unknown[] };
@@ -19,7 +19,7 @@ export type FakeUsage = {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
-  server_tool_use?: { web_search_requests?: number; web_fetch_requests?: number };
+  server_tool_use?: { web_search_requests?: number };
 };
 
 /** One scripted answer: an HTTP error, or a streamed message. */

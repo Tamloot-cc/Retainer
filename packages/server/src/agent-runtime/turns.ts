@@ -63,7 +63,6 @@ export type TurnRow = {
   steps: number;
   tool_calls: number;
   web_searches: number;
-  web_fetches: number;
 };
 
 /** A verified turn token: its turn, whether it is the session's live one, and its credential. */

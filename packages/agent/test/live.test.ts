@@ -56,13 +56,9 @@ describe.skipIf(!live)('PR 1 checks against Anthropic', () => {
       options.effort = before;
     }
   };
-  /** Pinned tools without the web tools, for the checks that don't need them. */
+  /** Pinned tools without web search, for the checks that don't need it. */
   const withoutWeb = () => {
-    api.tools = api.tools.filter((tool) => tool.kind !== 'web_search' && tool.kind !== 'web_fetch');
-  };
-  const webTools = (kinds: Array<'web_search' | 'web_fetch'>) => {
-    withoutWeb();
-    for (const kind of kinds) api.tools.push({ kind, name: kind, maxUses: 10 });
+    api.tools = api.tools.filter((tool) => tool.kind !== 'web_search');
   };
   afterAll(async () => {
     if (process.env.RETAINER_AGENT_LIVE_OUT) {
@@ -153,21 +149,18 @@ describe.skipIf(!live)('PR 1 checks against Anthropic', () => {
     expect(second.outcome.status).toBe('completed');
   }, 120_000);
 
-  it('runs Anthropic web search and fetch without a container', async () => {
-    const outcomes: Record<string, unknown> = {};
-    for (const kinds of [['web_search'], ['web_fetch'], ['web_search', 'web_fetch']] as const) {
-      webTools([...kinds]);
-      const result = await turn(
-        crypto.randomUUID(),
-        kinds.includes('web_search')
-          ? 'Search the web for the Anthropic homepage and tell me its page title in five words or fewer.'
-          : 'Fetch https://www.anthropic.com and tell me its page title in five words or fewer.',
-      );
-      outcomes[kinds.join('+')] = { outcome: result.outcome, reports: result.reports };
-    }
-    results.web = outcomes;
-    expect(Object.keys(outcomes)).toHaveLength(3);
-  }, 300_000);
+  it('runs Anthropic web search (20250305) and counts the searches', async () => {
+    withoutWeb();
+    api.tools.push({ kind: 'web_search', name: 'web_search', maxUses: 10 });
+    const result = await turn(
+      crypto.randomUUID(),
+      'Search the web for the latest stable Node.js release and tell me its version number.',
+    );
+    results.web = { outcome: result.outcome, reports: result.reports };
+    expect(result.outcome.status).toBe('completed');
+    const searches = result.reports.reduce((sum, report) => sum + (report.webSearches ?? 0), 0);
+    expect(searches).toBeGreaterThan(0);
+  }, 180_000);
 
   it('records which Mastra tables a turn writes', async () => {
     const { rows } = await db.query(

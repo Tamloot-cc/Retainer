@@ -51,6 +51,9 @@ import {
   type RetainerToolResult,
 } from './tools.js';
 
+/** The largest stream body the API's forward reads (§6.1). */
+export { MAX_STREAM_BODY_BYTES } from '@retainer/agent';
+
 /** A stream token's life (agent spec §6.1, §7.3). */
 const STREAM_TOKEN_MS = 15 * 60_000;
 /** How long an extension tool's job may take (§8.1); never past the turn's deadline. */
@@ -87,6 +90,7 @@ type SessionRow = {
   id: string;
   workspace_id: string;
   kind: 'chat' | 'task';
+  status: 'open' | 'deleted';
   owner: string;
   person_id: string | null;
   title: string;
@@ -123,7 +127,6 @@ const reportBody = z.strictObject({
   stepId: z.string().min(1).max(200),
   usage: z.strictObject({ input: count, cacheRead: count, cacheWrite: count, output: count }),
   webSearches: count.nullable(),
-  webFetches: count.nullable(),
   toolCalls: count,
   finishReason: z.string().max(100).optional(),
   rawFinishReason: z.string().max(100).nullable().optional(),
@@ -186,7 +189,8 @@ export class AgentSessions {
     const row = lock
       ? await lockSession<SessionRow>(tx, id)
       : (await tx<SessionRow[]>`select * from agent_sessions where id = ${id}`)[0];
-    if (row?.kind !== 'chat' || row.owner !== owner) throw notFound('chat');
+    if (row?.kind !== 'chat' || row.status !== 'open' || row.owner !== owner)
+      throw notFound('chat');
     return row;
   }
 
@@ -221,7 +225,7 @@ export class AgentSessions {
       >`
         select s.id, s.title, s.created_at, s.last_active_at,
           exists(select 1 from agent_turns t where t.session_id = s.id and t.status = 'running') as running
-        from agent_sessions s where s.owner = ${owned.owner} and s.kind = 'chat'
+        from agent_sessions s where s.owner = ${owned.owner} and s.kind = 'chat' and s.status = 'open'
         order by s.last_active_at desc, s.id desc limit 200`;
       return {
         chats: rows.map((row) => ({
@@ -280,14 +284,23 @@ export class AgentSessions {
     });
   }
 
-  /** Deletes a chat: cancels its turn, erases its stored content, then the session (§5.4). */
+  /**
+   * Deletes a chat (§5.4): cancels its turn and erases its stored content at
+   * once. A chat whose turn was running keeps its row, marked deleted and
+   * without its title, until that runtime has stopped: the turn stays fenced
+   * as `cancelled`, so the runtime's poll sees the cancel and a step already
+   * under way still counts (§6.5). Maintenance then erases again and deletes
+   * the row.
+   */
   async deleteChat(caller: Caller, id: string) {
     const owned = this.owner(caller);
     await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await this.session(tx, owned.owner, id, true);
-      await cancelTurn(tx, id);
+      const running = await cancelTurn(tx, id);
       await eraseAgentContent(tx, caller.workspaceId, [id]);
-      await tx`delete from agent_sessions where id = ${id}`;
+      if (running)
+        await tx`update agent_sessions set status = 'deleted', title = '' where id = ${id}`;
+      else await tx`delete from agent_sessions where id = ${id}`;
     });
   }
 
@@ -315,7 +328,7 @@ export class AgentSessions {
         throw new AppError(401, 'unauthorized', 'the stream token is invalid or expired');
       const access = agentAccessSchema.parse(stream.access);
       const session = await lockSession<SessionRow>(tx, sessionId);
-      if (!session) throw notFound('chat');
+      if (session?.status !== 'open') throw notFound('chat');
       // Access follows the credential that minted the turn, as it is now (§6.7).
       const caller = await agentCaller(tx, workspaceId, access);
       await this.checkDay(tx, session);
@@ -541,13 +554,12 @@ export class AgentSessions {
         SessionRow[]
       >`select * from agent_sessions where id = ${sessionId}`;
       if (!session) throw notFound('session');
-      const carries = (kind: string) =>
-        (session.tools as { kind: string }[]).some((tool) => tool.kind === kind);
       const limits = sessionLimits(session);
-      const allowance = limits.webMaxUses;
-      // Missing counts charge the whole allowance of a web tool the session carries.
-      const searches = input.webSearches ?? (carries('web_search') ? allowance : 0);
-      const fetches = input.webFetches ?? (carries('web_fetch') ? allowance : 0);
+      // A missing count charges the whole allowance, if the session carries web search.
+      const carriesSearch = (session.tools as { kind: string }[]).some(
+        (tool) => tool.kind === 'web_search',
+      );
+      const searches = input.webSearches ?? (carriesSearch ? limits.webMaxUses : 0);
       const inserted = await tx`
         insert into ai_usage (workspace_id, kind, attempt, model, input_tokens, output_tokens,
           cache_read_tokens, cache_write_tokens, usage, partial, agent_session_id, agent_turn_id,
@@ -555,7 +567,7 @@ export class AgentSessions {
         values (${turn.workspace_id}, 'agent', 1, ${input.model ?? AGENT_MODEL}, ${input.usage.input},
           ${input.usage.output}, ${input.usage.cacheRead}, ${input.usage.cacheWrite},
           ${tx.json({
-            server_tool_use: { web_search_requests: searches, web_fetch_requests: fetches },
+            server_tool_use: { web_search_requests: searches },
             tool_calls: input.toolCalls,
             ...(input.finishReason ? { finish_reason: input.finishReason } : {}),
             ...(input.rawFinishReason ? { raw_finish_reason: input.rawFinishReason } : {}),
@@ -566,7 +578,7 @@ export class AgentSessions {
       if (inserted.length > 0) {
         const [updated] = await tx<(typeof turn)[]>`
           update agent_turns set steps = steps + 1, tool_calls = tool_calls + ${input.toolCalls},
-            web_searches = web_searches + ${searches}, web_fetches = web_fetches + ${fetches},
+            web_searches = web_searches + ${searches},
             input_tokens = input_tokens + ${input.usage.input},
             output_tokens = output_tokens + ${input.usage.output},
             cache_read_tokens = cache_read_tokens + ${input.usage.cacheRead},
@@ -589,7 +601,6 @@ export class AgentSessions {
         totals.steps >= limits.maxSteps ||
         totals.tool_calls >= limits.maxToolCalls ||
         totals.web_searches >= limits.webSearches ||
-        totals.web_fetches >= limits.webFetches ||
         (await this.dayUse(tx, session));
       return over
         ? { action: 'stop' as const, reason: 'limit_reached' as const }

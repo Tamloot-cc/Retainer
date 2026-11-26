@@ -91,7 +91,6 @@ const report = (
     stepId,
     usage: { input: 40, cacheRead: 500, cacheWrite: 20, output: 7 },
     webSearches: 0,
-    webFetches: 0,
     toolCalls: 1,
     finishReason: 'tool-calls',
     ...extra,
@@ -100,17 +99,13 @@ const close = (id: string, turnToken: string, status = 'completed') =>
   runtime(id, turnToken, '/close', { status, errorCode: null, durationMs: 1000 });
 
 describe('chats', () => {
-  it('pins the Retainer tools, the web tools and the base prompt on a new chat', async () => {
+  it('pins the Retainer tools, web search and the base prompt on a new chat', async () => {
     const id = await newChat();
     const [row] = await db.owner<
       { tools: { kind: string; name: string }[]; system_blocks: string[]; owner: string }[]
     >`select tools, system_blocks, owner from agent_sessions where id = ${id}`;
     expect(row?.owner).toBe('key:desk');
-    expect(row?.tools.map((tool) => tool.name)).toEqual([
-      ...RETAINER_TOOL_NAMES,
-      'web_search',
-      'web_fetch',
-    ]);
+    expect(row?.tools.map((tool) => tool.name)).toEqual([...RETAINER_TOOL_NAMES, 'web_search']);
     expect(row?.tools.some((tool) => tool.kind === 'extension')).toBe(false);
     expect(row?.system_blocks).toHaveLength(1);
 
@@ -154,6 +149,7 @@ describe('chats', () => {
     const before = await mastraRows(db.owner, [gone], [goneTurn.runId]);
     expect(Object.values(before).every((count) => count > 0)).toBe(true);
 
+    const goneToken = await streamToken(gone);
     const deleted = await t.request(`/v1/agent/chats/${gone}`, {
       key: keys.writer,
       method: 'DELETE',
@@ -162,8 +158,36 @@ describe('chats', () => {
     expect(total(await mastraRows(db.owner, [gone], [goneTurn.runId]))).toBe(0);
     const keptRows = await mastraRows(db.owner, [kept], [keptTurn.runId]);
     expect(Object.values(keptRows).every((count) => count > 0)).toBe(true);
-    // The deleted chat's running turn token opens nothing any more.
-    expect((await runtime(gone, goneTurn.turnToken, '/turn')).status).toBe(401);
+    // The running turn stays fenced as cancelled until its runtime stops
+    // (spec §6.5): the poll sees the cancel, and a step under way still counts.
+    const state = await runtime(gone, goneTurn.turnToken, '/turn');
+    expect(state.body).toMatchObject({ status: 'cancelled' });
+    const late = await report(gone, goneTurn.turnToken, 'late-step');
+    expect(late.body).toEqual({ action: 'stop', reason: 'cancelled' });
+    const [usage] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from ai_usage where agent_session_id = ${gone}`;
+    expect(usage?.n).toBe(1);
+    // The chat itself is gone for its person.
+    expect((await t.request(`/v1/agent/chats/${gone}`, { key: keys.writer })).status).toBe(404);
+    const list = await t.request('/v1/agent/chats', { key: keys.writer });
+    expect(list.body.chats.map((chat: { id: string }) => chat.id)).not.toContain(gone);
+    const [row] = await db.owner<{ status: string; title: string }[]>`
+      select status, title from agent_sessions where id = ${gone}`;
+    expect(row).toEqual({ status: 'deleted', title: '' });
+    // A stream token minted before the delete can't start another turn.
+    expect((await claim(gone, goneToken.token)).status).toBe(404);
+  });
+
+  it('deletes a chat with no running turn outright', async () => {
+    const id = await newChat();
+    const turn = await claimed(id);
+    expect((await close(id, turn.turnToken)).status).toBe(200);
+    const deleted = await t.request(`/v1/agent/chats/${id}`, {
+      key: keys.writer,
+      method: 'DELETE',
+    });
+    expect(deleted.status).toBe(204);
+    expect(await db.owner`select 1 from agent_sessions where id = ${id}`).toHaveLength(0);
   });
 
   it('refuses machine credentials other than keys in key mode', async () => {
@@ -410,7 +434,6 @@ describe('tools', () => {
               input: {},
               usage: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
               webSearches: 0,
-              webFetches: 0,
               toolCalls: 0,
               status: 'completed',
               durationMs: 0,
@@ -448,7 +471,7 @@ describe('reports', () => {
       output_tokens: 7,
     });
     expect(usage[0]?.usage).toMatchObject({
-      server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 },
+      server_tool_use: { web_search_requests: 0 },
     });
     const [row] = await db.owner<
       { steps: number }[]
@@ -459,11 +482,11 @@ describe('reports', () => {
   it('charges the full web allowance when counts are missing, and stops at the cap', async () => {
     const id = await newChat();
     const turn = await claimed(id);
-    const first = await report(id, turn.turnToken, 'w1', { webSearches: null, webFetches: 5 });
+    const first = await report(id, turn.turnToken, 'w1', { webSearches: null });
     expect(first.body).toEqual({ action: 'continue' });
-    const [row] = await db.owner<{ web_searches: number; web_fetches: number }[]>`
-      select web_searches, web_fetches from agent_turns where id = ${turn.turnId}`;
-    expect(row).toMatchObject({ web_searches: 10, web_fetches: 5 });
+    const [row] = await db.owner<{ web_searches: number }[]>`
+      select web_searches from agent_turns where id = ${turn.turnId}`;
+    expect(row).toMatchObject({ web_searches: 10 });
     await report(id, turn.turnToken, 'w2', { webSearches: 10 });
     const capped = await report(id, turn.turnToken, 'w3', { webSearches: 10 });
     expect(capped.body).toEqual({ action: 'stop', reason: 'limit_reached' });
@@ -512,7 +535,6 @@ describe('daily limits', () => {
             stepId: 'one',
             usage: { input: 1, cacheRead: 0, cacheWrite: 0, output: 1 },
             webSearches: 0,
-            webFetches: 0,
             toolCalls: 0,
           },
         }),

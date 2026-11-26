@@ -45,7 +45,7 @@ export function systemMessages(blocks: string[]) {
   }));
 }
 
-/** Anthropic's server-side web tools, used only for their definitions (spec §8.1). */
+/** Anthropic's server-side web search, used only for its definition (spec §8.1). */
 const anthropicTools = createAnthropic({ apiKey: 'definitions-only' }).tools;
 
 /** Reads the turn token from a tool call's request context. */
@@ -69,17 +69,16 @@ export type ToolDispatch = {
 /**
  * Turns the session's pinned list into Mastra tools, in its order (§8.3).
  * Retainer and extension tools call the runtime's tool endpoint with the
- * turn token; the web tools are Anthropic's, with a constant `max_uses`.
+ * turn token; web search is Anthropic's, with a constant `max_uses`.
  */
 export function buildTools(pinned: PinnedTool[], dispatch: ToolDispatch) {
   const tools: Record<string, unknown> = {};
   for (const tool of pinned) {
     switch (tool.kind) {
       case 'web_search':
-        tools.web_search = anthropicTools.webSearch_20260209({ maxUses: tool.maxUses });
-        break;
-      case 'web_fetch':
-        tools.web_fetch = anthropicTools.webFetch_20260209({ maxUses: tool.maxUses });
+        // `20250305`: the `20260209` version needs code execution, which a
+        // HIPAA-configured Anthropic organization refuses (spec §2, §3.4).
+        tools.web_search = anthropicTools.webSearch_20250305({ maxUses: tool.maxUses });
         break;
       default:
         tools[tool.name] = createTool({

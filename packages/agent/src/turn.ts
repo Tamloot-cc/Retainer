@@ -53,6 +53,20 @@ type StopCause =
   | { kind: 'deadline' }
   | { kind: 'report_failed' };
 
+/** How a turn ends when the runtime stopped it itself. */
+function statusFromStopCause(cause: StopCause): { status: TurnStatus; code: string } {
+  switch (cause.kind) {
+    case 'cancelled':
+      return { status: 'cancelled', code: cause.code };
+    case 'deadline':
+      return { status: 'timed_out', code: 'deadline' };
+    case 'report_failed':
+      return { status: 'failed', code: 'report_failed' };
+    case 'limit':
+      return { status: 'limit_reached', code: cause.reason };
+  }
+}
+
 /**
  * Maps a model error to how the turn ends (spec §3.4, §5.5, §10.2). Reads
  * only status codes and Anthropic's error text, never logs them.
@@ -166,7 +180,7 @@ export function stepReport(
   const cacheRead = usage.cachedInputTokens ?? 0;
   const cacheWrite = usage.cacheCreationInputTokens ?? 0;
   const anthropic = (step.providerMetadata?.anthropic ?? {}) as {
-    usage?: { server_tool_use?: { web_search_requests?: number; web_fetch_requests?: number } };
+    usage?: { server_tool_use?: { web_search_requests?: number } };
   };
   const serverToolUse = anthropic.usage?.server_tool_use;
   // Mastra's step lists its tool calls as chunks: { payload: { toolName, providerExecuted } }.
@@ -186,10 +200,10 @@ export function stepReport(
   // A count Anthropic sent is used as is, zero included. Without one, a step
   // that ran no server tool counts zero; one that did counts as missing, and
   // the API charges the full allowance (spec §10.1).
-  const count = (key: 'web_search_requests' | 'web_fetch_requests', tool: string) => {
-    const value = serverToolUse?.[key];
+  const searches = () => {
+    const value = serverToolUse?.web_search_requests;
     if (typeof value === 'number') return value;
-    return serverCalls(tool) === 0 ? 0 : null;
+    return serverCalls('web_search') === 0 ? 0 : null;
   };
   const clientToolCalls = calls.filter((call) => !call.providerExecuted).length;
   return {
@@ -200,8 +214,7 @@ export function stepReport(
       cacheWrite,
       output: usage.outputTokens ?? 0,
     },
-    webSearches: count('web_search_requests', 'web_search'),
-    webFetches: count('web_fetch_requests', 'web_fetch'),
+    webSearches: searches(),
     toolCalls: clientToolCalls,
     finishReason: step.finishReason ?? 'unknown',
     rawFinishReason,
@@ -443,7 +456,12 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
           stop({ kind: 'cancelled', code: state.current ? state.status : 'stale' });
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        // The turn's credential no longer opens anything: the turn is gone.
+        // A failed or slow poll changes nothing (spec §6.5).
+        if (error instanceof RuntimeApiError && (error.status === 401 || error.status === 404))
+          stop({ kind: 'cancelled', code: 'gone' });
+      });
   }, deps.pollIntervalMs ?? POLL_INTERVAL_MS);
   const deadlineTimer = setTimeout(
     () => stop({ kind: 'deadline' }),
@@ -555,18 +573,9 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
       const finishedAnswer = lastRaw === 'end_turn' || lastRaw === 'stop_sequence';
       let status: TurnStatus;
       let code: string | null;
-      if (stopCause?.kind === 'cancelled') {
-        status = 'cancelled';
-        code = stopCause.code;
-      } else if (stopCause?.kind === 'deadline') {
-        status = 'timed_out';
-        code = 'deadline';
-      } else if (stopCause?.kind === 'report_failed') {
-        status = 'failed';
-        code = 'report_failed';
-      } else if (stopCause?.kind === 'limit' && !finishedAnswer) {
-        status = 'limit_reached';
-        code = stopCause.reason;
+      const stopped = stopCause && statusFromStopCause(stopCause);
+      if (stopped && !(stopCause?.kind === 'limit' && finishedAnswer)) {
+        ({ status, code } = stopped);
       } else if (modelError && !finishedAnswer) {
         ({ status, code } = classifyModelError(modelError));
         logEvent('warn', 'turn_model_error', { sessionId, ...errorFields(modelError) });
@@ -575,15 +584,20 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
       }
       outcome = { status, errorCode: code, steps: stepIndex };
     } catch (error) {
-      const classified = stopCause
-        ? { status: 'cancelled' as TurnStatus, code: 'stopped' }
-        : classifyModelError(error);
+      // An abort lands here too: it ends the turn the way its cause says.
+      const classified = stopCause ? statusFromStopCause(stopCause) : classifyModelError(error);
       outcome = { status: classified.status, errorCode: classified.code, steps: stepIndex };
       logEvent('error', 'turn_failed', { sessionId, ...errorFields(error) });
     } finally {
       clearInterval(poll);
       clearTimeout(deadlineTimer);
     }
+    // Pending saves finish (or hit the fence) before the close (spec §5.2),
+    // and the turn is closed before the stream ends: a hosted invocation is
+    // frozen once its response ends, and a client may send its next message
+    // as soon as it sees the end.
+    await handle.close().catch(() => {});
+    await closeTurn(outcome.status, outcome.errorCode);
     if (outcome.status !== 'completed') {
       await send({
         type: 'data-turn-end',
@@ -599,9 +613,6 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
         clientGone = true;
       }
     }
-    // Pending saves finish (or hit the fence) before the close (spec §5.2).
-    await handle.close().catch(() => {});
-    await closeTurn(outcome.status, outcome.errorCode);
     logEvent('info', 'turn_closed', {
       sessionId,
       turnId: claim.turnId,

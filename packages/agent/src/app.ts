@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { RuntimeApi, RuntimeApiError } from './api-client.js';
+import { MAX_MESSAGE_CHARS, streamBodyLimit } from './limits.js';
 import { errorFields, logEvent } from './logger.js';
 import { runTurn, titleFrom } from './turn.js';
-
-/** The longest message a person may send in one turn. */
-export const MAX_MESSAGE_CHARS = 100_000;
 
 export type AgentAppOptions = {
   /** Retainer's API, for the runtime routes. */
@@ -84,7 +82,7 @@ export function createAgentApp(options: AgentAppOptions) {
 
   app.get('/health', () => new Response('ok'));
 
-  app.post('/chats/:id/stream', async (c) => {
+  app.post('/chats/:id/stream', streamBodyLimit(), async (c) => {
     const sessionId = c.req.param('id');
     if (!SESSION_ID.test(sessionId)) return error(404, 'not_found');
     const header = c.req.header('authorization') ?? '';

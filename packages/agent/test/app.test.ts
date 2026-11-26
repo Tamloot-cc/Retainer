@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createAgentApp, parseStreamBody } from '../src/app.js';
 import { loadAgentRuntimeConfig } from '../src/config.js';
+import { MAX_STREAM_BODY_BYTES } from '../src/limits.js';
 import { setLogSink } from '../src/logger.js';
 import { createMastraTestDatabase, type MastraTestDatabase } from './db.js';
 import { FakeAnthropic } from './fake-anthropic.js';
@@ -124,6 +125,13 @@ describe('the stream route', () => {
     const response = await post({ ...ok, messages: [] });
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ code: 'invalid_request' });
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it('refuses an oversized body with 413, before any claim', async () => {
+    const text = 'x'.repeat(MAX_STREAM_BODY_BYTES);
+    const response = await post({ message: { parts: [{ type: 'text', text }] } });
+    expect(response.status).toBe(413);
     expect(api.calls).toHaveLength(0);
   });
 

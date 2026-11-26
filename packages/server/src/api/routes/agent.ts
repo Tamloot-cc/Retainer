@@ -1,6 +1,7 @@
 import type { Context, Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { stream as honoStream } from 'hono/streaming';
-import type { AgentSessions } from '../../agent-sessions/service.js';
+import { type AgentSessions, MAX_STREAM_BODY_BYTES } from '../../agent-sessions/service.js';
 import { bearerToken } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
 import { type AppEnv, errorResponse, toAppError } from '../../http/response.js';
@@ -82,7 +83,12 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
  * runs to its end and is saved.
  */
 export function agentStreamForward(app: Hono<AppEnv>, upstream: string | undefined) {
-  app.post('/v1/agent/chats/:id/stream', async (c) => {
+  // Refused before it is buffered: this route is outside `/v1`'s authentication.
+  const limit = bodyLimit({
+    maxSize: MAX_STREAM_BODY_BYTES,
+    onError: (c) => c.json({ code: 'payload_too_large' }, 413),
+  });
+  app.post('/v1/agent/chats/:id/stream', limit, async (c) => {
     if (!upstream)
       return errorResponse(
         c,

@@ -1,5 +1,5 @@
 import { eraseAgentContent, sweepAgentOrphans } from '../agent-runtime/erasure.js';
-import { timeOutTurns } from '../agent-runtime/turns.js';
+import { GRACE_MS, timeOutTurns } from '../agent-runtime/turns.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace } from '../db/tx.js';
 
@@ -12,7 +12,8 @@ let lastOrphanSweep = 0;
 /**
  * The agent's upkeep (agent spec §5.4, §6.3), in the maintenance tick beside
  * routine retention: turns whose runtime vanished are closed as `timed_out`,
- * expired stream tokens go, a task's content is erased 7 days on, and once a
+ * expired stream tokens go, a task's content is erased 7 days on, a chat
+ * deleted mid-turn goes once its runtime has stopped, and once a
  * day Mastra rows that belong to no session or turn are swept. `sql` is the
  * runtime role; `discovery` the executor role, which finds due workspaces.
  */
@@ -29,7 +30,14 @@ export async function maintainAgents(sql: Sql, discovery: Sql, deadline: number)
         where s.kind = 'task' and s.last_active_at <= now() - ${TASK_RETENTION}::interval
           and not exists (select 1 from agent_turns t where t.session_id = s.id and t.status = 'running')
         limit 100`;
-      const ids = expired.map((row) => row.id);
+      // A chat deleted mid-turn, once its runtime has stopped or run out of time.
+      const deleted = await tx<{ id: string }[]>`
+        select s.id from agent_sessions s
+        where s.status = 'deleted' and not exists (
+          select 1 from agent_turns t where t.session_id = s.id and t.stopped_at is null
+            and t.deadline + make_interval(secs => ${GRACE_MS / 1000}) > clock_timestamp())
+        limit 100`;
+      const ids = [...expired, ...deleted].map((row) => row.id);
       if (ids.length > 0) {
         await eraseAgentContent(tx, workspace, ids);
         await tx`delete from agent_sessions where id = any(${ids}::uuid[])`;

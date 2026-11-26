@@ -1,6 +1,6 @@
 {
-  "id": "9ee8aa7e-5bec-419a-b032-9aaed99bb8ba",
-  "prevId": "f4ea74f1-29b1-44b3-9c88-f82b8b65c47c",
+  "id": "2fd36d75-c982-46e5-b31b-6d2c22c6606f",
+  "prevId": "1de2ea07-a0af-43a9-a18b-052d76867534",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -257,7 +257,7 @@
         },
         "agent_sessions_status": {
           "name": "agent_sessions_status",
-          "value": "\"agent_sessions\".\"status\" in ('open')"
+          "value": "\"agent_sessions\".\"status\" in ('open', 'deleted')"
         }
       },
       "isRLSEnabled": true
@@ -503,13 +503,6 @@
         },
         "web_searches": {
           "name": "web_searches",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "web_fetches": {
-          "name": "web_fetches",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
