@@ -16,6 +16,7 @@ const alias = {
   '@retainer/extension/nango-gmail': fileURLToPath(
     new URL('../extension/src/nango-gmail.ts', import.meta.url),
   ),
+  '@retainer/extension/model': fileURLToPath(new URL('../extension/src/model.ts', import.meta.url)),
   '@retainer/runner/tamloot-contract': fileURLToPath(
     new URL('../runner/src/tamloot-contract.ts', import.meta.url),
   ),

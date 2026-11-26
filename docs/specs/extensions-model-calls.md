@@ -87,9 +87,9 @@ deterministic) is unchanged.
   today; the proxy isn't involved.
 - **SDK.** Bundles call the proxy with the official TypeScript SDK,
   `@anthropic-ai/sdk`, through `modelClient(invocation)` from
-  `@retainer/extension` (§3.2). Bundles never write the proxy's URL, so what
-  sits behind it can change without a new release. The server needs no model
-  SDK: it forwards HTTP.
+  `@retainer/extension/model` (§3.2). Bundles never write the proxy's URL, so
+  what sits behind it can change without a new release. The server needs no
+  model SDK: it forwards HTTP, and never loads that subpath.
 - **Model use is granted.** `uses: ['model']` is access an admin approves and
   the installation stores, like scopes (§3.1). A run can call the model only
   when its function declares it and the grant includes it.
@@ -199,10 +199,16 @@ its own field the same way (§11).
 **Client.** A bundle gets its client from the extension SDK:
 
 ```ts
-import { modelClient } from '@retainer/extension';
+import { modelClient } from '@retainer/extension/model';
 
 const anthropic = modelClient(invocation);
 ```
+
+It lives on its own subpath so the package's main entry doesn't load the
+Anthropic SDK: the server imports the main entry for manifests and
+protocols and needs no model SDK. `@anthropic-ai/sdk` is an optional peer
+dependency of `@retainer/extension`; a bundle that calls the model depends
+on it directly (decided 2026-11-26, to keep the hosted package small).
 
 `modelClient` returns an `Anthropic` client whose `baseURL` is
 `invocation.model.origin`, whose `apiKey` is the model token, and whose

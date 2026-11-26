@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  defineExtension,
-  functionUses,
-  MODEL_USE_NOTICE,
-  modelClient,
-  releaseUses,
-} from './index.js';
+import { defineExtension, functionUses, MODEL_USE_NOTICE, releaseUses } from './index.js';
+import { modelClient } from './model.js';
 import { invocationSchema } from './protocol.js';
 
 const fixture = () => ({

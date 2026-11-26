@@ -24,6 +24,10 @@
     "./nango-gmail": {
       "types": "./dist/nango-gmail.d.ts",
       "default": "./dist/nango-gmail.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "default": "./dist/model.js"
     }
   },
   "files": [
@@ -39,8 +43,18 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.12.0",
     "@retainer/shared": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "^1.12.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^1.12.0"
   }
 }

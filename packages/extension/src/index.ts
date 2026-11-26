@@ -1284,7 +1284,6 @@ export type ExtensionAppLink = {
 };
 
 export * from './agent.js';
-export * from './model.js';
 export * from './protocol.js';
 export * from './webhook.js';
 

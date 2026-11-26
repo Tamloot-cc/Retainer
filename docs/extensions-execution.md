@@ -118,9 +118,10 @@ A function that declares `uses: ['model']`, on an installation whose admin
 approved model use, calls a model through Retainer's model proxy
 ([extensions-model-calls.md](specs/extensions-model-calls.md)). Its run gets a
 second token next to the run token, good for model calls only, and the proxy's
-base URL; the bundle builds its client with `modelClient(invocation)`. The proxy
-checks the token and the request, swaps in Retainer's Anthropic key, streams
-the response back and records token counts in `ai_usage`, never content.
+base URL; the bundle builds its client with `modelClient(invocation)` from
+`@retainer/extension/model`. The proxy checks the token and the request, swaps
+in Retainer's Anthropic key, streams the response back and records token
+counts in `ai_usage`, never content.
 
 If the extension goes away mid-response, the self-hosted proxy aborts its
 request to Anthropic and records what it saw as `partial`. The hosted `model`
