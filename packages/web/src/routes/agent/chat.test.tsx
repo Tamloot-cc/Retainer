@@ -212,7 +212,7 @@ describe('ChatPage', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
   });
 
-  it('after Stop, shows the saved chat and that the turn was stopped', async () => {
+  it('after Stop, says the turn was stopped and keeps what was shown', async () => {
     router.params = { id: 'chat-1' };
     const detail = vi
       .spyOn(api, 'agentChat')

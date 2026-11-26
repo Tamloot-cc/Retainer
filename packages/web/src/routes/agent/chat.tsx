@@ -262,14 +262,10 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
   const cancel = useMutation({
     mutationFn: () => api.cancelAgentChat(chat.id),
     onError: () => setStopError("The agent couldn't be stopped. Try again."),
-    onSettled: async () => {
-      await refresh();
-      // Stop cut the stream that would have carried the turn's ending, so read the
-      // saved chat: its messages and how the turn ended. While the runtime is still
-      // stopping, the effect above picks them up once it has.
-      const saved = client.getQueryData<AgentChatDetail>(detailKey);
-      if (saved && !saved.running) setMessages(saved.messages as ChatMessage[]);
-    },
+    // Stop cut the stream that would have carried the turn's ending: the refreshed
+    // chat says how it ended. The streamed messages stay, since the saved copy has no
+    // earlier turns' endings; a step saved after the cancel shows on the next load.
+    onSettled: () => void refresh(),
   });
   const onStop = () => {
     setStreamed(false);
