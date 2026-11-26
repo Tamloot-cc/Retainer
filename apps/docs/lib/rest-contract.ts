@@ -65,9 +65,17 @@ const recordFields: Schema = {
   additionalProperties: true,
   description: 'Keys are API field names from the workspace schema. Null clears a value.',
 };
-const sort = array(object({ field: text, direction: choice('asc', 'desc') }, ['field']), {
-  maxItems: 3,
-});
+const sortBy = (field: Schema) =>
+  array(object({ field, direction: choice('asc', 'desc') }, ['field']), { maxItems: 3 });
+const sort = sortBy(text);
+const eventQueryColumn = choice(
+  'occurredAt',
+  'channel',
+  'externalId',
+  'id',
+  'createdAt',
+  'updatedAt',
+);
 const queryFields = {
   search: stringLength(1, 500),
   filter: map(),
@@ -77,6 +85,15 @@ const queryFields = {
   include: array(choice('relationReferences')),
   linked: object({ record: id, link: attachment }, ['record']),
 };
+const recordPage = (record: Schema) =>
+  object(
+    {
+      records: array(record),
+      nextCursor: nullString,
+      relationReferences: map(ref('RecordReference')),
+    },
+    ['records', 'nextCursor'],
+  );
 const writeFields = { values: recordFields, source: id, bindings };
 const upsertFields = {
   ...writeFields,
@@ -169,14 +186,7 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     ['id', 'object', 'label', 'fields', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'],
   ),
   RecordReference: object({ id, object: text, label: nullString }),
-  RecordPage: object(
-    {
-      records: array(ref('Record')),
-      nextCursor: nullString,
-      relationReferences: map(ref('RecordReference')),
-    },
-    ['records', 'nextCursor'],
-  ),
+  RecordPage: recordPage(ref('Record')),
   WriteResult: object({
     id,
     created: boolean,
@@ -184,6 +194,22 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     record: ref('Record'),
   }),
   RecordQuery: object(queryFields, []),
+  EventQuery: object(
+    {
+      ...queryFields,
+      filter: {
+        ...map(),
+        description:
+          'Filter by a shared event column or by type. The type filter supports eq, neq, and in.',
+      },
+      sort: sortBy(eventQueryColumn),
+    },
+    [],
+  ),
+  EventPage: recordPage(ref('EventRecord')),
+  EventRecord: {
+    allOf: [ref('Record'), object({ type: text, event: ref('EventDetails') })],
+  },
   Deleted: object({ id, deleted: { type: 'boolean', const: true } }),
   EventDetails: object({
     occurredAt: timestamp,
@@ -707,8 +733,8 @@ endpoint({
   summary: 'Query across event types',
   access: 'read',
   description: 'Filter by shared event columns or event type, and page the results.',
-  request: { schema: ref('RecordQuery'), example: { filter: { type: 'conversation' }, limit: 10 } },
-  response: { schema: ref('RecordPage') },
+  request: { schema: ref('EventQuery'), example: { filter: { type: 'conversation' }, limit: 10 } },
+  response: { schema: ref('EventPage') },
 });
 endpoint({
   tag: 'Events',

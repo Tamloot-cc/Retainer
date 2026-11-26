@@ -30,3 +30,27 @@ test('the exported index finds onboarding and exact endpoints and supports secti
   assert.equal(hits[0]?.url, '/docs/mcp/tool-reference');
   assert.ok(hits.every(({ url }) => url === '/docs/mcp' || url.startsWith('/docs/mcp/')));
 });
+
+test('the cross-type event query exports its shared sort fields and event records', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const query = contract.paths['/v1/events/query'].post;
+  const { schemas } = contract.components;
+  assert.equal(
+    query.requestBody.content['application/json'].schema.$ref,
+    '#/components/schemas/EventQuery',
+  );
+  assert.deepEqual(schemas.EventQuery.properties.sort.items.properties.field.enum, [
+    'occurredAt',
+    'channel',
+    'externalId',
+    'id',
+    'createdAt',
+    'updatedAt',
+  ]);
+  assert.equal(
+    query.responses['200'].content['application/json'].schema.$ref,
+    '#/components/schemas/EventPage',
+  );
+  assert.equal(schemas.EventPage.properties.records.items.$ref, '#/components/schemas/EventRecord');
+  assert.deepEqual(schemas.EventRecord.allOf[1].required, ['type', 'event']);
+});
