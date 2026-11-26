@@ -6,6 +6,7 @@ import {
   type ChatMessage,
   type ChatPart,
   isToolPart,
+  messageText,
   type ToolPart,
   TURN_ENDINGS,
   toolError,
@@ -165,7 +166,7 @@ export function ChatMessages({
                 className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-3.5 py-2 text-sm [overflow-wrap:anywhere]"
                 dir="auto"
               >
-                {message.parts.map((part) => (part.type === 'text' ? part.text : '')).join('')}
+                {messageText(message)}
               </div>
             </li>
           );

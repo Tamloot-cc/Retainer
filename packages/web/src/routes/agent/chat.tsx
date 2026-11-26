@@ -211,9 +211,14 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
   const [ended, setEnded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
-  // The list's titles and times; the open chat keeps the messages it streamed.
+  // The list's titles and times, and this chat's title (set by its first message). The
+  // open chat keeps the messages it streamed: a refetch only replaces them for a turn
+  // that was running before this page opened.
   const refresh = () =>
-    client.invalidateQueries({ queryKey: [...agentKey(session.workspace.id), 'chats'] });
+    Promise.all([
+      client.invalidateQueries({ queryKey: [...agentKey(session.workspace.id), 'chats'] }),
+      client.invalidateQueries({ queryKey: [...agentKey(session.workspace.id), 'chat', chat.id] }),
+    ]);
   const { messages, sendMessage, status, error, stop, setMessages, clearError } =
     useChat<ChatMessage>({
       id: chat.id,
@@ -269,6 +274,8 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
   const lastEnding = messages.at(-1)?.parts.map(turnEnd).findLast(Boolean);
   const over = lastEnding !== undefined && CHAT_OVER.has(lastEnding);
   const mood = avatarMood({ status, messages, typing, ended, running: runningBefore });
+  // Sent, and no part of the answer has arrived yet.
+  const awaitingAnswer = status === 'submitted' && messages.at(-1)?.role === 'user';
   const moodText = runningBefore ? 'Still working on your last message…' : MOOD_TEXT[mood];
   const scroller = useRef<HTMLDivElement>(null);
   const lastPartCount = messages.at(-1)?.parts.length ?? 0;
@@ -314,10 +321,10 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
             <ChatMessages
               messages={messages}
               streaming={status === 'streaming'}
-              mood={status === 'submitted' && messages.at(-1)?.role === 'user' ? 'idle' : mood}
+              mood={awaitingAnswer ? 'idle' : mood}
             />
           )}
-          {status === 'submitted' && messages.at(-1)?.role === 'user' ? (
+          {awaitingAnswer ? (
             <div className="flex items-center gap-3">
               <LogoMark mood="thinking" size={32} className="shrink-0" />
             </div>

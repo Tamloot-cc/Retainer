@@ -91,6 +91,12 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
   );
 }
 
+/** A UI message stream error event, for a stream the agent stopped sending mid-turn. */
+const LOST_UPSTREAM = `data: ${JSON.stringify({
+  type: 'error',
+  errorText: 'connection to the agent was lost',
+})}\n\n`;
+
 /**
  * Self-hosted: the server forwards a chat's stream to the agent container
  * (agent spec §13), so the web app keeps one origin. Unbuffered; the stream
@@ -98,12 +104,6 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
  * client leaves, the upstream response is still read to its end, so the turn
  * runs to its end and is saved.
  */
-/** A UI message stream error event, for a stream the agent stopped sending mid-turn. */
-const LOST_UPSTREAM = `data: ${JSON.stringify({
-  type: 'error',
-  errorText: 'connection to the agent was lost',
-})}\n\n`;
-
 export function agentStreamForward(app: Hono<AppEnv>, upstream: string | undefined) {
   // Refused before it is buffered: this route is outside `/v1`'s authentication.
   app.post('/v1/agent/chats/:id/stream', limitBody(MAX_STREAM_BODY_BYTES), async (c) => {

@@ -134,6 +134,47 @@ describe('ChatPage', () => {
     });
   });
 
+  it("shows the chat's title once its first message has set it", async () => {
+    router.params = { id: 'chat-1' };
+    const detail = vi
+      .spyOn(api, 'agentChat')
+      .mockResolvedValueOnce({ id: 'chat-1', title: null, running: false, messages: [] })
+      .mockResolvedValue({
+        id: 'chat-1',
+        title: 'Tell me about Acme',
+        running: false,
+        messages: [],
+      });
+    vi.spyOn(api, 'agentChatToken').mockResolvedValue({
+      token: 'stream-token',
+      expiresAt: '',
+      streamUrl: STREAM_URL,
+    });
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        sse([
+          { type: 'start', messageId: 'a2' },
+          { type: 'text-start', id: 'x' },
+          { type: 'text-delta', id: 'x', delta: 'Acme is a customer.' },
+          { type: 'text-end', id: 'x' },
+          { type: 'finish' },
+        ]),
+      ),
+    );
+    show(<ChatPage />);
+    expect(await screen.findByRole('heading', { name: 'New chat' })).toBeTruthy();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Message' }),
+      'Tell me about Acme{Enter}',
+    );
+    expect(await screen.findByRole('heading', { name: 'Tell me about Acme' })).toBeTruthy();
+    // The streamed answer stays: the refetch doesn't replace what was streamed.
+    expect(screen.getByText('Acme is a customer.')).toBeTruthy();
+    expect(detail).toHaveBeenCalledTimes(2);
+  });
+
   it('says in plain words how a turn ended, and offers a new chat when this one is over', async () => {
     router.params = { id: 'chat-1' };
     chat({ messages: [] });

@@ -278,10 +278,15 @@ export class AgentSessions {
         select exists(select 1 from agent_turns where session_id = ${id} and status = 'running') as running`;
       return { row, running: turn?.running === true };
     });
+    const messages = await readChatMessages(this.readStore(), id);
+    return { id: chat.row.id, title: chat.row.title, running: chat.running, messages };
+  }
+
+  /** The API's read-only Mastra store (§5.2), opened on first use. */
+  private readStore() {
     if (!this.config.readStoreUrl) throw unavailable();
     this.store ??= createMastraStore({ connectionString: this.config.readStoreUrl, max: 2 });
-    const messages = await readChatMessages(this.store, id);
-    return { id: chat.row.id, title: chat.row.title, running: chat.running, messages };
+    return this.store;
   }
 
   /**
@@ -313,9 +318,7 @@ export class AgentSessions {
         order by k.position`,
     );
     if (rows.length === 0) return { tasks: [] };
-    if (!this.config.readStoreUrl) throw unavailable();
-    this.store ??= createMastraStore({ connectionString: this.config.readStoreUrl, max: 2 });
-    const store = this.store;
+    const store = this.readStore();
     const tasks = await Promise.all(
       rows.map(async (row) => ({
         sessionId: row.session_id,
