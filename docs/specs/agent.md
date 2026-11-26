@@ -1450,7 +1450,9 @@ day by at most one step. This replaces the routine-style reservation
 `extensions-model-calls.md` §3.4 reserved for this agent: the column
 already allows it, and nothing writes it today. They carry the session and
 its caller: the person, or the routine and run, or the installation and
-job. The extension model token's own `agent` kind
+job. A task's caller goes in the row's own `routine_id` and
+`routine_run_id`, or `installation_id` and `job_id`, so its usage stays
+attributed after the task's session is deleted 7 days on (§5.4). The extension model token's own `agent` kind
 (`extension-runtime/tokens.ts`), which nothing mints, is removed: the
 agent holds no model token (D6). A routine's or an extension's cost
 includes its tasks. Web search counts are in the stored `usage`
