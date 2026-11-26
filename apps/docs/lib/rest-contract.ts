@@ -20,14 +20,12 @@ const array = (items: Schema, limits: { minItems?: number; maxItems?: number } =
   items,
   ...limits,
 });
-const object = (
-  properties: Record<string, Schema>,
-  required = Object.keys(properties),
-): Schema => ({
-  type: 'object',
-  properties,
-  ...(required.length ? { required } : {}),
-});
+const object = (properties: Record<string, Schema>, required = Object.keys(properties)) =>
+  ({
+    type: 'object',
+    properties,
+    ...(required.length ? { required } : {}),
+  }) satisfies Schema;
 const map = (additionalProperties: Schema | true = true) => ({
   type: 'object' as const,
   additionalProperties,
@@ -39,13 +37,25 @@ const bound = (minimum: number, maximum: number, defaultValue?: number): Schema 
   maximum,
   ...(defaultValue === undefined ? {} : { default: defaultValue }),
 });
-const stringLength = (minLength: number, maxLength: number): Schema => ({
-  type: 'string',
-  minLength,
-  maxLength,
-});
+const stringLength = (minLength: number, maxLength: number) =>
+  ({
+    type: 'string',
+    minLength,
+    maxLength,
+  }) satisfies Schema;
 const nullString: Schema = { type: ['string', 'null'] };
 const nullable = (schema: Schema): Schema => ({ anyOf: [schema, { type: 'null' }] });
+const aggregateOperation = choice(
+  'countEmpty',
+  'countNotEmpty',
+  'percentEmpty',
+  'percentNotEmpty',
+  'countUnique',
+  'sum',
+  'avg',
+  'min',
+  'max',
+);
 const paged = (name: string, item: Schema) =>
   object({ [name]: array(item), nextCursor: nullString });
 const attachment = choice('participant', 'about', 'field');
@@ -80,9 +90,10 @@ const upsertFields = {
   ifMissing: { ...choice('fail', 'create'), default: 'fail' },
   expectedUpdatedAt: timestamp,
 } satisfies Record<string, Schema>;
+const upsertTarget = { not: { required: ['id', 'match'] } };
 const recordLinkFields = {
-  participants: array(object({ handle: text, recordId: id, role: text }, [])),
-  about: array(id),
+  participants: array(object({ handle: text, recordId: id, role: text }, []), { maxItems: 200 }),
+  about: array(id, { maxItems: 200 }),
 };
 const viewFields = {
   name: text,
@@ -91,14 +102,21 @@ const viewFields = {
   filter: { type: ['object', 'null'], additionalProperties: true } satisfies Schema,
   sort: nullable(sort),
   columns: nullable(
-    object({ order: array(text), widths: map(integer), aggregates: map(text) }, ['order']),
+    object(
+      {
+        order: array(text, { maxItems: 200 }),
+        widths: map(bound(40, 2000)),
+        aggregates: map(aggregateOperation),
+      },
+      ['order'],
+    ),
   ),
-  position: integer,
+  position: { type: 'number' },
   groupBy: nullString,
   dateField: nullString,
-  groupAggregate: nullable(object({ field: text, op: text })),
-  hiddenGroups: nullable(array(nullString)),
-};
+  groupAggregate: nullable(object({ field: text, op: aggregateOperation })),
+  hiddenGroups: nullable(array(nullString, { maxItems: 200 })),
+} satisfies Record<string, Schema>;
 const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
   Workspace: object({ id, name: text, slug: text }),
   Actor: object(
@@ -584,7 +602,7 @@ endpoint({
   description:
     'Identify the record by ID or one unique field. Set ifMissing to create to add a record when there is no match.',
   request: {
-    schema: object(upsertFields, []),
+    schema: { ...object(upsertFields, []), ...upsertTarget },
     example: { id: simpleId, values: { name: 'Acme Ltd' }, ifMissing: 'fail' },
   },
   response: { schema: ref('WriteResult'), description: 'An existing record was found.' },
@@ -601,7 +619,20 @@ endpoint({
   request: {
     schema: object({
       items: array(
-        object({ ...upsertFields, object: text, idempotencyKey: stringLength(1, 200) }, ['object']),
+        {
+          ...object(
+            {
+              ...upsertFields,
+              object: text,
+              idempotencyKey: {
+                ...stringLength(1, 200),
+                description: 'For creates that supply neither id nor match.',
+              },
+            },
+            ['object'],
+          ),
+          ...upsertTarget,
+        },
         { minItems: 1, maxItems: 50 },
       ),
     }),
@@ -624,17 +655,7 @@ endpoint({
         aggregates: array(
           object({
             field: text,
-            op: choice(
-              'countEmpty',
-              'countNotEmpty',
-              'percentEmpty',
-              'percentNotEmpty',
-              'countUnique',
-              'sum',
-              'avg',
-              'min',
-              'max',
-            ),
+            op: aggregateOperation,
           }),
           { maxItems: 50 },
         ),
@@ -707,7 +728,13 @@ endpoint({
   access: 'write',
   description: 'Add participants or records the event is about. Existing links are preserved.',
   request: {
-    schema: object({ ...recordLinkFields, bindings }, []),
+    schema: {
+      ...object({ ...recordLinkFields, bindings }, []),
+      anyOf: [
+        { required: ['participants'], properties: { participants: { minItems: 1 } } },
+        { required: ['about'], properties: { about: { minItems: 1 } } },
+      ],
+    },
     example: { about: [simpleId] },
   },
   response: { schema: { allOf: [ref('Record'), object({ added: ref('AddedLinks') })] } },

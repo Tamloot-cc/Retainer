@@ -3,12 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { staticClient } from 'fumadocs-core/search/client/orama-static';
 
-test('guide and API pages link to 1200 × 630 previews in the static export', async () => {
+test('the static export uses the docs origin for social images and Markdown', async () => {
+  const origin = process.env.RETAINER_DOCS_ORIGIN ?? 'http://localhost:3000';
   for (const slug of ['hosted', 'api/workspace/get-caller']) {
     const html = await readFile(`out/docs/${slug}/index.html`, 'utf8');
     const image = `/og/docs/${slug}/image.png`;
-    assert.ok(html.includes(`property="og:image" content="`), slug);
-    assert.ok(html.includes(image), slug);
+    assert.ok(html.includes(`property="og:image" content="${new URL(image, origin)}"`), slug);
+    const markdown = new URL(`/llms.mdx/docs/${slug}.md`, origin);
+    assert.ok(html.includes(`type="text/markdown" href="${markdown}"`), slug);
     const png = await readFile(`out${image}`);
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1200);

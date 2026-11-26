@@ -28,12 +28,16 @@ jobs:
           cache-dependency-path: apps/docs/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
-      - run: pnpm build
-      - run: pnpm test:export
+      - name: Build and verify the static site
+        env:
+          RETAINER_DOCS_ORIGIN: ${{ vars.RETAINER_DOCS_ORIGIN || 'http://localhost:3000' }}
+        run: |
+          pnpm build
+          pnpm test:export
       - run: pnpm build:server
       - run: pnpm test:mcp
       - uses: actions/upload-artifact@v7
         with:
-          name: retainer-docs
+          name: ${{ vars.RETAINER_DOCS_ORIGIN && 'retainer-docs' || 'retainer-docs-preview' }}
           path: apps/docs/out/
           if-no-files-found: error

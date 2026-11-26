@@ -24,14 +24,15 @@ the site to `out/` and `pnpm start` to preview that output.
 
 ## Publishing
 
-The **Docs site** GitHub Actions workflow tests the docs and builds a
-`retainer-docs` artifact. Serve the contents at the root of an independent
-static origin with directory indexes enabled. The product release uses its
-own lockfile and deploy workflow.
+Set the GitHub Actions repository variable `RETAINER_DOCS_ORIGIN` to the
+public docs origin (for example, `https://docs.example.com`). The **Docs site**
+workflow uses it for absolute link preview and Markdown URLs in the
+`retainer-docs` artifact. Builds without the variable publish
+`retainer-docs-preview` with localhost URLs for local use.
 
-Supply `RETAINER_DOCS_ORIGIN` at build time to put absolute production URLs
-in link preview metadata. Share images and the search index are generated
-during the build.
+Serve the production artifact at the root of the configured origin with
+directory indexes enabled. For builds outside CI, supply
+`RETAINER_DOCS_ORIGIN` as an environment variable at build time.
 
 ## Docs MCP
 
