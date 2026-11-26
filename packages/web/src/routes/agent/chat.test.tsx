@@ -428,6 +428,95 @@ describe('ChatPage', () => {
     expect(screen.getByText('Hi', { selector: 'div' })).toBeTruthy();
   });
 
+  it('shows the saved answer when a started turn loses its stream before the first word', async () => {
+    router.params = { id: 'chat-1' };
+    chatAfterTurn([
+      asked('Hi'),
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Hello from the saved copy.' }],
+      },
+    ]);
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    vi.spyOn(api, 'agentChatToken').mockResolvedValue({
+      token: 't',
+      expiresAt: '',
+      streamUrl: STREAM_URL,
+    });
+    // The runtime claimed the turn and saved the message, then the connection dropped.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ type: 'data-received', data: { messageId: 'u2' }, transient: true })}\n\n`,
+                  ),
+                );
+                setTimeout(() => controller.error(new TypeError('network error')), 50);
+              },
+            }),
+            {
+              headers: {
+                'content-type': 'text/event-stream',
+                'x-vercel-ai-ui-message-stream': 'v1',
+              },
+            },
+          ),
+      ),
+    );
+    show(<ChatPage />);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
+    expect(await screen.findByText('Hello from the saved copy.')).toBeTruthy();
+    // Not shown twice: the turn ran, so the saved copy has the message.
+    expect(screen.getAllByText('Hi', { selector: 'div' })).toHaveLength(1);
+  });
+
+  it('keeps a message refused while the last turn stops, and still shows the step saved after Stop', async () => {
+    router.params = { id: 'chat-1' };
+    let runtimeStopped = false;
+    vi.spyOn(api, 'agentChat').mockImplementation(async () => ({
+      id: 'chat-1',
+      title: 'Who is Dana?',
+      running: false,
+      stopping: !runtimeStopped,
+      messages: [
+        ...saved.slice(0, 1),
+        runtimeStopped
+          ? {
+              id: 'a2',
+              role: 'assistant',
+              parts: [
+                { type: 'text', text: 'Dana is a buyer at Acme.' },
+                { type: 'data-turn-end', data: { status: 'cancelled', code: null } },
+              ],
+            }
+          : ended('cancelled'),
+      ] as never,
+    }));
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    vi.spyOn(api, 'agentChatToken').mockResolvedValue({
+      token: 't',
+      expiresAt: '',
+      streamUrl: STREAM_URL,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ code: 'turn_stopping' }), { status: 409 })),
+    );
+    show(<ChatPage />);
+    expect(await screen.findByText('Stopped.')).toBeTruthy();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
+    expect(await screen.findByText(/still stopping/)).toBeTruthy();
+    runtimeStopped = true;
+    expect(await screen.findByText('Dana is a buyer at Acme.', {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByText('Hi', { selector: 'div' })).toBeTruthy();
+  }, 10_000);
+
   it('shows a turn still running from before, and stops it', async () => {
     router.params = { id: 'chat-1' };
     chat({ running: true, messages: saved.slice(0, 1) });

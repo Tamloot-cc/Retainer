@@ -214,6 +214,9 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
   const [ended, setEnded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  // Messages refused before a turn started, shown after the saved ones until the next send.
+  const [refused, setRefused] = useState<ChatMessage[]>([]);
+  const received = useRef(false);
   const detailKey = [...agentKey(session.workspace.id), 'chat', chat.id];
   // The list's titles and times, and this chat: its title (set by its first message)
   // and its saved messages, which replace the streamed ones once a turn ends.
@@ -227,13 +230,19 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
       id: chat.id,
       messages: chat.messages as ChatMessage[],
       transport,
+      // The runtime sends `data-received` once it has claimed the turn and saved the message.
+      onData: (part) => {
+        if (part.type === 'data-received') received.current = true;
+      },
       onFinish: ({ isError, messages: shown }) => {
         setEnded(true);
-        // Refused before the agent answered (another turn stopping, today's limit, the
-        // agent unavailable): no turn ran, so the saved copy has no trace of this
-        // message. Keep it on screen with the refusal rather than lose what was typed.
-        if (isError && shown.at(-1)?.role === 'user') void refresh();
-        else turnSettled();
+        // Refused before a turn started (another turn running or stopping, today's
+        // limit, the agent unavailable): the saved copy has no trace of the message, so
+        // it stays on screen after the saved copy, with the refusal.
+        const last = shown.at(-1);
+        if (isError && !received.current && last?.role === 'user')
+          setRefused((before) => [...before, last]);
+        turnSettled();
       },
     });
   const busy = status === 'submitted' || status === 'streaming';
@@ -253,6 +262,8 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
 
   const send = (text: string) => {
     staleBefore.current = Number.POSITIVE_INFINITY;
+    received.current = false;
+    setRefused([]);
     clearError();
     setEnded(false);
     setStopError(null);
@@ -328,14 +339,14 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
     >
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 md:px-8">
-          {messages.length === 0 ? (
+          {messages.length === 0 && refused.length === 0 ? (
             <div className="flex items-start gap-3">
               <LogoMark mood={mood} size={32} className="shrink-0" />
               <p className="pt-1.5 text-sm text-muted-foreground">{ABOUT}</p>
             </div>
           ) : (
             <ChatMessages
-              messages={messages}
+              messages={refused.length > 0 ? [...messages, ...refused] : messages}
               streaming={status === 'streaming'}
               mood={awaitingAnswer ? 'idle' : mood}
             />
