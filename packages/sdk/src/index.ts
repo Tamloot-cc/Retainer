@@ -64,6 +64,7 @@ import type {
   RoutinePreview,
   RoutineProblem,
   RoutineReport,
+  RoutineRunAgentTask,
   RoutineRunView,
   RoutineView,
   SavedView,
@@ -1373,6 +1374,14 @@ export class RetainerClient {
       signal,
     );
   }
+  /** The agent tasks a run started, with their saved messages (agent spec §5.3). */
+  routineRunAgentTasks(id: string, runId: string, signal?: AbortSignal) {
+    return this.get<{ tasks: RoutineRunAgentTask[] }>(
+      `/v1/routines/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/agent-tasks`,
+      {},
+      signal,
+    );
+  }
   decideRoutineVersion(id: string, versionId: string, decision: 'approve' | 'reject') {
     return this.post<{
       routineId: string;
@@ -1437,6 +1446,12 @@ export type AgentChatDetail = {
   id: string;
   title: string | null;
   running: boolean;
+  /**
+   * The last turn was stopped and the runtime hasn't finished stopping: a step it
+   * was on may still be saved, so read the chat again shortly.
+   */
+  stopping?: boolean;
+  /** Oldest first; each turn that didn't complete ends with a `data-turn-end` part. */
   messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown>> }>;
 };
 export type AgentStreamToken = { token: string; expiresAt: string; streamUrl: string };

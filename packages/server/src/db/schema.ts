@@ -3604,6 +3604,11 @@ export const agentTurns = pgTable(
     status: text('status').notNull().default('running'),
     /** The Mastra run ID the claim issued, so the erasure can find the run's rows. */
     runId: uuid('run_id').notNull(),
+    /**
+     * The ID the claim issued for the person's message, which the runtime saves it
+     * under (§6.2), so the chat read can place this turn's ending after its messages.
+     */
+    messageId: uuid('message_id'),
     /** SHA-256 of the turn token's secret. */
     tokenHash: text('token_hash').notNull(),
     /** The credential that minted the turn, re-checked on every call (§7.3). */

@@ -905,6 +905,7 @@ export {
   MappingDisclosure,
   MappingList,
 } from './mapping.js';
+export { Markdown } from './markdown.js';
 export { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
 export {
   IconLabel,

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import postgres from 'postgres';
+import { migrateAgentStore } from '../src/agent-runtime/store-migration.js';
 import { runMigrations } from '../src/db/migrate.js';
 export default async function setup() {
   const url = process.env.DATABASE_URL;
@@ -11,6 +12,8 @@ export default async function setup() {
   templateUrl.pathname = `/${name}`;
   try {
     await runMigrations(templateUrl.toString());
+    // The agent's own store (agent spec §5.2), as `pnpm db:migrate` creates it.
+    await migrateAgentStore(templateUrl.toString());
   } catch (e) {
     await admin.unsafe(`drop database "${name}" with (force)`);
     await admin.end();

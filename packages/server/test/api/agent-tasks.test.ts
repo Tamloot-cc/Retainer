@@ -12,7 +12,7 @@ import { ExtensionCatalog } from '../../src/extensions/catalog.js';
 import { eraseRoutineContent } from '../../src/routine-runtime/admission.js';
 import { pauseRoutine } from '../../src/routines/runs.js';
 import { RoutineExecutor } from '../../src/worker/routines.js';
-import { RUNTIME_SECRET } from '../helpers/agent.js';
+import { RUNTIME_SECRET, saveChatHistory } from '../helpers/agent.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { extensionFixture } from '../helpers/extensions.js';
@@ -277,6 +277,44 @@ describe('agent tasks from a routine', () => {
     const [ended] = await db.owner<{ state: string }[]>`
       select state from agent_tasks where session_id = ${taskId}`;
     expect(ended?.state).toBe('completed');
+  });
+
+  it('shows the run page the task’s saved messages, and nothing once retention erased it', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    await saveChatHistory(db.url, taskId, 'Find the funding round of Acme.');
+    const trace = await s.app.request(`/v1/routines/${s.routineId}/runs/${runId}/agent-tasks`, {
+      key: s.keys.admin,
+    });
+    expect(trace.status, JSON.stringify(trace.body)).toBe(200);
+    expect(trace.body.tasks).toHaveLength(1);
+    const [task] = trace.body.tasks;
+    expect(task).toMatchObject({
+      sessionId: taskId,
+      position: expect.any(Number),
+      keptUntil: null,
+    });
+    expect(JSON.stringify(task.messages)).toContain('Find the funding round of Acme.');
+    // The server-added part stays hidden, as in a chat (§3.5).
+    expect(JSON.stringify(task.messages)).not.toContain('Today is');
+
+    // Only for whoever may see the run: another workspace's key finds no run.
+    const other = await s.app.setupWorkspace(
+      { name: `Other ${randomUUID()}` },
+      { admin: { actor: { type: 'user', id: 'eve', name: 'Eve' }, scopes: ['admin'] } },
+    );
+    workspaces.push(other.workspace.id);
+    const foreign = await s.app.request(`/v1/routines/${s.routineId}/runs/${runId}/agent-tasks`, {
+      key: other.keys.admin,
+    });
+    expect(foreign.status).toBe(404);
+
+    // Retention erases the session, and with it the task row (§5.4).
+    await db.owner`delete from agent_sessions where id = ${taskId}`;
+    const erased = await s.app.request(`/v1/routines/${s.routineId}/runs/${runId}/agent-tasks`, {
+      key: s.keys.admin,
+    });
+    expect(erased.body).toEqual({ tasks: [] });
   });
 
   it('creates one task when two retries reach the same ai.agent at once', async () => {

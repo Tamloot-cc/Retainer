@@ -5,7 +5,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace } from '../db/tx.js';
 
 /** A task's stored content is kept 7 days after it was last active (agent spec §5.4). */
-const TASK_RETENTION = '7 days';
+export const TASK_RETENTION = '7 days';
 /** The orphan sweep is daily (§5.4); a process runs it at most this often. */
 const ORPHAN_SWEEP_MS = 24 * 60 * 60_000;
 let lastOrphanSweep = 0;

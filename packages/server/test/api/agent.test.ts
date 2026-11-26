@@ -1,9 +1,13 @@
 import { RETAINER_TOOL_NAMES } from '@retainer/agent';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { maintainAgents } from '../../src/agent-sessions/maintenance.js';
+import { EXECUTOR_ROLE } from '../../src/config.js';
+import { RUNTIME_ROLE } from '../../src/db/client.js';
 import {
   mastraRows,
   RUNTIME_SECRET,
   saveChatHistory,
+  saveTurnMessages,
   seedMastra,
   total,
 } from '../helpers/agent.js';
@@ -17,7 +21,12 @@ let workspaceId: string;
 
 beforeAll(async () => {
   t = startTestApp(db, {
-    agent: { runtimeSecret: RUNTIME_SECRET, readStoreUrl: db.url, personDailySteps: 2000 },
+    agent: {
+      runtimeSecret: RUNTIME_SECRET,
+      readStoreUrl: db.url,
+      upstream: 'http://agent.invalid',
+      personDailySteps: 2000,
+    },
   });
   const sales = await t.setupWorkspace(
     { name: 'Acme Sales', template: 'sales' },
@@ -37,6 +46,18 @@ beforeAll(async () => {
 });
 
 const runtimeBase = (id: string) => `/v1/agent/runtime/sessions/${id}`;
+
+it('tells the web app the agent runs only when it is set up', async () => {
+  const me = await t.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(me.body.agentAvailable).toBe(true);
+  const without = startTestApp(db);
+  const plain = await without.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(plain.body.agentAvailable).toBeUndefined();
+  // A runtime secret alone: no store to read chats from and nowhere to stream to.
+  const partial = startTestApp(db, { agent: { runtimeSecret: RUNTIME_SECRET } });
+  const half = await partial.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(half.body.agentAvailable).toBeUndefined();
+});
 
 async function newChat(key = keys.writer) {
   const created = await t.request<{ id: string }>('/v1/agent/chats', { key, method: 'POST' });
@@ -66,6 +87,7 @@ async function claimed(id: string, key = keys.writer, body: Record<string, unkno
     turnId: string;
     generation: number;
     runId: string;
+    messageId: string;
     deadline: string;
     session: {
       firstTurn: boolean;
@@ -646,5 +668,99 @@ describe('forget', () => {
     expect(thread).toBeDefined();
     const chat = await t.request(`/v1/agent/chats/${id}`, { key: keys.writer });
     expect(JSON.stringify(chat.body.messages)).toContain('Rina Erased');
+  });
+});
+
+describe('reading a chat', () => {
+  type Read = {
+    running: boolean;
+    stopping: boolean;
+    messages: {
+      id: string;
+      role: string;
+      parts: { type: string; text?: string; data?: unknown }[];
+    }[];
+  };
+  const read = async (id: string) =>
+    (await t.request<Read>(`/v1/agent/chats/${id}`, { key: keys.writer })).body;
+  /** Each message as one line: who, its text, and any ending. */
+  const lines = (body: Read) =>
+    body.messages.map((m) =>
+      [
+        m.role,
+        ...m.parts.map((p) =>
+          p.type === 'text'
+            ? p.text
+            : p.type === 'data-turn-end'
+              ? `ended ${(p.data as { status: string }).status}`
+              : p.type,
+        ),
+      ].join(': '),
+    );
+
+  it("places each turn's ending after that turn's messages, from the turn the claim recorded", async () => {
+    const id = await newChat();
+    const one = await claimed(id);
+    await saveTurnMessages(db.url, id, {
+      messageId: one.messageId,
+      text: 'First',
+      answer: 'Done.',
+    });
+    expect((await close(id, one.turnToken)).status).toBe(200);
+
+    const two = await claimed(id);
+    await saveTurnMessages(db.url, id, {
+      messageId: two.messageId,
+      text: 'Second',
+      answer: 'Half',
+    });
+    expect((await close(id, two.turnToken, 'refused')).status).toBe(200);
+
+    const three = await claimed(id);
+    await saveTurnMessages(db.url, id, { messageId: three.messageId, text: 'Third' });
+    await t.request(`/v1/agent/chats/${id}/cancel`, { key: keys.writer, method: 'POST' });
+    // Cancelled, the runtime not yet stopped: it may still save a step.
+    expect(await read(id)).toMatchObject({ running: false, stopping: true });
+    expect((await close(id, three.turnToken)).status).toBe(200);
+    expect(await read(id)).toMatchObject({ running: false, stopping: false });
+
+    const four = await claimed(id);
+    await saveTurnMessages(db.url, id, {
+      messageId: four.messageId,
+      text: 'Fourth',
+      answer: 'Still',
+    });
+    // Running: its ending isn't known yet.
+    const running = await read(id);
+    expect(running.running).toBe(true);
+    expect(lines(running)).toEqual([
+      'user: First',
+      'assistant: Done.',
+      'user: Second',
+      'assistant: Half: ended refused',
+      'user: Third',
+      'assistant: ended cancelled',
+      'user: Fourth',
+      'assistant: Still',
+    ]);
+    // Nothing of the endings is stored in Mastra's history.
+    const [stored] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from mastra.mastra_messages
+      where thread_id = ${id} and content::text like '%turn-end%'`;
+    expect(stored?.n).toBe(0);
+
+    // The runtime dies without closing; the sweep closes the turn as timed out.
+    await db.owner`update agent_turns set deadline = now() - interval '5 minutes' where id = ${four.turnId}`;
+    const app = db.connect({ role: RUNTIME_ROLE, max: 2 });
+    const executor = db.connect({ role: EXECUTOR_ROLE, max: 1 });
+    try {
+      await maintainAgents(app, executor, Date.now() + 30_000);
+    } finally {
+      await app.end();
+      await executor.end();
+    }
+    const after = await read(id);
+    expect(after.running).toBe(false);
+    expect(lines(after).slice(-2)).toEqual(['user: Fourth', 'assistant: Still: ended timed_out']);
   });
 });

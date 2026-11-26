@@ -14,6 +14,7 @@ import {
   LogOut,
   type LucideIcon,
   Mail,
+  MessageCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -76,6 +77,8 @@ type ShellProps = {
   objects: ShellObject[];
   inboxCount?: number;
   routinesAvailable?: boolean;
+  /** The workspace agent's chat runs on this server (agent spec §6). */
+  agentAvailable?: boolean;
   /** Apps installed in the workspace that people open signed in, each on its own site. */
   apps?: ShellApp[];
   /** Developer view, switched from the account menu. */
@@ -263,6 +266,7 @@ function Sidebar({
   objects,
   inboxCount,
   routinesAvailable,
+  agentAvailable,
   apps,
   developer,
   onDeveloperChange,
@@ -382,6 +386,15 @@ function Sidebar({
           exact
           onNavigate={onNavigate}
         />
+        {agentAvailable ? (
+          <NavLink
+            to="/chat"
+            icon={MessageCircle}
+            label="Chat"
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        ) : null}
         <button
           type="button"
           onClick={onSearch}
@@ -598,6 +611,7 @@ function NavLink({
     | '/activity'
     | '/extensions'
     | '/routines'
+    | '/chat'
     | '/settings';
   params?: { object: string };
   icon: LucideIcon;

@@ -1,0 +1,88 @@
+import { expect, test } from './fixtures.js';
+import { signIn } from './helpers.js';
+
+const chatLink = (page: import('@playwright/test').Page) =>
+  page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Chat' });
+
+test('Chat is absent from navigation and direct access when the agent is unavailable', async ({
+  page,
+  retainer,
+}) => {
+  await signIn(page, retainer.url, retainer.keys.user);
+  await expect(chatLink(page)).toHaveCount(0);
+  await page.goto(`${retainer.url}/app/chat`);
+  await expect(page.getByRole('heading', { name: 'Chat is unavailable' })).toBeVisible();
+});
+
+test.describe('with the agent', () => {
+  test.use({ agentFixture: true });
+
+  test('asks a question, watches the agent search and answer, and finds it saved after a reload', async ({
+    page,
+    retainer: r,
+  }) => {
+    await r.request('/objects/company/records', { values: { name: 'Acme Robotics' } });
+    r.anthropic?.enqueue(
+      {
+        blocks: [{ type: 'tool_use', id: 'toolu_1', name: 'search', input: { query: 'Acme' } }],
+        stopReason: 'tool_use',
+      },
+      {
+        blocks: [{ type: 'text', text: 'Acme Robotics is a **company** in your workspace.' }],
+        stopReason: 'end_turn',
+      },
+    );
+    await signIn(page, r.url, r.keys.user);
+    await chatLink(page).click();
+    await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Message' }).fill('What do we know about Acme?');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    const messages = page.getByRole('list', { name: 'Messages' });
+    await expect(messages.getByText('What do we know about Acme?')).toBeVisible();
+    await expect(messages.getByText('Searched for “Acme”')).toBeVisible();
+    await expect(messages.getByText('Acme Robotics is a')).toBeVisible();
+    await expect(messages.locator('strong', { hasText: 'company' })).toBeVisible();
+    // The model got exactly the person's text, with the server's context first.
+    const first = r.anthropic?.requests[0]?.body as { messages: { content: unknown }[] };
+    expect(JSON.stringify(first.messages.at(-1))).toContain('What do we know about Acme?');
+
+    // Saved: a reload reads the chat back from the agent's store.
+    await page.reload();
+    await expect(messages.getByText('What do we know about Acme?')).toBeVisible();
+    await expect(messages.getByText('Searched for “Acme”')).toBeVisible();
+    await expect(messages.getByText('Acme Robotics is a')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'What do we know about Acme?' })).toBeVisible();
+
+    // Listed, then deleted.
+    await chatLink(page).click();
+    await page.getByRole('link', { name: /What do we know about Acme\?/ }).click();
+    await page.getByRole('button', { name: 'Delete chat' }).click();
+    await page
+      .getByRole('dialog', { name: 'Delete this chat?' })
+      .getByRole('button', { name: 'Delete chat' })
+      .click();
+    await expect(page.getByText('No chats yet')).toBeVisible();
+  });
+
+  test('stops a turn that is taking long', async ({ page, retainer: r }) => {
+    r.anthropic?.enqueue({
+      blocks: [{ type: 'text', text: 'This answer never arrives.' }],
+      stopReason: 'end_turn',
+      delayMs: 20_000,
+    });
+    await signIn(page, r.url, r.keys.user);
+    await chatLink(page).click();
+    await page.getByRole('textbox', { name: 'Message' }).fill('Take your time');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('status').getByText('Thinking…')).toBeVisible();
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
+    // The server stopped the turn too: the runtime noticed the cancel and closed it.
+    const id = new URL(page.url()).pathname.split('/').at(-1);
+    await expect
+      .poll(async () => (await r.request(`/agent/chats/${id}`, undefined, r.keys.user)).running)
+      .toBe(false);
+    await expect(page.getByText('This answer never arrives.')).toHaveCount(0);
+  });
+});

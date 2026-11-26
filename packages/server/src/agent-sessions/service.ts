@@ -5,8 +5,14 @@ import {
   type MastraStoreHandle,
   RETAINER_WRITE_TOOL_NAMES,
   readChatMessages,
+  type TurnEnding,
+  withTurnEndings,
 } from '@retainer/agent';
-import { AGENT_TASK_ERROR_CODES, AGENT_TASK_LIMITS } from '@retainer/shared';
+import {
+  AGENT_TASK_ERROR_CODES,
+  AGENT_TASK_LIMITS,
+  type RoutineRunAgentTask,
+} from '@retainer/shared';
 import { z } from 'zod';
 import {
   type AgentAccess,
@@ -54,6 +60,7 @@ import type { ExtensionQueue } from '../extension-runtime/queue.js';
 import { installedTools } from '../extensions/tools.js';
 import { getSchema } from '../schema/compiled.js';
 import { chatContext, datePart, workspaceDate } from './context.js';
+import { TASK_RETENTION } from './maintenance.js';
 import {
   CHAT_LIMITS,
   type ExtensionToolRef,
@@ -93,6 +100,9 @@ export type AgentConfig = {
   /** How long one tool request waits for an extension job; tests shorten it. */
   extensionWaitMs?: number | undefined;
 };
+
+/** A saved chat message as the read endpoint returns it. */
+type ChatUIMessage = { id: string; role: string; parts: unknown[] };
 
 const unavailable = () =>
   new AppError(503, 'agent_unavailable', 'the workspace agent is not set up on this server');
@@ -264,19 +274,100 @@ export class AgentSessions {
     });
   }
 
-  /** The chat and its messages, without the parts the server added (§6.1). */
+  /**
+   * The chat and its messages, without the parts the server added, with each
+   * finished turn's ending after its messages (§6.1). The runtime sends an
+   * ending after it closes the store, so it is never in Mastra's history; it
+   * comes from `agent_turns`, placed by the message ID the claim issued.
+   */
   async getChat(caller: Caller, id: string) {
     const owned = this.owner(caller);
     const chat = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const row = await this.session(tx, owned.owner, id);
-      const [turn] = await tx<{ running: boolean }[]>`
-        select exists(select 1 from agent_turns where session_id = ${id} and status = 'running') as running`;
-      return { row, running: turn?.running === true };
+      const turns = await tx<
+        {
+          status: string;
+          message_id: string | null;
+          error_code: string | null;
+          stopping: boolean;
+        }[]
+      >`
+        select status, message_id, error_code,
+          status <> 'running' and stopped_at is null
+            and deadline + make_interval(secs => ${GRACE_MS / 1000}) > clock_timestamp() as stopping
+        from agent_turns where session_id = ${id}
+        order by claimed_at, generation`;
+      return { row, turns };
     });
+    const endings: TurnEnding[] = chat.turns.flatMap((turn) =>
+      turn.message_id && turn.status !== 'completed' && turn.status !== 'running'
+        ? [{ messageId: turn.message_id, status: turn.status, code: turn.error_code }]
+        : [],
+    );
+    const saved = (await readChatMessages(this.readStore(), id)) as ChatUIMessage[];
+    return {
+      id: chat.row.id,
+      title: chat.row.title,
+      running: chat.turns.at(-1)?.status === 'running',
+      // Cancelled, and the runtime may still save the step it was on (§6.5).
+      stopping: chat.turns.at(-1)?.stopping ?? false,
+      messages: withTurnEndings(saved, endings),
+    };
+  }
+
+  /** The API's read-only Mastra store (§5.2), opened on first use. */
+  private readStore() {
     if (!this.config.readStoreUrl) throw unavailable();
     this.store ??= createMastraStore({ connectionString: this.config.readStoreUrl, max: 2 });
-    const messages = await readChatMessages(this.store, id);
-    return { id: chat.row.id, title: chat.row.title, running: chat.running, messages };
+    return this.store;
+  }
+
+  /**
+   * The agent tasks a routine run started, with their saved messages, for the
+   * run page (§5.3). The caller has already been allowed to see the run. A
+   * task erased by retention (§5.4) is gone from the list, and the page says so.
+   */
+  async runTasks(caller: Caller, runId: string): Promise<{ tasks: RoutineRunAgentTask[] }> {
+    const rows = await inWorkspace(
+      this.sql,
+      caller.workspaceId,
+      (tx) =>
+        tx<
+          {
+            session_id: string;
+            position: number;
+            state: RoutineRunAgentTask['state'];
+            code: string | null;
+            created_at: Date;
+            finished_at: Date | null;
+            kept_until: Date | null;
+          }[]
+        >`
+        select k.session_id, k.position, k.state, k.code, k.created_at, k.finished_at,
+          case when k.finished_at is not null
+            then s.last_active_at + ${TASK_RETENTION}::interval end as kept_until
+        from agent_tasks k join agent_sessions s on s.id = k.session_id
+        where k.routine_run_id = ${runId}
+        order by k.position`,
+    );
+    if (rows.length === 0) return { tasks: [] };
+    const store = this.readStore();
+    const tasks = await Promise.all(
+      rows.map(async (row) => ({
+        sessionId: row.session_id,
+        position: row.position,
+        state: row.state,
+        code: row.code,
+        createdAt: row.created_at.toISOString(),
+        finishedAt: row.finished_at?.toISOString() ?? null,
+        keptUntil: row.kept_until?.toISOString() ?? null,
+        messages: (await readChatMessages(
+          store,
+          row.session_id,
+        )) as RoutineRunAgentTask['messages'],
+      })),
+    );
+    return { tasks };
   }
 
   /** A stream token: it can start a turn on this chat and nothing else (§7.3). */
@@ -384,6 +475,7 @@ export class AgentSessions {
         turnId: claimed.turn.id,
         generation: claimed.turn.generation,
         runId: claimed.turn.run_id,
+        messageId: claimed.turn.message_id,
         deadline: claimed.turn.deadline.toISOString(),
         session: {
           id: session.id,
@@ -464,6 +556,7 @@ export class AgentSessions {
         turnId: claimed.turn.id,
         generation: claimed.turn.generation,
         runId: claimed.turn.run_id,
+        messageId: claimed.turn.message_id,
         deadline: claimed.turn.deadline.toISOString(),
         session: {
           id: session.id,

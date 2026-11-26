@@ -1,9 +1,10 @@
 # The animated mark: loading indicator and assistant avatar: spec
 
 Status: **implemented** November 7, 2026 as `LogoMark` in
-`packages/web/src/ui/logo-mark.tsx`. It is the loading indicator today. The
-agent chat that will use it as the assistant's avatar is not built yet.
-Open questions are in section 7.
+`packages/web/src/ui/logo-mark.tsx`. It is the loading indicator and, since
+agent PR 3 (2026-11-26), the assistant's avatar in the chat
+(`packages/web/src/routes/agent/`, FRONTEND.md 5.10). Open questions are in
+section 7.
 
 The moods and colors were worked out in a standalone page,
 [`assistant-avatar-playground.html`](../research/assistant-avatar-playground.html).
@@ -100,9 +101,13 @@ the only signal.
 
 ## 7. Open questions
 
-- Which agent events set which mood in the chat. A first guess: listening
-  while the person types, thinking before the first tool call, reading for
-  search and read tools, saving for writes, working while the answer streams,
-  done when the turn ends, error when it fails.
+- Answered 2026-11-26: which agent events set which mood in the chat. The
+  first guess held (`avatarMood` in `routes/agent/model.ts`): listening while
+  the person types, thinking while the request is out, while the model
+  reasons and between a tool's result and the next step, reading for
+  Retainer's read tools and web search, saving for writes, working while the
+  answer streams (and while a turn from an earlier visit runs), done when the
+  turn ends, error when it fails. Only the agent's last message carries the
+  mark.
 - Whether the header's `BrandMark` and the favicon should follow the light
   version. Both keep the dark tile for now.

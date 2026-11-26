@@ -1,0 +1,1 @@
+ALTER TABLE "agent_turns" ADD COLUMN "message_id" uuid;

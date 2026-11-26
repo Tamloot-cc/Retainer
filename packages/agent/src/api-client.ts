@@ -26,6 +26,8 @@ export type Claim = {
   turnId: string;
   generation: number;
   runId: string;
+  /** The ID to save the person's message under (§6.2): the chat read places this turn's ending by it. */
+  messageId: string;
   deadline: string;
   session: {
     id: string;
