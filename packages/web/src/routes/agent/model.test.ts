@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  answerText,
   avatarMood,
   type ChatMessage,
   chatRequestBody,
@@ -251,7 +252,38 @@ describe('stepsSummary', () => {
     ).toBe('Checked your workspace, searched the web, saved 3 records and took notes');
     expect(
       stepsSummary([tool('upsert_record', { state: 'output-error', errorText: 'role' })]),
-    ).toBe('Tried to save changes');
+    ).toBe("Tried, but it didn't work");
+  });
+
+  it('counts only calls that finished and worked', () => {
+    // Stopped mid-save: the record was never written.
+    expect(
+      stepsSummary([tool('search'), tool('upsert_record', { state: 'input-available' })]),
+    ).toBe('Checked your workspace');
+    expect(stepsSummary([tool('upsert_record', { state: 'input-available' })])).toBe(
+      'Stopped before finishing',
+    );
+    expect(
+      stepsSummary([
+        tool('remember', { state: 'output-error', errorText: 'x' }),
+        tool('get_record'),
+      ]),
+    ).toBe('Checked your workspace');
+    expect(
+      stepsSummary([tool('upsert_record', { output: { dryRun: true } }), tool('web_search')]),
+    ).toBe('Searched the web');
+  });
+});
+
+describe('answerText', () => {
+  it('keeps the pieces of an answer apart, as they show between steps', () => {
+    const message = assistant([
+      { type: 'text', text: "I'll check." },
+      tool('search'),
+      { type: 'text', text: '' },
+      { type: 'text', text: 'Found it.' },
+    ]);
+    expect(answerText(message)).toBe("I'll check.\n\nFound it.");
   });
 });
 

@@ -43,6 +43,7 @@ import {
   TraceTitle,
 } from '../../ui/trace.js';
 import {
+  answerText,
   type ChatMessage,
   type ChatPart,
   groupTraceParts,
@@ -448,7 +449,7 @@ const AgentMessage = memo(function AgentMessage({
   mood?: LogoMood;
   onRetry?: () => void;
 }) {
-  const answer = messageText(message);
+  const answer = answerText(message);
   return (
     <AgentTurn mark={mood ? <LogoMark mood={mood} size={32} className="shrink-0" /> : undefined}>
       <AssistantParts message={message} streaming={answering} />

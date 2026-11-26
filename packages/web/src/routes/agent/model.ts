@@ -10,6 +10,16 @@ export function chatRequestBody(text: string) {
   return { message: { parts: [{ type: 'text' as const, text }] } };
 }
 
+/**
+ * An answer's text for copying: its text parts, kept apart as paragraphs as
+ * they are on screen (steps can sit between them).
+ */
+export function answerText(message: Pick<ChatMessage, 'parts'>) {
+  return message.parts
+    .flatMap((part) => (part.type === 'text' && part.text.trim() ? [part.text.trim()] : []))
+    .join('\n\n');
+}
+
 /** The text a person typed in a message, from its text parts. */
 export function messageText(message: Pick<ChatMessage, 'parts'>) {
   return message.parts
@@ -302,7 +312,8 @@ export function segmentParts(parts: ChatPart[]): Segment[] {
 
 /**
  * The line a finished run of steps folds into: what the agent did, in plain
- * words. Thinking alone is "Thought it through".
+ * words. Only calls that finished and worked count; the steps inside show
+ * the rest. Thinking alone is "Thought it through".
  */
 export function stepsSummary(parts: ChatPart[]): string {
   const tools = parts.filter(isToolPart);
@@ -313,12 +324,18 @@ export function stepsSummary(parts: ChatPart[]): string {
   let other = false;
   let saved = 0;
   for (const part of tools) {
+    const name = toolName(part);
+    // A bulk save that partly failed still saved some.
+    if (name === 'upsert_records') {
+      saved += upsertCounts(part)?.saved ?? 0;
+      continue;
+    }
+    if (!toolFinished(part) || toolError(part) !== undefined || dryRun(part)) continue;
     const kind = toolKind(part);
     if (kind === 'web') web = true;
     else if (kind === 'read' || kind === 'search') read = true;
     else if (kind === 'other') other = true;
-    else if (toolName(part) === 'upsert_record') saved += toolError(part) || dryRun(part) ? 0 : 1;
-    else if (toolName(part) === 'upsert_records') saved += upsertCounts(part)?.saved ?? 0;
+    else if (name === 'upsert_record') saved += 1;
     else noted = true;
   }
   const said: string[] = [];
@@ -327,8 +344,10 @@ export function stepsSummary(parts: ChatPart[]): string {
   if (saved) said.push(`saved ${records(saved)}`);
   if (noted) said.push('took notes');
   if (other) said.push('used other tools');
-  // Every save failed or was a dry run: the steps inside say how.
-  if (said.length === 0) said.push('tried to save changes');
+  if (said.length === 0)
+    return tools.some((part) => !toolFinished(part))
+      ? 'Stopped before finishing'
+      : "Tried, but it didn't work";
   const text = said.join(', ').replace(/, ([^,]*)$/, ' and $1');
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
