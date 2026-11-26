@@ -35,10 +35,9 @@ export const TURN_STATUSES = [
   'failed',
 ] as const;
 export type TurnStatus = (typeof TURN_STATUSES)[number];
-/** What the runtime may close a turn as; `timed_out` is only ever the API's. */
+/** What the runtime may close a turn as: any end, `timed_out` included when it cuts at its deadline. */
 export const CLOSE_STATUSES = TURN_STATUSES.filter(
-  (status): status is Exclude<TurnStatus, 'running' | 'timed_out'> =>
-    status !== 'running' && status !== 'timed_out',
+  (status): status is Exclude<TurnStatus, 'running'> => status !== 'running',
 );
 
 export const turnCancelled = (message = 'this turn was cancelled or replaced') =>
