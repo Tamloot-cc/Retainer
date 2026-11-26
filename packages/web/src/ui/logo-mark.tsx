@@ -1,11 +1,11 @@
-import { type CSSProperties, useEffect, useId, useReducer } from 'react';
+import { type CSSProperties, useEffect, useId, useLayoutEffect, useReducer, useRef } from 'react';
 import { cn } from './core.js';
 import './logo-mark.css';
 
 /**
- * Each mood (see docs/specs/assistant-avatar.md): the keyframes in logo-mark.css
- * whose cycle it waits for, how long one cycle takes (the CSS reads it as
- * `--mark-cycle`), and whether it plays once.
+ * Each mood has a main animation in logo-mark.css and a duration (`--mark-cycle`).
+ * `once` means the mood returns to idle when the animation ends. Stopping keeps
+ * its final pose until the caller changes the mood.
  */
 export const CYCLE = {
   idle: { name: 'retainer-mark-drift', ms: 3200, once: false },
@@ -14,8 +14,9 @@ export const CYCLE = {
   reading: { name: 'retainer-mark-scan', ms: 2400, once: false },
   saving: { name: 'retainer-mark-stash', ms: 2200, once: false },
   working: { name: 'retainer-mark-step', ms: 1600, once: false },
+  stopping: { name: 'retainer-mark-swing', ms: 1000, once: false },
   done: { name: 'retainer-mark-whirl', ms: 900, once: true },
-  error: { name: 'retainer-mark-shake', ms: 600, once: true },
+  error: { name: 'retainer-mark-shake', ms: 900, once: true },
 } as const satisfies Record<string, { name: string; ms: number; once: boolean }>;
 export type LogoMood = keyof typeof CYCLE;
 
@@ -26,19 +27,27 @@ export interface MoodState {
 }
 
 export type MoodEvent =
-  /** The caller asks for a mood; `now` skips waiting (nothing is moving). */
+  /** The caller asks for a mood; `now` skips waiting for reduced motion. */
   | { type: 'want'; mood: LogoMood; now: boolean }
   /** An animation in the mark finished a cycle (`ended`: it played once and stopped). */
   | { type: 'cycle'; name: string; ended: boolean };
 
 /**
- * A mood changes only when the shown one finishes a cycle, where every mood is
- * back at rest, so the mark never jumps. One-shot moods (done, error) return to
- * idle when they end, unless another mood is waiting.
+ * Most moods change at rest. Idle holds a different orientation and can leave
+ * immediately. Error and Stopping interrupt the current animation so people see
+ * the result immediately. One-shot moods return to idle unless another waits.
  */
 export function moodReducer(state: MoodState, event: MoodEvent): MoodState {
   if (event.type === 'want') {
-    if (event.now) return { shown: event.mood, next: null };
+    if (
+      event.now ||
+      event.mood === 'error' ||
+      event.mood === 'stopping' ||
+      state.shown === 'idle' ||
+      state.shown === 'stopping'
+    ) {
+      return { shown: event.mood, next: null };
+    }
     if (event.mood === state.shown) return state.next ? { shown: state.shown, next: null } : state;
     return state.next === event.mood ? state : { shown: state.shown, next: event.mood };
   }
@@ -59,6 +68,7 @@ const RING =
   'M 528 128.67731389 A 300 300 0 1 0 665.32998323 260 L 549.74979132 260 A 205 205 0 1 1 528 239.87192626 Z';
 // The whole 800 viewBox and a margin, for the gradient layer and its mask.
 const COVER = { x: -100, y: -100, width: 1000, height: 1000 };
+const POSE_LAYERS = ['breathe', 'turn', 'move', 'pop', 'upright'] as const;
 
 /**
  * The Retainer mark, moving to show what the assistant (or a page) is doing.
@@ -81,7 +91,32 @@ export function LogoMark({
   className?: string;
 }) {
   const [state, dispatch] = useReducer(moodReducer, { shown: mood, next: null });
-  useEffect(() => dispatch({ type: 'want', mood, now: prefersReducedMotion() }), [mood]);
+  const mark = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const now = prefersReducedMotion();
+    const element = mark.current;
+    if (
+      !now &&
+      element &&
+      element.dataset.mood !== mood &&
+      (mood === 'error' || mood === 'stopping')
+    ) {
+      // Read the visible SVG layers before replacing the active animation. The
+      // light-mode ring mask uses the same pose through the inherited variables.
+      const drawing = element.querySelector('svg > .mark-breathe');
+      if (drawing) {
+        for (const layer of POSE_LAYERS) {
+          const target = layer === 'breathe' ? drawing : drawing.querySelector(`.mark-${layer}`);
+          if (target)
+            element.style.setProperty(
+              `--mark-from-${layer}`,
+              getComputedStyle(target).transform || 'none',
+            );
+        }
+      }
+    }
+    dispatch({ type: 'want', mood, now });
+  }, [mood]);
 
   // Animation events don't arrive when nothing animates (reduced motion, a hidden
   // tab, tests), so a timer finishes the cycle if they don't.
@@ -101,6 +136,7 @@ export function LogoMark({
   const id = `retainer-mark-${useId().replace(/[^\w-]/g, '')}`;
   return (
     <span
+      ref={mark}
       className={cn('retainer-mark', className)}
       data-mood={state.shown}
       data-tile={tile ? '' : undefined}

@@ -26,8 +26,9 @@ const mood = (over: Partial<Parameters<typeof avatarMood>[0]>) =>
     status: 'ready',
     messages: [],
     typing: false,
-    ended: false,
+    outcome: null,
     running: false,
+    stopping: false,
     ...over,
   });
 
@@ -177,10 +178,15 @@ describe('avatarMood', () => {
   });
   it('listens while the person types, and marks a finished or failed turn', () => {
     expect(mood({ typing: true })).toBe('listening');
-    expect(mood({ ended: true })).toBe('done');
+    expect(mood({ outcome: 'done' })).toBe('done');
+    expect(mood({ outcome: 'error', running: true, typing: true })).toBe('error');
     expect(mood({ status: 'error' })).toBe('error');
     expect(mood({ running: true })).toBe('working');
     expect(mood({})).toBe('idle');
+  });
+  it('shows stopping while the cancelled turn settles', () => {
+    expect(mood({ status: 'streaming', stopping: true })).toBe('stopping');
+    expect(mood({ typing: true, stopping: true })).toBe('stopping');
   });
 });
 

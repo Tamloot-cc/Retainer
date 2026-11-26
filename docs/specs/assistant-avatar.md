@@ -54,22 +54,25 @@ turns back by the same amount, so it travels the circle without rotating.
 
 | Mood      | Motion                                                                                 | Cycle |
 | --------- | -------------------------------------------------------------------------------------- | ----- |
-| idle      | Nearly still; the square drifts out of the gap and back                                | 3.2 s |
+| idle      | The tilted square levitates vertically above the top gap                              | 3.2 s |
 | listening | The whole mark breathes in, to 106%                                                    | 1.6 s |
-| thinking  | A steady spin                                                                        | 1.4 s |
+| thinking  | The square compresses during a wind-up, then grows as it sweeps counterclockwise      | 1.4 s |
 | reading   | The gap scans back and forth, pausing at each end                                      | 2.4 s |
 | saving    | The square shrinks into the ring, the ring takes it in, a new one comes out of the gap | 2.2 s |
 | working   | One eased turn, then a beat at rest. Also the loading indicator                        | 1.6 s |
+| stopping  | The square pulls the ring around with it, then they swing and settle with the square at the bottom | 1 s |
 | done      | Plays once: a quick turn and a pop of the square, then idle                            | 0.9 s |
-| error     | Plays once: the square shakes in the gap, then idle                                    | 0.6 s |
+| error     | Plays once: the ring turns coral, returns to the original pose, and shakes with the square | 0.9 s |
 
 Loading uses the original working motion (variant A): a 1.12-second eased
 turn followed by a 0.48-second pause, with `cubic-bezier(0.65, 0, 0.35, 1)`.
 
 ## 4. Changing mood
 
-Every cycle starts and ends at rest. A new mood waits for the shown one to
-finish its cycle, so the mark never jumps. `moodReducer` holds the rule and
+Most moods wait for the shown one to finish its cycle. Idle can leave its
+upright pose immediately. Error appears immediately, and Stopping starts and
+ends as soon as the cancellation state changes. Both start from the current
+pose. Error finishes restoring the original pose before shaking. `moodReducer` holds the rule and
 has its own tests. The end of a cycle comes from the mood's main animation
 (`animationiteration`, or `animationend` for done and error). A timer of one
 cycle plus 250 ms finishes it when no animation event arrives, for example
@@ -81,8 +84,9 @@ changes the mood away and back, or remounts the mark.
 ## 5. Reduced motion
 
 With `prefers-reduced-motion: reduce` nothing animates. Each mood has a still
-pose: thinking and working turned a quarter, reading turned to one end of its
-scan, and saving with the square inside the ring. A mood changes at once.
+pose: idle with the square at the top, thinking and working turned a quarter,
+reading turned to one end of its scan, saving with the square inside the ring,
+stopping with the square at the bottom, and error in coral. A mood changes at once.
 Callers say what is happening in words next to the mark, so the pose is never
 the only signal.
 
@@ -106,8 +110,10 @@ the only signal.
   the person types, thinking while the request is out, while the model
   reasons and between a tool's result and the next step, reading for
   Retainer's read tools and web search, saving for writes, working while the
-  answer streams (and while a turn from an earlier visit runs), done when the
-  turn ends, error when it fails. Only the agent's last message carries the
-  mark.
+  answer streams (and while a turn from an earlier visit runs), and stopping
+  while a cancellation settles. A completed turn shows done, and a failed
+  turn shows error. A settled cancellation returns the mark to idle. The
+  mark appears beside the latest answer or next to the status when there is
+  no answer yet.
 - Whether the header's `BrandMark` and the favicon should follow the light
   version. Both keep the dark tile for now.

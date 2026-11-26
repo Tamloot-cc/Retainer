@@ -359,7 +359,15 @@ function CopyMessage({ text, label }: { text: string; label: string }) {
 }
 
 /** One assistant message: its steps, answer, endings and sources, in order. */
-function AssistantParts({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+function AssistantParts({
+  message,
+  streaming,
+  stopping,
+}: {
+  message: ChatMessage;
+  streaming: boolean;
+  stopping: boolean;
+}) {
   const segments = segmentParts(message.parts);
   return (
     <>
@@ -377,6 +385,7 @@ function AssistantParts({ message, streaming }: { message: ChatMessage; streamin
             </Markdown>
           );
         const ending = turnEnd(part);
+        if (ending === 'cancelled' && stopping) return null;
         if (ending)
           return (
             <Notice key={key} error={ending !== 'cancelled'} announce={false}>
@@ -452,7 +461,7 @@ const AgentMessage = memo(function AgentMessage({
   const answer = answerText(message);
   return (
     <AgentTurn mark={mood ? <LogoMark mood={mood} size={32} className="shrink-0" /> : undefined}>
-      <AssistantParts message={message} streaming={answering} />
+      <AssistantParts message={message} streaming={answering} stopping={mood === 'stopping'} />
       {actions && !answering && (answer || onRetry) ? (
         <MessageFooter pinned={last}>
           {answer ? <CopyMessage text={answer} label="Copy answer" /> : null}
