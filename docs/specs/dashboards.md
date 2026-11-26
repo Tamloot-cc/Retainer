@@ -1,0 +1,531 @@
+# Dashboards: spec
+
+Status: **proposed**, 2026-11-26. A local spike (branch `spike/dashboards`)
+proved the approach end to end (§11). Section 2 lists what is decided and
+what is only proposed.
+
+Builds on the workspace agent in [agent.md](agent.md). If accepted this spec
+amends:
+
+- `ARCHITECTURE.md` §1.4 (a new table, `dashboards`, beside `views`), §5
+  (the aggregate read groups by dates and relations, §7) and §6.1 (new
+  routes, §6.2).
+- `agent.md` §6.6 (a second system block on web chats, §5.1) and §8.1 (a new
+  read tool, `aggregate_records`, §5.3).
+- `FRONTEND.md` §5 (a Dashboards screen, and dashboards in the chat, §8).
+
+The write rules, the actor types and the rule that Retainer's core never calls
+a model do not change. The agent writes a dashboard; the person saves it;
+showing it again needs no model.
+
+## 1. The idea on one page
+
+A person asks the agent for a dashboard in plain words: "deals by stage this
+quarter, with total pipeline and the biggest open deals". The agent answers
+with a short sentence and a live dashboard, drawn in the chat: headline
+numbers, charts and tables over the workspace's records. "Show the amount
+instead of the count" changes it in place. **Pin** saves it, and it appears
+under **Dashboards** in the sidebar, next to Chat.
+
+A saved dashboard is a short program in OpenUI Lang, an open declarative
+language (MIT) made for models to write. The program says which components to
+show and which queries feed them. It holds no numbers: each time the
+dashboard opens, its queries run in the viewer's browser through Retainer's
+API, with the viewer's own access. So a dashboard is always current, two
+people can see different numbers on the same dashboard if their access
+differs, and opening one never calls a model.
+
+```
+ person ──"deals by stage…"──▶ agent ──program──▶ chat shows it live ──Pin──▶ dashboards row
+                                │                                               │
+                     describe_schema, query_records,                 opened later: queries run
+                     aggregate_records (to check its queries)       in the browser, no model call
+```
+
+Everything runs inside Retainer. OpenUI's hosted product (Thesys's
+Dashboards and gateway) is not used, and nothing is sent to Thesys.
+
+## 2. Decided and proposed
+
+Decided with the product owner on 2026-11-26:
+
+- **Built in-house** on OpenUI's open-source language and renderer only:
+  `@openuidev/lang-core` and `@openuidev/react-lang`, MIT. Not OpenUI's
+  hosted Dashboards product, which needs a Thesys key and keeps dashboards in
+  Thesys's cloud. Not OpenUI's component kit (`@openuidev/react-ui`), which
+  brings about 30 dependencies and its own styles: Retainer draws its own
+  components.
+- **The agent writes, the person saves.** The agent never saves a dashboard
+  itself.
+- **Dashboards are read-only.** A program can only read. It has no write
+  tools, forms or buttons.
+- **The spike's design carries over**: one component list shared by the
+  agent's prompt and the web app's renderers (§4.2), data tools that run in
+  the browser (§4.3), edits as patches (§5.2).
+
+Proposed in this document, open to change: the storage and routes (§6), the
+aggregate additions (§7), the chart library (§8.4), the limits (§9) and the
+delivery (§10). §12 lists the open questions.
+
+Considered and not taken:
+
+- **Vercel's UI SDK** (`ui-sdk.dev`) builds an app's controls and lets an
+  agent operate them. It has no charts and does not render model output.
+- **json-render** (Vercel Labs) does the same job as OpenUI Lang with JSON
+  output. OpenUI's own benchmark puts its language at about half the tokens
+  of json-render's JSON (not measured here), and its edit mode merges small
+  patches by statement name. json-render stays the fallback if OpenUI Lang
+  stops serving us.
+- **Twenty's approach**: structured widget settings (object, measure, group
+  field) chosen in a form. Robust, but every new kind of tile needs new
+  settings and new UI. A program lets the agent combine queries and
+  components freely within a fixed list. §13 records what was taken from
+  Twenty.
+
+## 3. How it works
+
+### 3.1 Vocabulary
+
+| Term            | Meaning                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Dashboard       | A saved program with a name and a visibility, like a view                                 |
+| Program         | OpenUI Lang text: one statement per line, `name = Expression`, with `root = Dashboard(…)` |
+| Tile            | One component on a dashboard: a metric, a chart or a table                                |
+| Data tool       | A read a program's `Query` calls: `query_records` or `aggregate_records`                  |
+| Dashboard block | The second system block of a web chat, which teaches the agent the language (§5.1)        |
+
+### 3.2 Where each part runs
+
+| Part                           | Runs in                          | Notes                                                         |
+| ------------------------------ | -------------------------------- | ------------------------------------------------------------- |
+| Writing the program            | Agent runtime, the agent's model | Same model and limits as any chat turn                        |
+| Checking the agent's queries   | Agent runtime → API              | `aggregate_records` and `query_records`, the person's access  |
+| Rendering, and running `Query` | The viewer's browser             | `@openuidev/react-lang` with Retainer's components            |
+| Data tools                     | Browser → REST API               | The viewer's session or key; read-only                        |
+| Saving, validating             | API                              | `@openuidev/lang-core` parses; the schema check is Retainer's |
+
+## 4. The program
+
+### 4.1 The language
+
+OpenUI Lang 1.0, a subset. A program is a list of statements. References may
+come before their definitions, so the agent writes the root first and the
+dashboard fills in top-down as it streams. The parts used:
+
+- **Components**: only those in §4.2. An unknown component is dropped and
+  reported, never rendered.
+- **`Query(tool, args, defaults, refresh?)`**: calls a data tool (§4.3).
+  `defaults` render until the data arrives.
+- **Dot access and built-ins** such as `data.groups.label`, `@Count`,
+  `@Sort`, `@Filter`: computed in the browser on query results.
+
+Not used: `Mutation`, `$variables`, forms, inputs, buttons and actions. The
+agent's prompt leaves them out (`bindings: false`) and the save check refuses
+`Mutation` (§6.3). A program cannot run code: the language has no functions
+of its own, and the renderer evaluates it without `eval`.
+
+An example in the form this spec proposes (the spike's programs also passed a
+currency code to each money tile, which §4.2 drops):
+
+```
+root = Dashboard("Deals", [kpis, stages, open])
+byStage = Query("aggregate_records", {object: "deal", groupBy: "stage", aggregates: [{field: "amount", op: "sum"}]}, {total: 0, values: {}, groups: []})
+recent = Query("query_records", {object: "deal", filter: {stage: {in: ["lead", "qualified", "proposal"]}}, sort: [{field: "amount", direction: "desc"}], limit: 10}, {records: []})
+kpis = Row([count, pipeline])
+count = Metric("Deals", byStage.total)
+pipeline = Metric("Pipeline", byStage.values.sum_amount)
+stages = BarChart("Amount by stage", byStage.groups.label, byStage.groups.sum_amount)
+open = Table("Biggest open deals", recent.records, [TableColumn("Deal", "label"), TableColumn("Stage", "stage"), TableColumn("Amount", "amount")])
+```
+
+### 4.2 Components
+
+One list, in `@retainer/shared` (MIT), with each component's props as a zod
+schema and a one-line description. `shared` takes no OpenUI dependency: the
+agent builds the library with `lang-core`'s `defineComponent` to generate its
+prompt, and the web app builds it with `react-lang`'s and its own renderers.
+The prompt and the renderers therefore cannot drift apart.
+
+| Component     | Props, in order                        | Shows                                                        |
+| ------------- | -------------------------------------- | ------------------------------------------------------------ |
+| `Dashboard`   | `title`, `children`                    | The root: a title and tiles, top to bottom                   |
+| `Row`         | `children`                             | Tiles side by side; stacked on a phone                       |
+| `Metric`      | `label`, `value`, `format?`            | One headline number                                          |
+| `BarChart`    | `title`, `labels`, `values`, `format?` | Values across categories                                     |
+| `StackedBar`  | `title`, `labels`, `series`, `format?` | Categories split by a second grouping                        |
+| `LineChart`   | `title`, `labels`, `series`, `format?` | Values over time (dates from §7.1)                           |
+| `PieChart`    | `title`, `labels`, `values`, `format?` | Shares of a whole; seven slices at most, the rest as "Other" |
+| `Table`       | `title`, `rows`, `columns`             | Records with chosen columns, at most 100 rows                |
+| `TableColumn` | `label`, `key`, `format?`              | One column of a `Table`                                      |
+| `Series`      | `name`, `values`                       | One line or one stack in a chart                             |
+| `Text`        | `text`                                 | A short note, plain text                                     |
+
+`format` is `number` (the default), `percent` or `date`. It is not needed
+for money: money values keep their currency (§4.3), and every component
+formats them as money in that currency. The spike's `money` format with a
+typed currency code is dropped: the agent could only guess the currency.
+
+Option and relation groups show their labels ("Negotiation", "Acme"), never
+their stored values. Empty groups show "No value".
+
+### 4.3 Data tools
+
+Two reads, the same in the browser and as agent tools (§5.3), so the agent
+can run exactly the query it is about to write.
+
+| Tool                | Input                                                                                            | Output                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `query_records`     | `object`, `filter`, `search`, `sort`, `limit` (at most 200), as `POST /v1/objects/:object/query` | `{ records: [{ id, label, <field>: value }] }`                                                         |
+| `aggregate_records` | `object`, `filter`, `search`, `aggregates`, `groupBy`, `granularity`, `limit` (§7)               | `{ total, values: { <op>_<field> }, groups: [{ value, label, total, <op>_<field> }], tooManyGroups? }` |
+
+Values are made plain for display:
+
+| Field type                  | Becomes                                 |
+| --------------------------- | --------------------------------------- |
+| `money`                     | `{ amount, currency }`, amount in units |
+| `full_name`                 | "First Last"                            |
+| `emails`, `phones`, `links` | The primary one                         |
+| `select`                    | The option's label                      |
+| `multi_select`              | Labels joined by ", "                   |
+| relation                    | The related record's label              |
+| everything else             | As the API returns it                   |
+
+Charts read a money value's `amount`. A sum over several currencies comes
+back as `null` with `mixedCurrencies`, and the tile says "Mixed currencies"
+instead of adding them up.
+
+## 5. The agent
+
+### 5.1 The dashboard block
+
+Web chats get a second system block after the base prompt, generated from
+the component list with `lang-core`'s `library.prompt()`: the language, the
+components, the data tools, edit mode and inline mode (text with a fenced
+`openui-lang` block when a dashboard is asked for, plain text otherwise),
+followed by Retainer's own rules:
+
+- Answer with a dashboard only when one is asked for or clearly fits
+  ("a breakdown", "a report I'll come back to"). Answer everything else in
+  plain text.
+- Learn the object and field names with `describe_schema`, and run each
+  query with the matching tool before writing it into the program.
+- Never copy numbers into a program; every number comes from a `Query`.
+- To chart a total per option, aggregate it in the grouped query and chart
+  `data.groups.<op>_<field>`. Never one `Query` per option, and never type
+  the options in: an option added later must still appear. (The spike's
+  first eval run did exactly that; this rule fixed it.)
+
+The block is static text, cached with the base prompt, about 4,000 tokens.
+It is pinned when the chat is created, like the base prompt (`agent.md`
+§3.5), so a change reaches new chats only.
+
+**Web chats only.** `POST /v1/agent/chats` takes `{ "dashboards": true }`,
+which the web app sends. The terminal client does not, so its chats never
+get the block and never answer in a format they can't show. Tasks never get
+it.
+
+### 5.2 Edits
+
+The prompt uses OpenUI's edit mode: to change a dashboard, the agent writes
+only the statements that changed. The chat merges them into the dashboard
+before them with `mergeStatements`: a statement with the same name replaces
+the old one, a new name is added, and anything no longer reachable from the
+root is dropped. In the spike's eval, "show the amount per stage and add won
+revenue" came back as a 4-line patch.
+
+"The dashboard before" is the last program earlier in the chat, written by
+the agent or pasted by the person (§8.3).
+
+### 5.3 A new read tool: `aggregate_records`
+
+The agent can read records today but cannot run an aggregate, so in the
+spike it guessed at its grouped queries and said so ("the filter format is a
+guess"). `aggregate_records` becomes a Retainer read tool, in the MCP server
+and in the agent's `retainer.read` group, matching `POST
+/v1/objects/:object/aggregate` with the additions in §7. Any agent connected
+over MCP gets it too, which is useful beyond dashboards ("how many open
+deals are over $50k?").
+
+Its output is the API's, not the plain form of §4.3: the plain form is a
+display concern of the browser tools. The dashboard block explains the
+mapping (`sum` of `amount` is read as `values.sum_amount`).
+
+No other agent tool is added. There is no tool to save, list or open a
+dashboard: the person saves (§2), and the person opens a saved one in a chat
+(§8.3).
+
+## 6. Storage and API
+
+### 6.1 The table
+
+| Table        | Holds                                                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dashboards` | Name, `program` (text, at most 20 KB), `visibility` (`workspace`, `private`), `position`, `chat_id` (the chat it was last saved from, nullable), actors, timestamps |
+
+A dashboard is display settings, like a view (`ARCHITECTURE.md` §1.4): no
+provenance, no assertions, not through the schema engine, and saving one
+never changes a record. It is not a view because a view belongs to one
+object, and a dashboard reads from several.
+
+### 6.2 Routes
+
+| Route                       | Scope   | Does                                                                    |
+| --------------------------- | ------- | ----------------------------------------------------------------------- |
+| `GET /v1/dashboards`        | `read`  | The dashboards the caller can see, in order, without programs           |
+| `POST /v1/dashboards`       | `write` | Save one: `{ name, program, visibility, chatId? }`                      |
+| `GET /v1/dashboards/:id`    | `read`  | One dashboard with its program and its `issues` (§6.4)                  |
+| `PATCH /v1/dashboards/:id`  | `write` | Change name, program, visibility or position; takes `expectedUpdatedAt` |
+| `DELETE /v1/dashboards/:id` | `write` | Delete it                                                               |
+
+Visibility follows views: a `workspace` dashboard is visible to everyone in
+the workspace and editable by anyone with `write`; a `private` one exists
+only for the actor that created it (404 to anyone else). Only the creator
+changes visibility. A new dashboard is `private`; **Share with workspace**
+makes it `workspace`.
+
+`PATCH` with a stale `expectedUpdatedAt` returns `409`, so two people saving
+over each other's edit find out.
+
+### 6.3 Checked on save
+
+The API parses the program with `lang-core` and refuses it with `422
+invalid_dashboard`, listing every problem, when:
+
+- it does not parse, has no `Dashboard` root, or uses a component or prop
+  outside §4.2;
+- it uses a name it never defines;
+- it calls `Mutation`, or a `Query` tool other than the two data tools;
+- a `refresh` interval is under 60 seconds;
+- it has more than 20 queries, or is over 20 KB.
+
+It does not refuse names the schema lacks (§6.4): a dashboard saved before a
+field was removed must still load, so the same check runs on reads.
+
+### 6.4 Fields by name, with issues
+
+A program names objects and fields by their API names, inside its queries
+and in table column keys. Unlike a view, which stores field keys and so
+survives a rename (`ARCHITECTURE.md` §1.4 rule 1), a dashboard breaks when a
+field it uses is renamed or removed. Translating names to keys inside a
+program is possible (the API could rewrite each query's literal arguments)
+but would not reach derived names such as `sum_amount` or a table column's
+key, so v1 does not try.
+
+Instead, `GET /v1/dashboards/:id` checks the program's queries against the
+current schema and lists what no longer exists in `issues` ("deal has no
+field amount"). The tile whose query fails shows a plain note ("This part
+uses a field that was renamed or removed"), and the dashboard offers **Fix
+with the agent**, which opens it in a chat with the issues in the message
+(§8.3). A query that fails for another reason (no access, an invalid filter)
+shows the API's error in the tile.
+
+### 6.5 Deletion and privacy
+
+Deleting a dashboard removes its row. Deleting a chat clears `chat_id` on
+dashboards saved from it. A program holds no record values (§5.1), so
+erasing a person (`forget`) has nothing to remove from dashboards. A title
+the agent wrote may name a company or a person, as a view's name may, and is
+left as it is.
+
+## 7. Aggregates by date and relation
+
+Bar and pie charts group by a `select` field, which the aggregate read
+already does. Two more groupings make the common dashboards possible. Both
+are part of the read path, deterministic, and useful to views and any agent,
+not only to dashboards.
+
+### 7.1 By date
+
+`groupBy` may name a filterable `date` or `date_time` field with
+`granularity`: `day`, `week`, `month`, `quarter` or `year` (`month` by
+default). Groups are periods in the workspace's time zone (`settings.timeZone`, UTC
+when unset), oldest first,
+labelled "Nov 2026", "Q4 2026" and so on. Periods with no records between
+the first and the last are filled in with zero, so a line chart has no gaps.
+Weeks start on Monday.
+
+### 7.2 By relation
+
+`groupBy` may name a filterable single relation (`many_to_one`). Groups are
+the related records, labelled with their labels, largest total first.
+Collection relations (`many_to_many`) and inverse relations cannot group:
+one record would count in several groups.
+
+### 7.3 Many groups
+
+At most 50 groups come back (`limit`, default 50). Past that, the response
+sets `tooManyGroups: true` and the tile says "Showing the first 50". Records
+with no value group under `value: null`, labelled "No value". A pie chart
+keeps its six largest slices and folds the rest into "Other" in the browser.
+
+## 8. The web app
+
+### 8.1 In the chat
+
+An answer with an `openui-lang` fence shows its prose as Markdown and the
+dashboard in place, drawn as it streams. Under a finished dashboard:
+
+- **Pin to Dashboards** saves it, named by its `Dashboard` title, with this
+  chat as `chat_id`. It becomes **Saved** with a link to it.
+- In a chat a dashboard was saved from, a later version offers **Update
+  "Deals"** and **Save as new**.
+
+A part that cannot be shown (a parse error, a failed query) shows a short
+note in its place, with the details folded away. The renderer and the
+language load only when an answer has a dashboard: about 37 KB gzipped in
+the spike, outside the main bundle.
+
+### 8.2 Dashboards — `/app/dashboards`
+
+A list in the sidebar's top group, after Chat, shown when the agent is
+available. The page lists the dashboards the person can see, each opening at
+`/app/dashboards/:id`, which shows the dashboard full width with its name,
+who made it, **Edit with the agent**, **Share with workspace** or **Make
+private**, **Rename** and **Delete**. Empty state: "No dashboards yet. Ask
+the agent for one, such as 'deals by stage this quarter', then pin it."
+
+Opening a dashboard runs its queries; there is no model call and no wait for
+the agent. A dashboard keeps showing its last numbers while it refreshes.
+
+### 8.3 Editing a saved dashboard
+
+**Edit with the agent** opens the chat in `chat_id` when it still exists,
+scrolled to the end. Otherwise it starts a new chat whose first message,
+written by the web app, carries the program in a fence ("Change my dashboard
+'Deals'") and any `issues`. The agent's next answer patches that program
+(§5.2), and **Update "Deals"** saves it. The chat's `chat_id` is updated on
+save.
+
+### 8.4 Charts
+
+Charts use shadcn/ui's chart components on Recharts 3 (MIT; React 19
+supported), copied in with their notice as `FRONTEND.md` §2 allows for
+shadcn/ui, and styled with the app's theme tokens in light and dark. Bars
+are horizontal when labels are long. Every chart has a text alternative: the
+same numbers as a table, one click away, and read by screen readers.
+
+The spike drew bars as plain HTML; that stays the fallback while the chart
+chunk loads.
+
+## 9. Security and limits
+
+- **Read-only by construction.** The browser's tool provider holds two read
+  functions and nothing else. The language's `Mutation` and actions have
+  nothing to call, and the save check refuses them anyway.
+- **The viewer's access.** Queries run with the viewer's session or key.
+  A shared dashboard shows each viewer only what that viewer can read, and a
+  query the viewer cannot run fails in its tile.
+- **No code.** Programs are data. The renderer evaluates expressions
+  without `eval`; text from records and from the agent renders as text.
+- **Nothing leaves Retainer.** No Thesys key or gateway. OpenUI's devtools
+  widget, which mounts in development builds and links to Thesys's console,
+  is switched off with its global flag; production builds drop it.
+- **Load.** At most 20 queries a dashboard, refresh at most once a minute,
+  and each query is an ordinary API read under the usual rate limits.
+
+| Limit                    | Value  |
+| ------------------------ | ------ |
+| Program size             | 20 KB  |
+| Queries per dashboard    | 20     |
+| Refresh interval         | ≥ 60 s |
+| Rows per `query_records` | 200    |
+| Rows shown in a `Table`  | 100    |
+| Groups per aggregate     | 50     |
+| Pie slices               | 7      |
+
+## 10. Delivery
+
+One PR, in line with landing a feature whole:
+
+1. **shared**: the component list and data tool descriptions.
+2. **server**: the `dashboards` table and routes, the save and read checks,
+   `aggregate_records` as an MCP tool, date and relation grouping, and the
+   `dashboards` flag on chat creation.
+3. **agent**: the dashboard block and the new tool in `retainer.read`.
+4. **web**: rendering in the chat, pin and update, the Dashboards screens,
+   the chart components.
+
+It is large mostly in the web app. Splitting the aggregate additions (§7)
+into a first PR is the one split that would make sense, since they stand on
+their own; the rest only works together.
+
+The hosted service needs no infrastructure change: a migration, new routes,
+a new agent tool and web assets all ship with the normal deploy. OpenUI and
+Recharts are added to `packages/web/THIRD_PARTY.md`'s dependency notes.
+
+### 10.1 Acceptance tests
+
+- **Unit**: the component list builds the same library on both sides; the
+  data tools make values plain (money keeps its currency, options and
+  relations become labels); patches merge; the save check refuses each case
+  in §6.3; issues list renamed and removed fields.
+- **Integration (Postgres)**: dashboard routes with visibility, `409` on a
+  stale save, `chat_id` cleared when the chat is deleted; date grouping with
+  gap filling and time zones; relation grouping with labels; the 50-group
+  cap; `aggregate_records` over MCP and as an agent tool with the person's
+  access.
+- **End to end (Playwright)**: with a stubbed agent stream, a chat answer
+  renders a dashboard; Pin saves it; the Dashboards page shows it with live
+  numbers; a record change shows after reload; a viewer without access to
+  an object sees that tile's error and the rest of the dashboard.
+- **Model eval (manual)**: `packages/server/scripts/dashboard-eval.ts`, from
+  the spike, runs the agent's model with both system blocks over a fake
+  workspace and checks every program it writes. Run it when the dashboard
+  block changes. It costs a few cents.
+
+## 11. The spike
+
+Branch `spike/dashboards`, 2026-11-26:
+
+- **Eval.** Sonnet 5.5 with the production thinking settings, six turns:
+  deals by stage, an edit, open tasks, companies by industry, a Q4 date
+  range, and a plain question. 6 of 6 passed (programs parse, use real
+  object and field names, call only the data tools; the plain question got
+  plain text). Each turn took 3 to 9 seconds and 1 to 4 requests. The edit
+  came back as a 4-line patch.
+- **In the app.** A demo workspace from the sales template, 20 deals. The
+  chat built a dashboard whose numbers matched the data (12 open deals,
+  $891,000 open pipeline, $340,000 won); pinned, it rendered again from the
+  saved program with no agent call.
+- **What it found**: one query per option instead of a grouped query (fixed
+  by a prompt rule, §5.1); table money shown without a currency (§4.3 now
+  keeps currency with the value); raw option values as labels (§4.3); the
+  agent hedging because it could not run aggregates (§5.3).
+
+What the spike skipped, and this spec adds: storage in Postgres (it used
+local storage), line, stacked and pie charts, date and relation grouping,
+web-only chats, the save check on the server, issues on read, editing a
+saved dashboard.
+
+## 12. Open questions
+
+1. **Who can save.** Saving needs `write`, as views do, so a `viewer` cannot
+   pin a dashboard, even a private one. Recommended: keep it; revisit if
+   viewers ask.
+2. **Filters.** OpenUI Lang supports `$variables` bound to inputs, so a
+   dashboard could have a date-range or owner picker. Recommended: later,
+   once dashboards are used; it needs input components and a rule for
+   which queries a filter applies to.
+3. **Layout.** Tiles flow top to bottom in rows. A drag-and-resize grid
+   (Twenty uses a 12-column grid) is left for later; the agent can reorder
+   tiles on request today.
+4. **Chart library.** Recommended: shadcn/ui charts on Recharts 3, for the
+   app's existing shadcn patterns. The alternative is hand-drawn SVG, with
+   no dependency but more code to own.
+
+## 13. Prior art
+
+- **OpenUI** (Thesys, MIT): the language, the parser and the React renderer
+  are used as they are. Its hosted Dashboards product shaped §6 and §8
+  (create, edit as patch, versions, share) without being used.
+- **Twenty** (AGPL; concepts only, no code, per `FRONTEND.md` §2): grouping
+  by date with granularities and gap filling, grouping by relation with
+  labels, a cap on groups with a "too many groups" flag, "No value" for
+  empty groups, and AI tools that create a dashboard from object and field
+  names. Twenty stores dashboards as structured widget settings in a page
+  layout with a 12-column grid, and does not handle mixed currencies (it
+  sums `amountMicros` across currencies); Retainer refuses to.
+  `twenty-server/src/modules/dashboard/` and
+  `twenty-front/src/modules/page-layout/` are the places to read.
+- **json-render** (Vercel Labs, Apache-2.0): the same idea with JSON; the
+  fallback (§2).
