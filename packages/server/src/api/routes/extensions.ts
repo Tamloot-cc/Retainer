@@ -219,6 +219,24 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
   app.get('/extensions', requireScope('read'), async (c) =>
     c.json(await extensions.list(c.get('caller'))),
   );
+  app.get('/extensions/record-buttons', requireScope('write'), async (c) =>
+    c.json(await extensions.recordButtons(c.get('caller'), c.req.query('object') ?? '')),
+  );
+  app.post('/extensions/:id/record-buttons/:functionId', requireScope('write'), async (c) => {
+    const { recordId } = await readBody(c, z.strictObject({ recordId: z.uuid() }));
+    return c.json(
+      await extensions.runRecordButton(
+        c.get('caller'),
+        idParam(c),
+        idParam(c, 'functionId'),
+        recordId,
+      ),
+      202,
+    );
+  });
+  app.get('/extensions/:id/record-button-runs/:run', requireScope('write'), async (c) =>
+    c.json(await extensions.recordButtonRun(c.get('caller'), idParam(c), idParam(c, 'run'))),
+  );
   app.get('/extensions/:id', requireScope('read'), async (c) =>
     c.json(await extensions.get(c.get('caller'), idParam(c))),
   );

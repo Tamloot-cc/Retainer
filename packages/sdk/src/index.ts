@@ -12,6 +12,8 @@ import type {
   ExtensionManifest,
   ExtensionOAuthClient,
   ExtensionPreview,
+  ExtensionRecordButton,
+  ExtensionRecordButtonRun,
 } from '@retainer/extension';
 import type { OrganizationRole, WorkspaceRole } from '@retainer/shared';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
@@ -968,6 +970,29 @@ export class RetainerClient {
       nextCursor: string | null;
     }>(`/v1/extensions/${encodeURIComponent(id)}/runs`, params, signal);
   }
+  extensionRecordButtons(object: string, signal?: AbortSignal) {
+    return this.get<{ buttons: ExtensionRecordButton[] }>(
+      '/v1/extensions/record-buttons',
+      { object },
+      signal,
+    );
+  }
+
+  runExtensionRecordButton(button: ExtensionRecordButton, recordId: string) {
+    return this.post<{ id: string }>(
+      `/v1/extensions/${encodeURIComponent(button.installationId)}/record-buttons/${encodeURIComponent(button.functionId)}`,
+      { recordId },
+    );
+  }
+
+  extensionRecordButtonRun(installationId: string, runId: string, signal?: AbortSignal) {
+    return this.get<ExtensionRecordButtonRun>(
+      `/v1/extensions/${encodeURIComponent(installationId)}/record-button-runs/${encodeURIComponent(runId)}`,
+      {},
+      signal,
+    );
+  }
+
   retryExtensionRun(id: string, runId: string, idempotencyKey: string) {
     return this.post<{ id: string; status: string }>(
       `/v1/extensions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/retry`,

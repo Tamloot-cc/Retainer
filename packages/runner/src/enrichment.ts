@@ -45,6 +45,7 @@ import { apiFetch, eachLimited, transient } from './outcome.js';
 export { ENRICHMENT_FUNCTION_IDS, enrichmentManifest } from './enrichment-contract.js';
 export { MEDIUM_CONFIDENCE };
 
+const buttonInput = z.strictObject({ recordId: z.uuid() });
 const changeInput = z.strictObject({ changePosition: z.string().max(19) });
 const configureInput = z.object({ reason: z.string().optional() }).passthrough();
 const pageInput = z.strictObject({ cursor: z.string().max(4096).optional() });
@@ -253,9 +254,15 @@ const BACKFILL_PAGE = 10;
 const BACKFILL_CONCURRENCY = 3;
 
 const FUNCTIONS = {
-  company: { enrich: ENRICHMENT.enrich, backfill: ENRICHMENT.backfill, kv: 'mappedOutputs' },
+  company: {
+    enrich: ENRICHMENT.enrich,
+    button: ENRICHMENT.enrichCompanyNow,
+    backfill: ENRICHMENT.backfill,
+    kv: 'mappedOutputs',
+  },
   person: {
     enrich: ENRICHMENT.enrichPerson,
+    button: ENRICHMENT.enrichPersonNow,
     backfill: ENRICHMENT.backfillPerson,
     kv: 'mappedPersonOutputs',
   },
@@ -402,9 +409,10 @@ export async function executeEnrichment(
       }
       return { status: 'succeeded' };
     }
-    const key = BINDING_KEYS.find((k) =>
-      [FUNCTIONS[k].enrich, FUNCTIONS[k].backfill].includes(invocation.functionId as never),
-    );
+    const key = BINDING_KEYS.find((k) => {
+      const { enrich, button, backfill } = FUNCTIONS[k];
+      return [enrich, button, backfill].some((id) => id === invocation.functionId);
+    });
     if (!key) return { status: 'failed', code: 'function_not_bundled' };
     const approved = await plan();
     const mapping = mappingOf(approved, key);
@@ -452,14 +460,22 @@ export async function executeEnrichment(
       return done('backfill_page');
     }
 
-    const input = changeInput.safeParse(invocation.input);
-    if (!input.success) return { status: 'failed', code: 'invalid_input' };
-    const change = await sdk.change(input.data.changePosition);
-    if (!change.recordId || !['create', 'update'].includes(change.operation))
-      return done('not_applicable');
+    let recordId: string;
+    if (invocation.functionId === FUNCTIONS[key].button) {
+      const input = buttonInput.safeParse(invocation.input);
+      if (!input.success) return { status: 'failed', code: 'invalid_input' };
+      recordId = input.data.recordId;
+    } else {
+      const input = changeInput.safeParse(invocation.input);
+      if (!input.success) return { status: 'failed', code: 'invalid_input' };
+      const change = await sdk.change(input.data.changePosition);
+      if (!change.recordId || !['create', 'update'].includes(change.operation))
+        return done('not_applicable');
+      recordId = change.recordId;
+    }
     if (!mapping) return { status: 'failed', code: 'binding_unavailable' };
     if (!mapping.usable) return { status: 'failed', code: 'schema_binding_conflict' };
-    const record = await readRecord(sdk, change.recordId, signal);
+    const record = await readRecord(sdk, recordId, signal);
     if (!record) return done('record_gone');
     return done(await enrichRecord(ctx(), mapping, record));
   } catch (error) {

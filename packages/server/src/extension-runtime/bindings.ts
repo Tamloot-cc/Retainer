@@ -22,6 +22,19 @@ export type StoredBindingPlan = {
   destinations: Record<string, StoredBinding | null>;
 };
 
+/** Buttons follow the approved destination's stable ID, including after an object rename. */
+export function recordButtonsFor(
+  manifest: ExtensionManifest,
+  plan: StoredBindingPlan | null,
+  objectId: string,
+) {
+  return manifest.functions.filter(
+    (fn): fn is typeof fn & { trigger: Extract<typeof fn.trigger, { kind: 'recordButton' }> } =>
+      fn.trigger.kind === 'recordButton' &&
+      plan?.destinations[fn.trigger.binding]?.objects.includes(objectId) === true,
+  );
+}
+
 export type BindingIssue = {
   binding: string;
   field?: string;

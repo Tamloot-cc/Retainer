@@ -14,7 +14,7 @@ For example, the provider returns `employee_count: 52` and `linkedin_url` for `a
 - One installation per workspace, targeting the base **Company** object and its **Domain** field by stable IDs. The lookup uses the primary domain link. Preview reports a schema conflict if that field is missing or incompatible.
 - Run on Company creation and when its domain changes. A company created without a domain is eligible once someone adds one. The trigger can queue a creation with a blank domain, which the handler skips before making a provider request.
 - Fill only unset fields. An unset field has no effective value or explicit clear. A value such as `0` counts as populated. If the domain changes later, fill any remaining unset fields using the new domain. Refreshing already populated values is deferred.
-- Defer bulk backfill, periodic scans, provider webhooks, and a manual **Enrich now** action. The standard run list and failed-run retry cover operational recovery in v1.
+- The first release deferred bulk backfill, periodic scans, provider webhooks, and manual enrichment. See [Enrich now](#enrich-now) for the record action added later.
 
 | Provider output  | Meaning                                                                                    | Compatible Company field | New-field option |
 | ---------------- | ------------------------------------------------------------------------------------------ | ------------------------ | ---------------- |
@@ -153,3 +153,13 @@ Measured on 2026-11-24 against 18 startups that announced a Series A in the prev
 The two unmatched companies had domains that did not belong to them. Annual revenue is mostly available for larger companies. The latest round often lags a fresh announcement: several companies that had just announced a Series A were still listed with their seed round.
 
 A person search costs about $0.007 and a LinkedIn read $0.001, plus a model pick when the shortcut can't decide (about $0.001 at `claude-haiku-5-5` prices, a fortieth of the $0.04 it cost on `claude-opus-5-5`).
+
+### Enrich now
+
+An active Exa Enrichment installation adds **Enrich now** to records in its
+approved Companies and People destinations. Existing installations get the
+button after an admin approves the upgrade. Clicking it runs the same
+lookup and fill-only writes as automatic enrichment, under the existing
+sharing consent. Each click targets the open record, including records
+created before the extension was installed. A skipped People destination
+has no button.

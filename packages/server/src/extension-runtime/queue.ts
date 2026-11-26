@@ -32,7 +32,7 @@ import {
   resolveRelease,
   runnableReleases,
 } from './availability.js';
-import type { StoredBindingPlan } from './bindings.js';
+import { recordButtonsFor, type StoredBindingPlan } from './bindings.js';
 import {
   failInstallation,
   finishMemberCleanup,
@@ -90,6 +90,7 @@ type Installation = {
   release_digest: string;
   generation: number;
   state: string;
+  connection_health: string;
   grant_generation: number;
   setup_kind: string;
   last_error: string | null;
@@ -321,7 +322,8 @@ export class ExtensionQueue {
       | 'connect'
       | 'disconnect'
       | 'change'
-      | 'tool' = 'job',
+      | 'tool'
+      | 'recordButton' = 'job',
     setupChild = false,
     depth = cause.length,
   ) {
@@ -626,6 +628,69 @@ export class ExtensionQueue {
       return { id: await this.insert(tx, installation, input, []) };
     });
   }
+  /** Trusted record-action admission. Recheck the pinned release and target under the queue lock. */
+  async enqueueRecordButton(
+    workspace: string,
+    installationId: string,
+    functionId: string,
+    recordId: string,
+  ) {
+    return inWorkspace(this.sql, workspace, async (tx) => {
+      await lockSchemaShared(tx, workspace);
+      const installation = await this.installation(tx, workspace, installationId);
+      const manifest = this.runnableRelease(installation);
+      if (
+        !manifest ||
+        installation.state !== 'active' ||
+        installation.connection_health === 'needs_reconnect'
+      )
+        throw unavailable();
+      if (!(await this.recordButtonMatches(tx, installation, manifest, functionId, recordId)))
+        throw notFound('record button for this record');
+
+      // Repeated clicks while one run is live share that run, even across tabs.
+      // The installation's queue lock makes this check and insertion atomic.
+      const [existing] = await tx<{ id: string }[]>`
+        select id from extension_jobs where installation_id=${installationId}
+          and generation=${installation.generation} and function_id=${functionId}
+          and trigger_kind='recordButton' and input->>'recordId'=${recordId}
+          and status in ('queued','running','waiting') and expires_at>clock_timestamp()
+        limit 1`;
+      if (existing) return { id: existing.id };
+      const id = await this.insert(
+        tx,
+        installation,
+        { functionId, input: { recordId }, dedupeKey: `recordButton:${crypto.randomUUID()}` },
+        [],
+        'recordButton',
+      );
+      return { id };
+    });
+  }
+
+  private async recordButtonMatches(
+    tx: Tx,
+    installation: Installation,
+    manifest: ReturnType<typeof requireRelease>,
+    functionId: string,
+    recordId: string,
+  ) {
+    const [record] = await tx<{ object_type_id: string }[]>`
+      select object_type_id from records
+      where id=${recordId} and deleted_at is null and merged_into_id is null`;
+    if (!record) return false;
+    const schema = await getSchema(tx, installation.workspace_id);
+    const object = schema.objectsById.get(record.object_type_id);
+    return (
+      !!object &&
+      !object.hidden &&
+      object.state.status === 'active' &&
+      recordButtonsFor(manifest, installation.bindings, object.state.universalId).some(
+        (fn) => fn.universalId === functionId,
+      )
+    );
+  }
+
   /** Trusted dispatcher only. Matching jobs and their cursor commit in the same transaction. */
   async dispatchChanges(workspace: string, id: string, limit = 100) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
@@ -1089,6 +1154,25 @@ export class ExtensionQueue {
       const target = { ...installation, version: pin.version, release_digest: job.release_digest };
       const manifest = this.runnableRelease(target);
       if (!manifest) return null;
+      if (job.trigger_kind === 'recordButton') {
+        const recordId = z.uuid().safeParse((job.input as { recordId?: unknown } | null)?.recordId);
+        if (
+          !recordId.success ||
+          !(await this.recordButtonMatches(
+            tx,
+            installation,
+            manifest,
+            job.function_id,
+            recordId.data,
+          ))
+        ) {
+          await tx`update extension_jobs set status='cancelled',code='record_unavailable',
+            lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
+          await tx`update extension_attempts set status='cancelled',code='record_unavailable',finished_at=now()
+            where job_id=${id} and finished_at is null`;
+          return null;
+        }
+      }
       const requiresCredential = manifest.execution === 'standalone' && job.trigger_kind === 'tool';
       if (requiresCredential) {
         // installation() holds the same exclusive registration lock as credential revocation.

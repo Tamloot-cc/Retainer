@@ -166,7 +166,9 @@ async function setup(
         reconnect: true,
       },
     },
-    functions: manifest.functions.map((fn) => ({ ...fn, secrets: ['apiKey'] })),
+    functions: manifest.functions
+      .filter((fn) => fn.trigger.kind !== 'recordButton')
+      .map((fn) => ({ ...fn, secrets: ['apiKey'] })),
   };
   const current = { ...manifest, version: '1.0.1' };
   const catalog = new ExtensionCatalog(
@@ -194,7 +196,12 @@ async function setup(
   });
   const { workspace, keys } = await app.setupWorkspace(
     { name: `Enrichment ${randomUUID()}` },
-    { admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] } },
+    {
+      admin: { actor: { type: 'user', id: 'admin' }, scopes: ['admin'] },
+      writer: { actor: { type: 'user', id: 'writer' }, scopes: ['read', 'write'] },
+      reader: { actor: { type: 'user', id: 'reader' }, scopes: ['read'] },
+      agent: { actor: { type: 'agent', id: 'agent' }, scopes: ['read', 'write'] },
+    },
   );
   let secretRefs: { apiKey: string } | undefined;
   if (options.legacy) {
@@ -461,13 +468,123 @@ describe('Exa enrichment through a fake Exa', () => {
     expect(h.apiBodies.join('\n')).not.toContain('Fixture Co');
   });
 
+  it('runs a company button after an automatic miss and coalesces concurrent presses', async () => {
+    const h = await setup();
+    const acme = await h.company({
+      name: 'Acme',
+      domain: 'acme.example',
+      employeeCount: 42,
+    });
+    const list = (object: string) =>
+      h.app.request(`/v1/extensions/record-buttons?object=${object}`, { key: h.keys.writer });
+    const path = `/v1/extensions/${h.id}/record-buttons`;
+    const press = (functionId: string, recordId = acme, key = h.keys.writer) =>
+      h.app.request(`${path}/${functionId}`, { key, body: { recordId } });
+
+    expect((await list('company')).body.buttons).toEqual([]);
+    expect((await press(ENRICHMENT.enrichCompanyNow)).status).toBe(409);
+    await h.drain();
+    const search = h.exa.search;
+    h.exa.search = () => Response.json({ results: [] });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match' }]);
+    expect((await h.fields(acme)).headquarters).toBeUndefined();
+    h.exa.search = search;
+    expect(h.exa.requests).toHaveLength(2);
+    expect((await list('companies')).body.buttons).toEqual([
+      { installationId: h.id, functionId: ENRICHMENT.enrichCompanyNow, label: 'Enrich now' },
+    ]);
+    expect((await list('person')).body.buttons).toEqual([]);
+    expect((await press(ENRICHMENT.enrichCompanyNow, acme, h.keys.reader)).status).toBe(403);
+    expect((await press(ENRICHMENT.enrichCompanyNow, acme, h.keys.agent)).status).toBe(403);
+    expect((await press(ENRICHMENT.enrich)).status).toBe(404);
+    const person = await h.person({ name: { first: 'Ada', last: 'Example' } });
+    expect((await press(ENRICHMENT.enrichCompanyNow, person)).status).toBe(404);
+    expect((await press(ENRICHMENT.enrichPersonNow, person)).status).toBe(404);
+    expect((await press(ENRICHMENT.enrichCompanyNow, randomUUID())).status).toBe(404);
+
+    const [first, second] = await Promise.all([
+      press(ENRICHMENT.enrichCompanyNow),
+      press(ENRICHMENT.enrichCompanyNow),
+    ]);
+    expect(first.status).toBe(202);
+    expect(second).toMatchObject({ status: 202, body: first.body });
+    const statusPath = `/v1/extensions/${h.id}/record-button-runs/${first.body.id}`;
+    expect((await h.app.request(statusPath, { key: h.keys.writer })).body.status).toBe('queued');
+    expect(await h.queue.discover(db.connect({ role: 'retainer_executor' }))).toContainEqual({
+      workspace_id: h.workspace,
+      job_id: first.body.id,
+    });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(await h.fields(acme)).toMatchObject({
+      employeeCount: 42,
+      headquarters: { city: 'Springfield' },
+    });
+    expect(h.exa.requests).toHaveLength(3);
+    expect((await h.app.request(statusPath, { key: h.keys.writer })).body).toEqual({
+      id: first.body.id,
+      status: 'succeeded',
+      code: 'matched_shortcut',
+    });
+
+    const again = await press(ENRICHMENT.enrichCompanyNow);
+    expect(again.status).toBe(202);
+    expect(again.body.id).not.toBe(first.body.id);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'nothing_to_fill' }]);
+    expect(h.exa.requests).toHaveLength(3);
+
+    expect(
+      (
+        await h.app.request(`/v1/extensions/${h.id}/disable`, {
+          key: h.keys.admin,
+          method: 'POST',
+        })
+      ).status,
+    ).toBe(200);
+    expect((await list('company')).body.buttons).toEqual([]);
+    expect((await press(ENRICHMENT.enrichCompanyNow)).status).toBe(409);
+  });
+
+  it('cancels a queued button when its record was deleted', async () => {
+    const h = await setup();
+    const acme = await h.company({ name: 'Acme', domain: 'acme.example' });
+    await h.drain();
+    const run = await h.app.request(
+      `/v1/extensions/${h.id}/record-buttons/${ENRICHMENT.enrichCompanyNow}`,
+      {
+        key: h.keys.writer,
+        body: { recordId: acme },
+      },
+    );
+    expect(run.status).toBe(202);
+    expect(
+      (
+        await h.app.request(`/v1/records/${acme}`, {
+          key: h.keys.admin,
+          method: 'DELETE',
+        })
+      ).status,
+    ).toBe(200);
+    expect(await h.queue.claim(h.workspace, run.body.id, 'enrichment-test')).toBeNull();
+    const result = await h.app.request(`/v1/extensions/${h.id}/record-button-runs/${run.body.id}`, {
+      key: h.keys.writer,
+    });
+    expect(result.body).toMatchObject({ status: 'cancelled', code: 'record_unavailable' });
+    expect(h.exa.requests).toHaveLength(1);
+  });
+
   it('upgrades a workspace-key installation without asking for a key or changing its mapping', async () => {
     const h = await setup({ legacy: true });
     await h.drain();
     const previous = await h.detail();
     expect(previous).toMatchObject({ state: 'active', secrets: { apiKey: true } });
+    const buttons = () =>
+      h.app.request('/v1/extensions/record-buttons?object=company', { key: h.keys.writer });
+    expect((await buttons()).body.buttons).toEqual([]);
     await h.upgrade();
     await h.drain();
+    expect((await buttons()).body.buttons).toEqual([
+      { installationId: h.id, functionId: ENRICHMENT.enrichCompanyNow, label: 'Enrich now' },
+    ]);
     expect(await h.detail()).toMatchObject({
       state: 'active',
       version: h.currentVersion,
@@ -973,6 +1090,47 @@ describe('people enrichment (enrichment spec 7)', () => {
       department: { action: 'skip' },
     },
   };
+
+  it('enriches an existing person from their record button without sharing email', async () => {
+    const h = await setup({ person: people });
+    await h.drain();
+    const company = await h.company({ name: 'Fixture Co', domain: 'fixture.example' });
+    const ada = await h.person({
+      name: { first: 'Ada', last: 'Example' },
+      emails: { primary: 'ada@fixture.example' },
+      company,
+      jobTitle: 'Chief Executive',
+    });
+    const search = h.exa.people;
+    h.exa.people = () => Response.json({ results: [] });
+    await h.drain();
+    expect((await h.fields(ada)).seniority).toBeUndefined();
+    h.exa.people = search;
+    const list = await h.app.request('/v1/extensions/record-buttons?object=person', {
+      key: h.keys.writer,
+    });
+    expect(list.body.buttons).toEqual([
+      { installationId: h.id, functionId: ENRICHMENT.enrichPersonNow, label: 'Enrich now' },
+    ]);
+    const started = await h.app.request(
+      `/v1/extensions/${h.id}/record-buttons/${ENRICHMENT.enrichPersonNow}`,
+      {
+        key: h.keys.writer,
+        body: { recordId: ada },
+      },
+    );
+    expect(started.status).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_shortcut' }]);
+    expect(await h.fields(ada)).toMatchObject({
+      jobTitle: 'Chief Executive',
+      seniority: 'C-Level',
+    });
+    expect(h.exa.requests.at(-1)?.body).toMatchObject({
+      category: 'people',
+      query: 'Ada Example Fixture Co fixture.example',
+    });
+    expect(JSON.stringify(h.exa.requests)).not.toContain('ada@');
+  });
 
   it('fills a new person from their linked company, keeping what a person set', async () => {
     const h = await setup({ person: people });

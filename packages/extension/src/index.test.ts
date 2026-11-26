@@ -9,6 +9,7 @@ import {
   functionSecrets,
   lifecycleInputSchema,
   mergeBindingChoices,
+  recordButtonInputSchema,
   runsHostedCode,
   sourceDeletePolicy,
 } from './index.js';
@@ -148,6 +149,33 @@ describe('strict extension contracts', () => {
       }),
     ).toThrow('local changePosition');
   });
+  it('validates a record button against a hosted workspace binding and a record-only input', () => {
+    const button = {
+      universalId: randomUUID(),
+      name: 'tag-record',
+      description: 'Tag a record',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'recordButton', binding: 'event', label: 'Tag record' },
+      inputSchema: recordButtonInputSchema,
+    };
+    const input = { ...fixture(), bindings: sourceBindings, functions: [button] };
+    expect(defineExtension(input).functions[0]?.trigger).toEqual(button.trigger);
+    expect(() => defineExtension({ ...input, bindings: [] })).toThrow('unknown binding');
+    expect(() => defineExtension({ ...input, connection: 'member' })).toThrow('hosted workspace');
+    expect(() => defineExtension({ ...input, execution: 'standalone' })).toThrow(
+      'hosted workspace',
+    );
+    expect(() =>
+      defineExtension({
+        ...input,
+        functions: [{ ...button, inputSchema: { type: 'object', additionalProperties: false } }],
+      }),
+    ).toThrow('only a recordId');
+    expect(() =>
+      defineExtension({ ...input, functions: [{ ...button, mappedWrite: 'different' }] }),
+    ).toThrow('own binding');
+  });
+
   it('requires the scheduler-owned UTC timestamp payload at registration', () => {
     const fn = {
       universalId: randomUUID(),
