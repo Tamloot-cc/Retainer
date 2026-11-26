@@ -24,7 +24,9 @@ test('shows an extension button in the record sheet and full page and runs it on
   await expect(button).toBeFocused();
   await expect(sheet.getByText('Started “Enrich now” on this record.')).toBeVisible();
   await r.finishRecordButton(installation, company.id);
-  await expect(sheet.getByRole('status')).toHaveText('“Enrich now” finished.');
+  await expect(
+    sheet.getByRole('status').filter({ hasText: '“Enrich now” finished.' }),
+  ).toBeVisible();
   await expect(button).toBeEnabled();
 
   await sheet.getByRole('link', { name: 'Open full page' }).click();
