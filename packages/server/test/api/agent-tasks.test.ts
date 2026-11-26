@@ -9,7 +9,6 @@ import { cancelRuns } from '../../src/extension-runtime/locks.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
-import { eraseExtensionState } from '../../src/privacy/extension-erasure.js';
 import { eraseRoutineContent } from '../../src/routine-runtime/admission.js';
 import { pauseRoutine } from '../../src/routines/runs.js';
 import { RoutineExecutor } from '../../src/worker/routines.js';
@@ -426,20 +425,27 @@ describe('agent tasks from a routine', () => {
     expect(await s.effect(runId)).toMatchObject({ state: 'failed', code: 'timed_out' });
   });
 
-  it('cancels a waiting run’s task when forget erases routine content', async () => {
+  it('drops the answer of a task whose run forget erased while it waited', async () => {
     const s = await setup();
     const { runId, taskId } = await s.park();
     await inWorkspace(s.app.sql, s.workspace, (tx) => eraseRoutineContent(tx, s.workspace));
     expect(await s.run(runId)).toMatchObject({ status: 'erased' });
-    const [task] = await db.owner<{ state: string; code: string; input: unknown }[]>`
-      select state, code, input from agent_tasks where session_id = ${taskId}`;
-    expect(task).toMatchObject({ state: 'cancelled', code: 'run_erased', input: null });
-    // A late answer is dropped: nothing reaches the erased run's effect.
-    const stored = await inWorkspace(s.app.sql, s.workspace, (tx) =>
+    // forget leaves the task alone (§9.2, §5.4); its answer finds no waiting run.
+    await inWorkspace(s.app.sql, s.workspace, (tx) =>
       completeTask(tx, taskId, { status: 'completed', answer: { round: 'Series A' } }),
     );
-    expect(stored).toBe(false);
     expect(await s.effect(runId)).toMatchObject({ state: 'started', result: null });
+    expect(await s.run(runId)).toMatchObject({ status: 'erased' });
+  });
+
+  it('ends a task blocked by the day’s limit at once, with limit_reached', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    await db.owner`insert into agent_days (workspace_id, day, subject, steps)
+      values (${s.workspace}, (now() at time zone 'utc')::date, 'workspace', 1000000)`;
+    const claim = await claimJob(s, taskId);
+    expect(claim.status).toBe(429);
+    expect(await s.effect(runId)).toMatchObject({ state: 'failed', code: 'limit_reached' });
   });
 
   it('ends a run whose input changed while it waited as diverged, flagged on its page', async () => {
@@ -647,20 +653,21 @@ describe('agent tasks from an extension', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('requeues a waiting invocation and cancels its task when privacy erases', async () => {
+  it('drops the answer for an invocation that stopped waiting', async () => {
     const e = await extensionSetup();
     const { job, client } = await e.start();
     const { taskId } = await client.start(request);
     await e.queue.complete(job, { status: 'succeeded', wait: taskId });
+    await db.owner`update extension_jobs set status = 'cancelled' where id = ${job.jobId}`;
     await inWorkspace(e.app.sql, e.workspace, (tx) =>
-      eraseExtensionState(tx, e.workspace, [], [], [], []),
+      completeTask(tx, taskId, { status: 'completed', answer: { round: 'Series A' } }),
     );
-    const [task] = await db.owner<{ state: string; code: string; input: unknown }[]>`
-      select state, code, input from agent_tasks where session_id = ${taskId}`;
-    expect(task).toMatchObject({ state: 'cancelled', code: 'privacy_erased', input: null });
-    const [parent] = await db.owner<{ status: string; agent_task_id: string | null }[]>`
-      select status, agent_task_id from extension_jobs where id = ${job.jobId}`;
-    expect(parent).toMatchObject({ status: 'queued', agent_task_id: null });
+    const [task] = await db.owner<{ state: string; answer: unknown }[]>`
+      select state, answer from agent_tasks where session_id = ${taskId}`;
+    expect(task).toMatchObject({ state: 'completed', answer: null });
+    const children = await db.owner`
+      select 1 from extension_jobs where agent_task_id = ${taskId} and id <> ${job.jobId}`;
+    expect(children).toHaveLength(0);
   });
 
   it('cancels the task of a waiting invocation that is cancelled', async () => {

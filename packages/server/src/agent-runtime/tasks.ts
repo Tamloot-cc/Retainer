@@ -265,18 +265,19 @@ export async function completeTask(tx: Tx, sessionId: string, result: TaskResult
   if (!task || !['staged', 'queued', 'running'].includes(task.state)) return false;
   const answer = result.status === 'completed' ? jsonValue(result.answer ?? null) : null;
   const code = result.status === 'failed' ? result.code : null;
-  await tx`update agent_tasks set state = ${result.status}, code = ${code}, input = null,
-    answer = ${answer === null || task.caller_kind === 'routine' ? null : tx.json(answer)},
-    job_token_hash = null, lease_until = null, finished_at = clock_timestamp()
-    where session_id = ${sessionId}`;
+  // The answer is kept only where a caller still waits for it: a run that
+  // was erased, cancelled or expired meanwhile drops it (§9.2).
+  let delivered = false;
   if (task.caller_kind === 'routine' && task.routine_run_id && task.position !== null) {
     const stored = await tx`
-      update routine_run_results set state = ${result.status === 'completed' ? 'done' : 'failed'},
+      update routine_run_results x set state = ${result.status === 'completed' ? 'done' : 'failed'},
         result = ${result.status === 'completed' ? tx.json(answer) : tx.json({ error: `the agent task ended as ${code}` })},
         code = ${code}, updated_at = clock_timestamp()
-      where run_id = ${task.routine_run_id} and position = ${task.position}
-        and agent_task_id = ${sessionId} and state = 'started'
-      returning run_id`;
+      from routine_runs r
+      where x.run_id = ${task.routine_run_id} and x.position = ${task.position}
+        and x.agent_task_id = ${sessionId} and x.state = 'started'
+        and r.id = x.run_id and r.status = 'waiting'
+      returning x.run_id`;
     if (stored.length > 0)
       await tx`update routine_runs set status = 'queued', code = null, attempt = 1,
         lease_owner = null, lease_until = null, available_at = clock_timestamp(), updated_at = clock_timestamp()
@@ -303,6 +304,7 @@ export async function completeTask(tx: Tx, sessionId: string, result: TaskResult
     >`update extension_jobs set status = 'succeeded', code = null, updated_at = clock_timestamp()
       where id = ${task.extension_job_id} and status = 'waiting' and agent_task_id = ${sessionId}
       returning *`;
+    delivered = !!parent;
     if (parent)
       await tx`insert into extension_jobs (workspace_id, installation_id, connection_id, connection_generation,
           generation, release_digest, function_id, input, change_snapshot, source_item_id, trigger_kind,
@@ -317,6 +319,11 @@ export async function completeTask(tx: Tx, sessionId: string, result: TaskResult
           greatest(${parent.expires_at}::timestamptz, clock_timestamp() + interval '1 hour'))
         on conflict do nothing`;
   }
+  // An extension's answer stays on the task for the child job to read.
+  await tx`update agent_tasks set state = ${result.status}, code = ${code}, input = null,
+    answer = ${answer === null || !delivered || task.caller_kind === 'routine' ? null : tx.json(answer)},
+    job_token_hash = null, lease_until = null, finished_at = clock_timestamp()
+    where session_id = ${sessionId}`;
   return true;
 }
 

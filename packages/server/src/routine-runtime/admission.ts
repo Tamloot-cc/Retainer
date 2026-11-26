@@ -1,5 +1,4 @@
 import type { Actor } from '@retainer/shared';
-import { cancelRunTasks } from '../agent-runtime/tasks.js';
 import type { Caller, RoutineCaller } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
@@ -116,20 +115,10 @@ export async function eraseRoutineContent(tx: Tx, workspaceId: string) {
   await tx`update routine_run_results set result=null,updated_at=clock_timestamp()
     where workspace_id=${workspaceId} and result is not null`;
   await tx`update routine_runs set output=null where workspace_id=${workspaceId} and output is not null`;
-  const erased = await tx<
-    { id: string }[]
-  >`update routine_runs r set status='erased',code='run_erased',fence=fence+1,finished_at=clock_timestamp(),
+  await tx`update routine_runs r set status='erased',code='run_erased',fence=fence+1,finished_at=clock_timestamp(),
     lease_owner=null,lease_until=null where r.workspace_id=${workspaceId} and (r.status in ('running','waiting')
       or (r.status in ('queued','held') and (r.input ? 'triggerRecord'
-        or exists(select 1 from routine_run_results x where x.run_id=r.id))))
-    returning r.id`;
-  // A waiting run's agent task holds the erased input and would store an
-  // answer derived from it: it is cancelled with its run (agent spec §9.2).
-  await cancelRunTasks(
-    tx,
-    erased.map((run) => run.id),
-    'run_erased',
-  );
+        or exists(select 1 from routine_run_results x where x.run_id=r.id))))`;
   await tx`update routine_runs set input=nullif(input-'triggerRecord','{}'::jsonb)
     where workspace_id=${workspaceId} and input ? 'triggerRecord'`;
   await tx`update extension_jobs set input='{}'::jsonb,output=null,input_hash='',

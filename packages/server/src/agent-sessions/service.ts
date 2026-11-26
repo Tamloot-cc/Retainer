@@ -432,7 +432,16 @@ export class AgentSessions {
       const access = { kind: 'task' as const, sessionId };
       // The grant holds only while the caller waits on this task (§9.2).
       await agentCaller(tx, workspaceId, access);
-      await this.checkDay(tx, session);
+      // A day's allowance that's used up ends the task now; its caller gets
+      // `limit_reached` instead of waiting out every redelivery.
+      if (await this.dayUse(tx, session)) {
+        await completeTask(tx, sessionId, { status: 'failed', code: 'limit_reached' });
+        return new AppError(
+          429,
+          'limit_reached',
+          "today's agent steps for this workspace are used up; try again tomorrow",
+        );
+      }
       const limits = sessionLimits(session);
       const { steps, tool_calls: toolCalls } = await sessionTotals(tx, sessionId);
       if (steps >= limits.maxSteps) {

@@ -1,4 +1,3 @@
-import { cancelJobTasks } from '../agent-runtime/tasks.js';
 import type { Tx } from '../db/tx.js';
 import { lockExtension } from '../extension-runtime/locks.js';
 
@@ -65,25 +64,12 @@ export async function eraseExtensionState(
   // Any other live run may hold content it read before erasure: cancel its attempt and requeue it with a new fence.
   await tx`update extension_attempts set status='cancelled',code='privacy_erased',finished_at=clock_timestamp()
     where finished_at is null and job_id in(select id from extension_jobs where workspace_id=${workspace} and status='running')`;
-  // A job waiting for an agent task is requeued the same way: its task may
-  // have read the erased record, so the task is cancelled (agent spec §9.2).
-  const requeued = await tx<{ id: string }[]>`update extension_jobs set status='queued',
-      agent_task_id=case when status='waiting' then null else agent_task_id end,
-      lease_owner=null,lease_until=null,run_until=null,fence=fence+1,updated_at=clock_timestamp()
-    where workspace_id=${workspace} and status in ('running','waiting') returning id`;
+  await tx`update extension_jobs set status='queued',lease_owner=null,lease_until=null,run_until=null,fence=fence+1,updated_at=clock_timestamp()
+    where workspace_id=${workspace} and status='running'`;
   // KV is for operational cursors/IDs; elsewhere, drop only entries that name an erased identity.
   await tx`delete from extension_kv where workspace_id=${workspace}
     and exists(select 1 from unnest(${identities}::text[]) erased where strpos(lower(key),erased)>0 or strpos(lower(value::text),erased)>0)`;
   // Jobs naming an erased identity are redacted and cancelled in every installation and generation.
-  const cancelled = await tx<
-    { id: string }[]
-  >`update extension_jobs set input='{}'::jsonb,change_snapshot=null,input_hash='',dedupe_key='erased:'||id::text,status='cancelled',code='privacy_erased',
-    lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp() where workspace_id=${workspace} and ${erasedInput}
-    returning id`;
-  // Their agent tasks, staged or running, hold content the erasure reaches.
-  await cancelJobTasks(
-    tx,
-    [...requeued, ...cancelled].map((job) => job.id),
-    'privacy_erased',
-  );
+  await tx`update extension_jobs set input='{}'::jsonb,change_snapshot=null,input_hash='',dedupe_key='erased:'||id::text,status='cancelled',code='privacy_erased',
+    lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp() where workspace_id=${workspace} and ${erasedInput}`;
 }

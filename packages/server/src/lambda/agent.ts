@@ -41,11 +41,27 @@ function createApp() {
 
 type LambdaContext = { getRemainingTimeInMillis(): number };
 type ResponseStream = { end(): void };
-declare const awslambda: {
-  streamifyResponse(
-    handler: (event: unknown, stream: ResponseStream, context: LambdaContext) => Promise<void>,
-  ): unknown;
-};
+type StreamingHandler = (
+  event: unknown,
+  stream: ResponseStream,
+  context: LambdaContext,
+) => Promise<void>;
+declare const awslambda: { streamifyResponse(handler: StreamingHandler): unknown };
+
+/**
+ * Hono's function URL handler without its own `streamifyResponse`, so this
+ * entry decorates once: Lambda streams a response only through the stream
+ * it handed the one decorated handler.
+ */
+function undecorated(app: ReturnType<typeof createApp>): StreamingHandler {
+  const decorate = awslambda.streamifyResponse;
+  awslambda.streamifyResponse = (handler) => handler;
+  try {
+    return streamHandle(app) as unknown as StreamingHandler;
+  } finally {
+    awslambda.streamifyResponse = decorate;
+  }
+}
 
 /** A task job's native event, sent by the dispatcher's asynchronous invoke (spec §9.3). */
 function taskEvent(event: unknown): { sessionId: string; job: string } | undefined {
@@ -59,7 +75,7 @@ function taskEvent(event: unknown): { sessionId: string; job: string } | undefin
 /** Built at initialization, so a function missing its configuration fails to start. */
 const config = inLambda ? (quietMastra(), loadAgentRuntimeConfig()) : undefined;
 const app = config ? createApp() : undefined;
-const stream = app ? streamHandle(app) : undefined;
+const stream = app ? undecorated(app) : undefined;
 
 /**
  * The Lambda entry point (`dist/lambda/agent.handler`): a chat's stream
@@ -70,12 +86,7 @@ export const handler =
   inLambda && config && stream
     ? awslambda.streamifyResponse(async (event, responseStream, context) => {
         const task = taskEvent(event);
-        if (!task)
-          return (stream as never as (...args: unknown[]) => Promise<void>)(
-            event,
-            responseStream,
-            context,
-          );
+        if (!task) return stream(event, responseStream, context);
         try {
           await runTask(
             {
