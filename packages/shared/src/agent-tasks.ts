@@ -79,15 +79,24 @@ export const agentOutputSchemaSchema: z.ZodType<AgentOutputSchema> = z.lazy(() =
       description: z.string().max(2000).optional(),
       maxItems: z.number().int().min(0).max(1000).optional(),
     }),
-    z.strictObject({
-      type: z.literal('object'),
-      properties: z.record(
-        z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
-        agentOutputSchemaSchema,
+    z
+      .strictObject({
+        type: z.literal('object'),
+        properties: z.record(
+          z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
+          agentOutputSchemaSchema,
+        ),
+        required: z.array(z.string()).optional(),
+        description: z.string().max(2000).optional(),
+      })
+      // A required name that isn't a property, or one named twice, makes a
+      // schema no answer can meet: refused when the task is created.
+      .refine(
+        (schema) =>
+          new Set(schema.required).size === (schema.required ?? []).length &&
+          (schema.required ?? []).every((name) => Object.hasOwn(schema.properties, name)),
+        { message: 'required must name each of its properties once', path: ['required'] },
       ),
-      required: z.array(z.string()).optional(),
-      description: z.string().max(2000).optional(),
-    }),
   ]),
 ) as z.ZodType<AgentOutputSchema>;
 

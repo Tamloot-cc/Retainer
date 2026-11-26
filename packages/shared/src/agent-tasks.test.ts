@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AGENT_TASK_LIMITS,
+  agentOutputSchemaSchema,
   agentTaskRequestSchema,
   answerProblem,
   fitAnswer,
@@ -71,5 +72,18 @@ describe('answers', () => {
       round: 'Seed',
       investors: ['a', 'b'],
     });
+  });
+});
+
+describe('agent output schemas', () => {
+  const object = (required: string[]) => ({
+    type: 'object',
+    properties: { round: { type: 'string' } },
+    required,
+  });
+  it('refuses required names that are missing or repeated', () => {
+    expect(agentOutputSchemaSchema.safeParse(object(['round'])).success).toBe(true);
+    expect(agentOutputSchemaSchema.safeParse(object(['missing'])).success).toBe(false);
+    expect(agentOutputSchemaSchema.safeParse(object(['round', 'round'])).success).toBe(false);
   });
 });
