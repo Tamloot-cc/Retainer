@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
 import { createAgentApp } from '@retainer/agent/runtime';
+import { recordButtonInputSchema } from '@retainer/extension';
 import { ENRICHMENT, ENRICHMENT_BINDINGS } from '@retainer/runner/enrichment-contract';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
@@ -121,6 +122,20 @@ export const browserExaMappingManifest = manifestFixture({
   requestedActor: 'agent',
   scopes: ['read', 'write'],
   bindings: ENRICHMENT_BINDINGS,
+});
+const recordButtonManifest = manifestFixture({
+  ...browserMappingManifest,
+  functions: [
+    {
+      universalId: ENRICHMENT.enrichCompanyNow,
+      name: 'enrichCompanyNow',
+      description: 'Fill company details.',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'recordButton', binding: 'company', label: 'Enrich now' },
+      inputSchema: recordButtonInputSchema,
+      timeoutSeconds: 120,
+    },
+  ],
 });
 export const browserConfigureManifest = manifestFixture({
   ...browserMappingManifest,
@@ -290,6 +305,8 @@ export const test = base.extend<
       /** Saves the suggestions Tamloot's model would make for the starter workspace. */
       suggestTamloot: () => Promise<void>;
       previousConfiguration: () => Promise<string>;
+      installRecordButton: () => Promise<string>;
+      finishRecordButton: (installationId: string, recordId: string) => Promise<void>;
       expireConfigurationSecrets: () => Promise<void>;
       sourceEvidence: () => Promise<{
         personId: string;
@@ -304,6 +321,7 @@ export const test = base.extend<
     fileStorage: boolean;
     sourceFixture: boolean;
     mappingFixture: boolean;
+    recordButtonFixture: boolean;
     memberFixture: boolean;
     oauthMemberFixture: boolean;
     configureFixture: boolean;
@@ -326,6 +344,7 @@ export const test = base.extend<
   fileStorage: [false, { option: true, scope: 'worker' }],
   sourceFixture: [false, { option: true, scope: 'worker' }],
   mappingFixture: [false, { option: true, scope: 'worker' }],
+  recordButtonFixture: [false, { option: true, scope: 'worker' }],
   configureSecretFixture: [false, { option: true, scope: 'worker' }],
   configureFixture: [false, { option: true, scope: 'worker' }],
   tamlootFixture: [false, { option: true, scope: 'worker' }],
@@ -352,6 +371,7 @@ export const test = base.extend<
       fileStorage: withFiles,
       sourceFixture,
       mappingFixture,
+      recordButtonFixture,
       memberFixture,
       oauthMemberFixture,
       configureFixture,
@@ -467,7 +487,11 @@ export const test = base.extend<
                   runtimeEnabled: true,
                 },
               ])
-            : undefined;
+            : recordButtonFixture
+              ? new ExtensionCatalog([
+                  { manifest: recordButtonManifest, actorCeiling: 'agent', runtimeEnabled: true },
+                ])
+              : undefined;
     const secretSql =
       memberManifest || configureSecretFixture || tamloot
         ? createSql(dbUrl.toString(), { role: 'retainer_secret_broker' })
@@ -480,6 +504,7 @@ export const test = base.extend<
       : undefined;
     const pair =
       routineFixture ||
+      recordButtonFixture ||
       sourceFixture ||
       memberFixture ||
       oauthMemberFixture ||
@@ -764,6 +789,25 @@ export const test = base.extend<
       await queue.complete(job, { status: 'succeeded' });
       return installed.id;
     }
+    function installRecordButton() {
+      return install({
+        registrationId: recordButtonManifest.universalId,
+        version: recordButtonManifest.version,
+        settings: {},
+        bindings: { company: { action: 'existing', objects: ['company'] } },
+      });
+    }
+    async function finishRecordButton(installationId: string, recordId: string) {
+      if (!catalog) throw new Error('record button fixture is not enabled');
+      const [pending] = await owner<{ id: string }[]>`
+        select id from extension_jobs where installation_id=${installationId} and status='queued'
+          and trigger_kind='recordButton' and input->>'recordId'=${recordId}`;
+      if (!pending) throw new Error('no record button job was queued');
+      const queue = new ExtensionQueue(sql, catalog.runtime);
+      const job = await queue.claim(workspace.id, pending.id, randomUUID());
+      if (!job) throw new Error('record button claim failed');
+      await queue.complete(job, { status: 'succeeded' });
+    }
     async function activateMembers() {
       if (!memberFixture || !catalog || !runTokens)
         throw new Error('member fixture is not enabled');
@@ -907,6 +951,8 @@ export const test = base.extend<
         finishConfigure,
         suggestTamloot,
         previousConfiguration,
+        installRecordButton,
+        finishRecordButton,
         expireConfigurationSecrets: async () => {
           await owner`update extension_pending_secrets set expires_at=now()-interval '1 second' where workspace_id=${workspace.id} and consumed_at is null`;
         },

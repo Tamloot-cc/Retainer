@@ -9,6 +9,7 @@ import {
   type ExtensionInstallInput,
   type ExtensionManifest,
   type ExtensionPreview,
+  type ExtensionRecordButtonRun,
   functionSecrets,
   hasOptionalSetupModel,
   MODEL_USE_NOTICE,
@@ -39,7 +40,11 @@ import {
   resolveRelease,
   sidebarSignIn,
 } from '../extension-runtime/availability.js';
-import { presentBindingPlan, type StoredBindingPlan } from '../extension-runtime/bindings.js';
+import {
+  presentBindingPlan,
+  recordButtonsFor,
+  type StoredBindingPlan,
+} from '../extension-runtime/bindings.js';
 import { disconnectConnection } from '../extension-runtime/connections.js';
 import { hashInstallationKey, mintInstallationKey } from '../extension-runtime/credentials.js';
 import { sweepPartialReleases } from '../extension-runtime/lifecycle.js';
@@ -53,7 +58,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { log } from '../log.js';
 import { lockRecordsForUpdate, objectOf, recomputeFields } from '../records/write.js';
-import { getSchema } from '../schema/compiled.js';
+import { getSchema, objectNamed } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
 import { deriveUuid } from '../schema-engine/apply.js';
 import { planSchemaChange, runSchemaChange, SYSTEM_ACTOR } from '../schema-engine/engine.js';
@@ -99,6 +104,17 @@ function human(caller: Caller) {
 function scope(caller: Caller, required: 'read' | 'schema:write') {
   if (!caller.scopes.includes('admin') && !caller.scopes.includes(required))
     throw forbidden(`extension operation requires ${required}`);
+}
+function requireRecordButtonWriter(caller: Caller) {
+  if (
+    caller.actor.type !== 'user' ||
+    caller.run ||
+    caller.installation ||
+    caller.routine ||
+    caller.agent ||
+    (!caller.scopes.includes('admin') && !caller.scopes.includes('write'))
+  )
+    throw forbidden('record buttons require a person with workspace write access');
 }
 const conflict = (code: string, message: string) => new AppError(409, code, message);
 /** Configure runs only for an installation being set up or turned on. */
@@ -354,6 +370,62 @@ export class Extensions {
       if (!row?.bindings) throw notFound('installation bindings');
       const state = await loadSchemaState(tx, caller.workspaceId);
       return presentBindingPlan(state, row.bindings, row.bindings_revision);
+    });
+  }
+
+  async recordButtons(caller: Caller, object: string) {
+    requireRecordButtonWriter(caller);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      await lockSchemaShared(tx, caller.workspaceId);
+      const target = objectNamed(await getSchema(tx, caller.workspaceId), object);
+      if (!target) throw notFound('object');
+      const installations = await tx<
+        (Pick<Row, 'id' | 'registration_id' | 'version' | 'release_digest'> & {
+          bindings: StoredBindingPlan;
+        })[]
+      >`select id,registration_id,version,release_digest,bindings from extension_installations
+        where state='active' and connection_health<>'needs_reconnect' and bindings is not null order by id`;
+      return {
+        buttons: installations.flatMap((installation) => {
+          const release = releaseAvailability(this.catalog.runtime, installation, this.deployed);
+          if (!release.available) return [];
+          return recordButtonsFor(
+            release.manifest,
+            installation.bindings,
+            target.state.universalId,
+          ).map((fn) => ({
+            installationId: installation.id,
+            functionId: fn.universalId,
+            label: fn.trigger.label,
+          }));
+        }),
+      };
+    });
+  }
+
+  async runRecordButton(
+    caller: Caller,
+    installationId: string,
+    functionId: string,
+    recordId: string,
+  ) {
+    requireRecordButtonWriter(caller);
+    return new ExtensionQueue(
+      this.sql,
+      this.catalog.runtime,
+      undefined,
+      this.deployed,
+    ).enqueueRecordButton(caller.workspaceId, installationId, functionId, recordId);
+  }
+
+  async recordButtonRun(caller: Caller, installationId: string, id: string) {
+    requireRecordButtonWriter(caller);
+    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
+      const [run] = await tx<ExtensionRecordButtonRun[]>`
+        select id,status,code from extension_jobs where id=${id} and installation_id=${installationId}
+          and trigger_kind='recordButton'`;
+      if (!run) throw notFound('record button run');
+      return run;
     });
   }
 

@@ -167,6 +167,14 @@ const toolTrigger = z.strictObject({
   connection: z.enum(['workspace', 'member']),
   outputSchema: inputSchema,
 });
+/** Server-provided input for a record button. */
+export const recordButtonInputSchema: InputSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { recordId: { type: 'string', maxLength: 36 } },
+  required: ['recordId'],
+};
+
 export const bindingKeySchema = z.string().regex(/^[a-z][a-zA-Z0-9_]{0,39}$/);
 const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('configure') }),
@@ -176,6 +184,7 @@ const trigger = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('disconnect') }),
   z.strictObject({ kind: z.literal('job') }),
   toolTrigger,
+  z.strictObject({ kind: z.literal('recordButton'), binding: bindingKeySchema, label }),
   z.strictObject({ kind: z.literal('route'), route: name }),
   z.strictObject({ kind: z.literal('serverRoute'), route: name }),
   z.strictObject({
@@ -603,6 +612,19 @@ function checkFunction(fn: z.infer<typeof functionSchema>) {
     if (new Set(operations).size !== operations.length)
       throw new Error('unsupported_manifest: duplicate trigger operation');
   }
+  if (fn.trigger.kind === 'recordButton') {
+    const input = fn.inputSchema;
+    if (
+      input.type !== 'object' ||
+      input.additionalProperties !== false ||
+      input.required?.length !== 1 ||
+      input.required[0] !== 'recordId' ||
+      Object.keys(input.properties ?? {}).length !== 1 ||
+      input.properties?.recordId?.type !== 'string' ||
+      input.properties.recordId.maxLength !== 36
+    )
+      throw new Error('unsupported_manifest: record buttons accept only a recordId');
+  }
   if (fn.trigger.kind === 'schedule') {
     const input = fn.inputSchema;
     if (
@@ -628,6 +650,15 @@ function checkBindings(manifest: ExtensionManifest): void {
     const bound = byKey.get(trigger.binding);
     if (!bound || trigger.fields?.some((key) => !bound.fields.some((field) => field.key === key)))
       throw new Error('unsupported_manifest: change trigger names an unknown binding or field');
+  }
+  for (const fn of manifest.functions) {
+    if (fn.trigger.kind !== 'recordButton') continue;
+    if (manifest.execution !== 'hosted' || manifest.connection !== 'workspace')
+      throw new Error('unsupported_manifest: record buttons require hosted workspace execution');
+    if (!byKey.has(fn.trigger.binding))
+      throw new Error('unsupported_manifest: record button names an unknown binding');
+    if (fn.mappedWrite && fn.mappedWrite !== fn.trigger.binding)
+      throw new Error('unsupported_manifest: record button must write through its own binding');
   }
   if (keys.size !== bindings.length) throw new Error('unsupported_manifest: duplicate binding key');
   for (const view of manifest.views) {
@@ -683,7 +714,7 @@ function checkBoundWrites(manifest: ExtensionManifest): void {
     )
       throw new Error('unsupported_manifest: mapped writes require a hosted entity write binding');
     if (
-      !['job', 'change', 'schedule'].includes(fn.trigger.kind) ||
+      !['job', 'change', 'schedule', 'recordButton'].includes(fn.trigger.kind) ||
       !functionScopes(manifest, fn).includes('write')
     )
       throw new Error('unsupported_manifest: mapped writes require a runtime function with write');
@@ -1274,6 +1305,18 @@ export type ExtensionInstallation = {
 };
 export type ExtensionConnectionMethod = 'oauth' | 'key';
 /** A standalone app's sidebar link, for a member of a workspace where it is active (spec 8). */
+export type ExtensionRecordButton = {
+  installationId: string;
+  functionId: string;
+  label: string;
+};
+
+export type ExtensionRecordButtonRun = {
+  id: string;
+  status: string;
+  code: string | null;
+};
+
 export type ExtensionAppLink = {
   installationId: string;
   name: string;

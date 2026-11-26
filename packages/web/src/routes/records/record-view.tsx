@@ -9,7 +9,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { FileText, History, Maximize2, Pencil } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { FieldPicker, pickerFor } from '../../fields/common.js';
@@ -40,6 +40,7 @@ import {
 import { useRememberCommand } from '../command-recents.js';
 import { DeveloperFacts, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
+import { ExtensionRecordButtons } from '../extensions/record-buttons.js';
 import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle, relationsTo } from '../state.js';
 import { RecordActions } from './record-actions.js';
@@ -105,6 +106,11 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
   // The tab belongs to one record; opening another row starts it fresh.
   const [memory, setMemory] = useState<{ id: string } & MemoryState>({ id });
   const nav = memory.id === id ? memory : { id };
+  const [extensionReport, setExtensionReport] = useState<{ id: string; message: string }>();
+  const reportExtension = useCallback(
+    (message: string) => setExtensionReport({ id, message }),
+    [id],
+  );
   const r = record.data;
   const object = r ? objectByName(schema, r.object) : undefined;
   return (
@@ -133,6 +139,9 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
       description="Record details. Click a value to edit it."
       actions={
         <>
+          {r ? (
+            <ExtensionRecordButtons object={r.object} recordId={r.id} onReport={reportExtension} />
+          ) : null}
           {r ? <RoutineButtons object={r.object} recordId={r.id} /> : null}
           {r ? <RecordActions record={r} requestedId={id} onGone={onClose} /> : null}
           <Button asChild variant="ghost" size="icon">
@@ -148,6 +157,9 @@ export function RecordSheet({ id, onClose }: { id: string; onClose: () => void }
         </>
       }
     >
+      {extensionReport?.id === id ? (
+        <Notice onDismiss={() => setExtensionReport(undefined)}>{extensionReport.message}</Notice>
+      ) : null}
       {r ? (
         <RecordView
           key={r.id}

@@ -773,6 +773,21 @@ describe('enrichment manifest', () => {
       },
     });
   });
+  it('adds Enrich now to both mapped destinations', () => {
+    expect(manifest.functions.filter((fn) => fn.trigger.kind === 'recordButton')).toMatchObject([
+      {
+        universalId: ENRICHMENT.enrichCompanyNow,
+        mappedWrite: 'company',
+        trigger: { binding: 'company', label: 'Enrich now' },
+      },
+      {
+        universalId: ENRICHMENT.enrichPersonNow,
+        mappedWrite: 'person',
+        trigger: { binding: 'person', label: 'Enrich now' },
+      },
+    ]);
+  });
+
   it('uses the model in configure and the lookups, and not in setup', () => {
     expect(Object.fromEntries(manifest.functions.map((f) => [f.name, f.uses ?? []]))).toEqual({
       configure: ['model'],
@@ -781,6 +796,8 @@ describe('enrichment manifest', () => {
       setup: [],
       enrich: ['model'],
       enrichPerson: ['model'],
+      enrichCompanyNow: ['model'],
+      enrichPersonNow: ['model'],
     });
   });
 });

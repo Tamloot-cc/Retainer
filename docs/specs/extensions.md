@@ -199,11 +199,33 @@ behaviour (every secret setting; the release's scopes), so catalogs built
 before them load with unchanged digests; first-party releases declare both.
 
 Each function has one trigger: `install`, `uninstall`, `route`, `serverRoute`,
-`schedule`, `change`, or `job`. Only `job` handlers are directly enqueueable by
+`schedule`, `change`, `recordButton`, or `job`. Only `job` handlers are directly enqueueable by
 other handlers; lifecycle and public verifier functions cannot be invoked through
 the generic enqueue API. Future `tool` support is a new capability, not an unknown
 kind silently accepted today. Input schemas use a bounded JSON Schema subset;
 reject remote references and enforce size/depth limits.
+
+#### Record buttons
+
+A hosted extension with a workspace connection can add a function with
+`trigger: { kind: 'recordButton', binding: 'company', label: 'Enrich now' }`
+and the exported `recordButtonInputSchema`. The button appears in the record
+sheet and on the full record page when the pinned release is active, its
+connection is usable, and the record's object is the binding's approved
+destination. An optional destination that was skipped contributes no button.
+
+People with workspace write access can press the button to queue the
+function with `{ recordId }`. The server verifies the pinned function and
+that the record is live and belongs to its approved destination. The
+worker checks the record again before claiming the job. Concurrent presses
+for the same installation, function and record share a live run. A later
+press can start a new run after the first ends. The function uses its usual
+installation grants, secrets and write provenance.
+
+The web app discovers buttons at `GET /v1/extensions/record-buttons?object=company`.
+`POST /v1/extensions/:id/record-buttons/:functionId` queues a run and returns
+its ID. `GET /v1/extensions/:id/record-button-runs/:run` reads that run's
+status and outcome code.
 
 Registration identity is stable across releases; installation identity is stable
 across disable/re-enable. V1 supports one installation per registration/workspace,

@@ -2,6 +2,7 @@ import {
   defineExtension,
   type ExtensionBinding,
   type ExtensionManifest,
+  recordButtonInputSchema,
 } from '@retainer/extension';
 import type { FieldType } from '@retainer/shared';
 import { z } from 'zod';
@@ -15,6 +16,8 @@ export const ENRICHMENT = {
   enrich: 'ab556674-d905-4839-8516-7b1ee7455c80',
   enrichPerson: '3edcca1a-6179-4e23-b387-328d7f7c2a88',
   backfillPerson: '6d72dd76-5c7d-462e-99b2-9f275898a47b',
+  enrichCompanyNow: 'f2a76368-d95d-4020-a8e9-099b1e5ceda4',
+  enrichPersonNow: 'd8c01ffc-4418-43e8-a084-dc7d499d8117',
   employeeCountField: '509ddbdd-3b4e-45ec-b6b1-709255de3bdc',
   linkedinField: '4341a8ad-8c05-444e-98bb-3e357d5730a7',
   headquartersField: '770bf3de-d5df-48ac-95cb-16ec1c18c302',
@@ -44,6 +47,8 @@ export const ENRICHMENT_FUNCTION_IDS: string[] = [
   ENRICHMENT.backfill,
   ENRICHMENT.enrichPerson,
   ENRICHMENT.backfillPerson,
+  ENRICHMENT.enrichCompanyNow,
+  ENRICHMENT.enrichPersonNow,
 ];
 
 /** Exa's fixed API origin; no setting or input can change it. */
@@ -504,6 +509,30 @@ export function enrichmentManifest(build: {
     views: [],
     bindings: ENRICHMENT_BINDINGS,
     functions: [
+      {
+        universalId: ENRICHMENT.enrichCompanyNow,
+        name: 'enrichCompanyNow',
+        description: 'Look up this company in Exa and fill its empty mapped fields.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 120,
+        trigger: { kind: 'recordButton', binding: 'company', label: 'Enrich now' },
+        inputSchema: recordButtonInputSchema,
+        scopes: ['read', 'write'],
+        mappedWrite: 'company',
+        uses: ['model'],
+      },
+      {
+        universalId: ENRICHMENT.enrichPersonNow,
+        name: 'enrichPersonNow',
+        description: 'Look up this person in Exa and fill their empty mapped fields.',
+        handlerDigest: build.handlerDigest,
+        timeoutSeconds: 120,
+        trigger: { kind: 'recordButton', binding: 'person', label: 'Enrich now' },
+        inputSchema: recordButtonInputSchema,
+        scopes: ['read', 'write'],
+        mappedWrite: 'person',
+        uses: ['model'],
+      },
       {
         universalId: ENRICHMENT.configure,
         name: 'configure',
