@@ -504,7 +504,7 @@ describe('Exa enrichment through a fake Exa', () => {
 
     const [first, second] = await Promise.all([
       press(ENRICHMENT.enrichCompanyNow),
-      press(ENRICHMENT.enrichCompanyNow),
+      press(ENRICHMENT.enrichCompanyNow, acme.toUpperCase()),
     ]);
     expect(first.status).toBe(202);
     expect(second).toMatchObject({ status: 202, body: first.body });

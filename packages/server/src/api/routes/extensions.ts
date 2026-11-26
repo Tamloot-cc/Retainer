@@ -229,7 +229,7 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
         c.get('caller'),
         idParam(c),
         idParam(c, 'functionId'),
-        recordId,
+        recordId.toLowerCase(),
       ),
       202,
     );
