@@ -10,6 +10,7 @@ import {
   RetainerApiError,
 } from '@retainer/sdk';
 import { pinnedMcpAddress } from '@retainer/shared';
+import { interactiveChat, sendMessage, startFailure } from './agent-chat.js';
 import {
   getTokens,
   KeyMode,
@@ -163,6 +164,12 @@ const commands = [
     'Workspace · elevation',
     'routine reject <routine> <version> --workspace sales',
   ],
+  [
+    'agent chat',
+    '[<chat>] [--message <text>]',
+    'Workspace · read; the agent writes while this login is elevated',
+    'agent chat --workspace sales',
+  ],
   ['routine pause', '<id>', 'Workspace · elevation', 'routine pause <routine> --workspace sales'],
   [
     'routine resume',
@@ -191,7 +198,8 @@ const twoArguments = new Set(['role', 'routine approve', 'routine reject']);
 
 function validateArguments(command: string, args: string[], options: Options) {
   const expected = noArguments.has(command) ? 0 : twoArguments.has(command) ? 2 : 1;
-  if (args.length > expected || (args.length !== expected && command !== 'mcp-address'))
+  const optional = command === 'mcp-address' || command === 'agent chat';
+  if (args.length > expected || (args.length !== expected && !optional))
     throw new Usage(`Check the arguments for retainer ${command} with retainer --help.`);
   if (command === 'role' && !!options.org === !!options.workspace?.length)
     throw new Usage('Choose either --org or --workspace for a role change.');
@@ -219,6 +227,7 @@ function parse(argv: string[]) {
       approval: { type: 'string' },
       access: { type: 'string' },
       keep: { type: 'string' },
+      message: { type: 'string' },
     },
   });
 }
@@ -621,6 +630,40 @@ async function execute(ctx: CommandContext, command: string, args: string[]): Pr
       return wrap({ selected: true });
     case 'mcp-address':
       return wrap({ url: pinnedMcpAddress(server, workspace.id) });
+    case 'agent chat': {
+      const json = options.json === true || !process.stdout.isTTY;
+      const chatId = args[0] ?? (await api.createAgentChat()).id;
+      const io = {
+        write: (text: string) => process.stdout.write(text),
+        color: process.stdout.isTTY && !process.env.NO_COLOR,
+        ...(json && options.message
+          ? { json: (chunk: unknown) => console.log(JSON.stringify(chunk)) }
+          : {}),
+      };
+      if (options.message) {
+        const result = await sendMessage(api, chatId, options.message, io);
+        if (result.status === 'refused_to_start') {
+          return {
+            data: {
+              workspace,
+              chat: chatId,
+              error: result.code,
+              message: startFailure(result.code ?? ''),
+            },
+            exit: 1,
+          };
+        }
+        return json
+          ? {
+              data: { workspace, chat: chatId, status: result.status, code: result.code },
+              exit: result.status === 'completed' ? 0 : 1,
+            }
+          : { data: undefined, exit: result.status === 'completed' ? 0 : 1 };
+      }
+      if (!process.stdin.isTTY)
+        throw new Usage('Give --message <text>, or run agent chat in a terminal.');
+      return { data: undefined, exit: await interactiveChat(api, chatId, io) };
+    }
     case 'workspace rename':
       return wrap(await api.renameWorkspace(workspace.id, first()));
     case 'workspace delete':
@@ -781,7 +824,7 @@ async function main(argv: string[]) {
     const args = pair ? tail : parsed.positionals.slice(1);
     validateArguments(command, args, parsed.values);
     const result = await execute(ctx, command, args);
-    print(result.data, json);
+    if (result.data !== undefined) print(result.data, json);
     return result.exit ?? 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The command failed.';

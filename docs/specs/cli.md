@@ -93,6 +93,7 @@ the workspace or organization the action is in.
 | List workspaces, members, invitations, keys, connections, extensions      | Yes       | Yes      |                 |
 | See what is waiting: duplicates, pending values, schema changes, routine versions, extension approvals | Yes | Yes |   |
 | Print a workspace's MCP address (pinned address, accounts spec 4.7)       | Yes       | Yes      |                 |
+| Chat with the workspace agent (agent spec §6.7): it reads; it writes as the agent while elevated | Reads | Writes |  |
 | Invite a teammate (any role but owner), revoke an invitation              |           | Yes      |                 |
 | Change a member's role, remove a member (not to or from owner)            |           | Yes      |                 |
 | Create or rename a workspace                                              |           | Yes      |                 |
@@ -351,6 +352,19 @@ of §4.4, elevated or not.
 elevated or not, so no agent value can be ranked as a person's because it was
 written during a window.
 
+**One exception: the workspace agent's chat** (agent spec §6.7). `retainer
+agent chat` opens a chat with the workspace agent. Logged in, the agent can
+search, read records, read the person's `me` memory and search the web;
+while this login is elevated in that workspace it may also write records,
+log events, remember facts and call extension `read` tools, within the
+person's role. Its writes are the chat agent's (`retainer-agent:<person>`,
+agent spec §7.1), never the person's, so an elevation never makes a model's
+value rank as a person's. Access follows the credential that mints each turn:
+a stream token minted from the CLI carries the login and its elevation, and
+each write re-checks that window in its own transaction
+(`recheckElevation`, §5.1), so a window that ends mid-turn stops the next
+write. The chat agent never reaches a decision route, elevated or not.
+
 **Duplicates are decided by suggestion.** `POST /v1/records/:id/merge`
 merges any two records with field values the caller chooses, which is a
 record write, not a review decision. The CLI instead gets
@@ -468,7 +482,16 @@ retainer extension install <name> | configure <id> | upgrade <id>   In the web a
 retainer extension disable <id> | remove <id>
 retainer routines | routine approve <id> <version>                  In the web app
 retainer routine reject <id> <version> | pause <id> | resume <id>
+
+retainer agent chat [<chat>] [--message <text>]   Chat with the workspace agent (agent spec §6.7)
 ```
+
+`agent chat` opens a new chat, or continues `<chat>`, and renders the
+agent's stream in the terminal: reasoning dimmed, tool calls and results as
+short lines. In a terminal it reads one message per line; Ctrl-C stops the
+running turn and Ctrl-D leaves. `--message` sends one message and exits,
+`0` when the turn completed; with `--json` it prints each stream chunk as a
+JSON line, then the chat's ID and how the turn ended.
 
 Commands that need a click (`action`) accept `--approval <id>` to finish
 once it is given. Commands done in the web app return only the link; the
@@ -619,6 +642,12 @@ cookie-only, with the web app's CSRF header, and never accepts a CLI token.
   `GET /extensions/:id`, `GET /extensions/catalog`, `GET /routines`,
   `GET /routines/:id`, and the record reads `review show` needs to explain a
   case (`GET /records/:id`, `GET /records/:id/assertions`).
+- The workspace agent's chats (agent spec §6.1), the person's own only:
+  `POST /v1/agent/chats`, `GET /v1/agent/chats`, `GET /v1/agent/chats/:id`,
+  `POST /v1/agent/chats/:id/token`, `POST /v1/agent/chats/:id/cancel`,
+  `DELETE /v1/agent/chats/:id`. The stream token minted here carries the
+  login and its elevation; the agent writes, as the chat agent, only while
+  that elevation is open (§5.2).
 
 **Decision routes (as the person, when elevated in that workspace or
 organization).**
@@ -722,6 +751,12 @@ Integration tests against real Postgres, as everywhere:
   keys created before the migration. This protects the experimental hosted
   workspaces.
 - **Key mode:** CLI tokens refused; `retainer login` explains why.
+- **The agent's chat (agent spec §6.7):** a CLI login reaches the
+  `/v1/agent/chats` routes for its own chats only. A chat turn minted from
+  it writes only while the login is elevated in that workspace; a window
+  that ends mid-turn refuses the next write with `elevation_required`; the
+  chat agent is refused on every decision route; its writes carry the actor
+  `retainer-agent:<person>`.
 
 The CLI itself gets unit tests for its output contract (§6.2), run with a
 runner that buffers output until exit, and an e2e test with Playwright: log

@@ -1327,6 +1327,42 @@ export class RetainerClient {
   routines(signal?: AbortSignal) {
     return this.get<{ timeZone: string; routines: RoutineView[] }>('/v1/routines', {}, signal);
   }
+  /** Opens a chat with the workspace agent (docs/specs/agent.md §6.1). */
+  createAgentChat(signal?: AbortSignal) {
+    return this.post<AgentChat>('/v1/agent/chats', {}, signal);
+  }
+  /** The person's chats with the workspace agent. */
+  agentChats(signal?: AbortSignal) {
+    return this.get<{ chats: AgentChat[] }>('/v1/agent/chats', {}, signal);
+  }
+  /** A chat and its messages, as AI SDK UI messages. */
+  agentChat(id: string, signal?: AbortSignal) {
+    return this.get<AgentChatDetail>(`/v1/agent/chats/${encodeURIComponent(id)}`, {}, signal);
+  }
+  /** A short stream token and the URL to send the chat's next message to. */
+  agentChatToken(id: string, signal?: AbortSignal) {
+    return this.post<AgentStreamToken>(
+      `/v1/agent/chats/${encodeURIComponent(id)}/token`,
+      {},
+      signal,
+    );
+  }
+  /** Stops the chat's running turn. */
+  cancelAgentChat(id: string, signal?: AbortSignal) {
+    return this.post<{ cancelled: boolean }>(
+      `/v1/agent/chats/${encodeURIComponent(id)}/cancel`,
+      {},
+      signal,
+    );
+  }
+  deleteAgentChat(id: string, signal?: AbortSignal) {
+    return this.send<void>(
+      'DELETE',
+      `/v1/agent/chats/${encodeURIComponent(id)}`,
+      undefined,
+      signal,
+    );
+  }
   routine(id: string, signal?: AbortSignal) {
     return this.get<RoutineDetail>(`/v1/routines/${encodeURIComponent(id)}`, {}, signal);
   }
@@ -1390,6 +1426,20 @@ export class RetainerClient {
   }
 }
 
+export type AgentChat = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  lastActiveAt?: string;
+  status?: string;
+};
+export type AgentChatDetail = {
+  id: string;
+  title: string | null;
+  running: boolean;
+  messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown>> }>;
+};
+export type AgentStreamToken = { token: string; expiresAt: string; streamUrl: string };
 export type CliApprovalRequest = { id: string; url: string; expiresAt: string };
 export type CliApproval = {
   id: string;
