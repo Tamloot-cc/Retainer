@@ -112,33 +112,118 @@ test('lists facts as a built-in and event types beside objects, and shows what a
 test.describe('Sales workspace', () => {
   test.use({ workspaceTemplate: 'sales' });
 
-  test('draws the objects and relations and opens them from the diagram', async ({
+  test('finds objects by keyboard and follows relationships in the diagram', async ({
     page,
     retainer: r,
   }) => {
     await signIn(page, r.url, r.keys.user);
-    await page.getByRole('link', { name: 'Review inbox' }).click();
     await page.goto(`${r.url}/app/schema?tab=diagram`);
     const diagram = page.getByRole('figure', { name: 'Objects and their relations' });
-    await expect(page.getByText(/^5 relations\./)).toBeVisible();
-    // Cards list the label field and the relations, not every field.
     const deals = diagram.locator('.react-flow__node[data-id="deal"]');
-    await expect(deals.getByRole('button', { name: /^Point of contact/ })).toBeVisible();
-    await expect(deals.getByText('Amount')).toHaveCount(0);
-    // A relation row opens its field in the Objects tab.
-    await deals.getByRole('button', { name: /^Point of contact/ }).click();
-    await expect(page.getByRole('heading', { name: 'Deals', exact: true })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Point of contact' })).toBeVisible();
-    await expect(page).toHaveURL(/object=deal&field=pointOfContact/);
-    // A card's header opens the object.
+    await expect(diagram.getByText('5 relations', { exact: true })).toBeVisible();
+    await expect(deals.getByText('Amount', { exact: true })).toHaveCount(0);
+
+    await diagram.getByRole('button', { name: 'Find object…' }).press('Enter');
+    const search = diagram.getByRole('combobox', { name: 'Find object' });
+    await expect(search).toBeFocused();
+    await search.fill('deal');
+    await search.press('Enter');
+
+    const inspector = diagram.getByRole('complementary');
+    await expect(inspector.getByRole('heading', { name: 'Deals', exact: true })).toBeFocused();
+    await expect(deals.getByRole('button', { name: /^Deals/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(diagram.locator('.react-flow__edge[data-id="deal.pointOfContact"]')).toBeVisible();
+    await inspector.getByRole('button', { name: 'Focus on related objects' }).click();
+    await expect(
+      inspector.getByRole('button', { name: 'Focus on related objects' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(diagram.locator('.react-flow__node[data-id="conversation"]')).toHaveCount(0);
+
+    await inspector.getByRole('button', { name: 'Inspect Point of contact' }).click();
+    await expect(
+      inspector.getByRole('heading', { name: 'Point of contact', exact: true }),
+    ).toBeFocused();
+    await expect(inspector.getByText(/Each deal has one person/).first()).toBeVisible();
+    await inspector.getByRole('button', { name: 'Go to People' }).click();
+    await expect(inspector.getByRole('heading', { name: 'People', exact: true })).toBeFocused();
+    await expect(page).toHaveURL(/tab=diagram/);
+
+    await inspector.getByRole('button', { name: 'Open in Objects' }).click();
+    await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/object=person/);
+  });
+
+  test('restores the canvas after full screen and resets dragged cards', async ({
+    page,
+    retainer: r,
+  }) => {
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/schema?tab=diagram`);
+    const diagram = page.getByRole('figure', { name: 'Objects and their relations' });
+    const conversation = diagram.locator('.react-flow__node[data-id="conversation"]');
+    await expect(conversation).toBeVisible();
+    await diagram.getByRole('checkbox', { name: 'Show event types' }).uncheck();
+    await expect(conversation).toHaveCount(0);
+    await expect(diagram.locator('.react-flow__node[data-id="__any_record"]')).toHaveCount(0);
+    await diagram.getByRole('checkbox', { name: 'Show event types' }).check();
+    await expect(conversation).toBeVisible();
+
+    await diagram.getByRole('button', { name: /fit view/i }).click();
+    const deals = diagram.locator('.react-flow__node[data-id="deal"]');
+    const relationRow = deals.getByRole('button', { name: /^Point of contact/ });
+    await expect(relationRow).toBeVisible();
+    for (let i = 0; i < 4; i++) await diagram.getByRole('button', { name: /zoom out/i }).click();
+    await expect(relationRow).toHaveCount(0);
+    await expect(deals.getByRole('button', { name: /^Deals/ })).toBeVisible();
+    await diagram.getByRole('button', { name: /fit view/i }).click();
+    await expect(relationRow).toBeVisible();
+    const position = await deals.evaluate((node) => node.style.transform);
+    const card = await deals.getByRole('button', { name: /^Deals/ }).boundingBox();
+    if (!card) throw new Error('Expected the Deals card to be visible');
+    await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(card.x + card.width / 2 + 48, card.y + card.height / 2 + 30, {
+      steps: 5,
+    });
+    await page.mouse.up();
+    await expect.poll(() => deals.evaluate((node) => node.style.transform)).not.toBe(position);
+    await diagram.getByRole('button', { name: 'Reset layout' }).click();
+    await expect.poll(() => deals.evaluate((node) => node.style.transform)).toBe(position);
+
+    await deals.getByRole('button', { name: /^Deals/ }).click();
+    const inspector = diagram.getByRole('complementary');
+    await expect(inspector.getByRole('heading', { name: 'Deals', exact: true })).toBeFocused();
+    const viewport = diagram.locator('.react-flow__viewport');
+    const original = await viewport.evaluate((pane) => pane.style.transform);
+    await diagram.getByRole('button', { name: 'Full screen', exact: true }).click();
+    const modal = page.getByRole('dialog', { name: 'Schema diagram full screen' });
+    await expect(modal).toBeVisible();
+    await expect(
+      modal.getByRole('complementary').getByRole('heading', { name: 'Deals' }),
+    ).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Exit full screen' })).toBeFocused();
+    expect(await modal.evaluate((el) => el.clientHeight)).toBe(page.viewportSize()?.height);
+
+    await modal.getByRole('button', { name: 'Find object…' }).click();
+    const search = modal.getByRole('combobox', { name: 'Find object' });
+    await search.press('Escape');
+    await expect(search).toHaveCount(0);
+    await expect(modal).toBeVisible();
+    await modal.getByRole('button', { name: 'Find object…' }).click();
+    await search.fill('Companies');
+    await search.press('Enter');
+    await expect(
+      modal.getByRole('complementary').getByRole('heading', { name: 'Companies' }),
+    ).toBeFocused();
+    await modal.getByRole('button', { name: /zoom out/i }).click();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Diagram', exact: true }).click();
-    await diagram
-      .locator('.react-flow__node[data-id="company"]')
-      .getByRole('button')
-      .first()
-      .click();
-    await expect(page.getByRole('heading', { name: 'Companies', exact: true })).toBeVisible();
+    await expect(modal).toBeHidden();
+    await expect(diagram.getByRole('button', { name: 'Full screen', exact: true })).toBeFocused();
+    await expect(inspector.getByRole('heading', { name: 'Companies', exact: true })).toBeVisible();
+    await expect.poll(() => viewport.evaluate((pane) => pane.style.transform)).toBe(original);
   });
 });
 
@@ -197,6 +282,19 @@ test.describe('Schema on touch screens', () => {
       await expect(zoom).toHaveCSS('width', '44px');
       await zoom.tap();
       await diagram.getByRole('button', { name: /fit view/i }).tap();
+      await diagram.getByRole('button', { name: 'Full screen', exact: true }).tap();
+      const modal = page.getByRole('dialog', { name: 'Schema diagram full screen' });
+      await modal.getByRole('button', { name: 'Find object…' }).tap();
+      await modal.getByRole('combobox', { name: 'Find object' }).fill('People');
+      await modal.getByRole('option', { name: /People/ }).tap();
+      const inspector = modal.getByRole('complementary');
+      await expect(
+        inspector.getByRole('heading', { name: 'People', exact: true }),
+      ).toBeInViewport();
+      await expect(modal.getByRole('button', { name: /zoom in/i })).toBeInViewport();
+      await modal.getByRole('button', { name: 'Exit full screen' }).tap();
+      await expect(modal).toBeHidden();
+      await expect(diagram.getByRole('button', { name: 'Full screen', exact: true })).toBeFocused();
 
       await tabs.getByRole('button', { name: /^Change history/ }).tap();
       const status = page.getByRole('button', { name: 'Status All statuses' });

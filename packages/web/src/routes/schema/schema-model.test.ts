@@ -1,6 +1,7 @@
 import type { FieldType, FieldView, ObjectView, SchemaDiffField } from '@retainer/shared';
 import { describe, expect, it } from 'vitest';
 import { sortObjects } from '../state.js';
+import { buildDiagram, diagramEdgeSelection, diagramView } from './diagram-model.js';
 import {
   ABOUT_ROW,
   ANY_RECORD_NODE,
@@ -92,6 +93,61 @@ const company = object({
 });
 const deal = object({ nameSingular: 'deal', owner: 'agent' });
 const objects = [deal, person, company];
+
+describe('diagram exploration', () => {
+  const event = object({ nameSingular: 'conversation', class: 'event', labelField: 'title' });
+  const { nodes, edges } = buildDiagram([...objects, event]);
+
+  it('shows label and relation fields on the canvas and includes the built-in event link', () => {
+    expect(nodes.find((node) => node.id === 'person')?.rows.map((row) => row.id)).toEqual([
+      'name',
+      'company',
+    ]);
+    expect(nodes.find((node) => node.id === 'conversation')?.rows.map((row) => row.id)).toEqual([
+      ABOUT_ROW,
+    ]);
+    expect(nodes.some((node) => node.id === ANY_RECORD_NODE)).toBe(true);
+  });
+
+  it('limits focused exploration to direct neighbors, independently of event visibility', () => {
+    const view = diagramView(nodes, edges, true, { node: 'company' }, true);
+    expect(view.visibleNodes).toEqual(new Set(['company', 'person']));
+    expect(view.visibleEdges).toEqual(new Set(['person.company']));
+    const eventView = diagramView(nodes, edges, true, { node: 'conversation' }, true);
+    expect(eventView.visibleNodes).toEqual(new Set(['conversation', ANY_RECORD_NODE]));
+    const hidden = diagramView(nodes, edges, false, { node: 'conversation' }, true);
+    expect(hidden.visibleNodes).toEqual(new Set(['person', 'company', 'deal']));
+    expect(hidden.visibleEdges).toEqual(new Set(['person.company']));
+  });
+
+  it('highlights both inverse fields and distinguishes a clicked polymorphic edge from its field', () => {
+    const customer = object({
+      ...deal,
+      fields: [
+        field({
+          name: 'customer',
+          type: 'relation',
+          settings: { targetObjects: ['company', 'person'] },
+        }),
+      ],
+    });
+    const graph = buildDiagram([person, company, customer]);
+    expect(
+      diagramView(graph.nodes, graph.edges, true, { node: 'company', row: 'people' }, false)
+        .activeEdges,
+    ).toEqual(new Set(['person.company']));
+    expect(
+      diagramView(graph.nodes, graph.edges, true, { node: 'deal', row: 'customer' }, false)
+        .activeEdges,
+    ).toEqual(new Set(['deal.customer:company', 'deal.customer:person']));
+    const edge = graph.edges.find((item) => item.id === 'deal.customer:person');
+    expect(edge).toBeDefined();
+    if (!edge) throw new Error('Expected an edge to People');
+    expect(
+      diagramView(graph.nodes, graph.edges, true, diagramEdgeSelection(edge), false).activeEdges,
+    ).toEqual(new Set(['deal.customer:person']));
+  });
+});
 
 describe('schema page model', () => {
   it('puts system objects first and keeps schema order otherwise', () => {

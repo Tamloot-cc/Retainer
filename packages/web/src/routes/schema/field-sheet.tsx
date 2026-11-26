@@ -58,6 +58,34 @@ export function FieldSheet({
   onClose: () => void;
   onNavigate: (object: string, field?: string) => void;
 }) {
+  return (
+    <Sheet
+      eyebrow={`${object.labelSingular} · field`}
+      title={field.label}
+      description={`Definition of the ${field.label} field`}
+      onClose={onClose}
+      getReturnFocus={() =>
+        document.querySelector<HTMLButtonElement>(
+          `[data-schema-field="${CSS.escape(field.name)}"] button`,
+        )
+      }
+    >
+      <FieldDetails object={object} field={field} onNavigate={onNavigate} editable />
+    </Sheet>
+  );
+}
+
+export function FieldDetails({
+  object,
+  field,
+  onNavigate,
+  editable = false,
+}: {
+  object: ObjectView;
+  field: FieldView;
+  onNavigate: (object: string, field?: string) => void;
+  editable?: boolean;
+}) {
   const { schema } = useWorkspace();
   const s = field.settings;
   const { target, targets, inverse } = relationEnds(field, schema.objects);
@@ -74,17 +102,7 @@ export function FieldSheet({
     },
   ];
   return (
-    <Sheet
-      eyebrow={`${object.labelSingular} · field`}
-      title={field.label}
-      description={`Definition of the ${field.label} field`}
-      onClose={onClose}
-      getReturnFocus={() =>
-        document.querySelector<HTMLButtonElement>(
-          `[data-schema-field="${CSS.escape(field.name)}"] button`,
-        )
-      }
-    >
+    <>
       {field.description ? <Muted>{field.description}</Muted> : null}
       <Section title="Definition">
         <PropertyList>
@@ -178,7 +196,13 @@ export function FieldSheet({
             ) : null}
             {canRollUpEvents(object, field) ? (
               <Property label="Roll up events">
-                <RollUpEventsSwitch object={object} field={field} />
+                {editable ? (
+                  <RollUpEventsSwitch object={object} field={field} />
+                ) : field.settings.rollUpEvents ? (
+                  'Enabled'
+                ) : (
+                  'Off'
+                )}
               </Property>
             ) : null}
             {s.onDelete ? (
@@ -218,7 +242,7 @@ export function FieldSheet({
           ))}
         </PropertyList>
       </Section>
-    </Sheet>
+    </>
   );
 }
 

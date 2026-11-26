@@ -675,16 +675,16 @@ changes are waiting:
   dagre (`@dagrejs/dagre`, MIT) lays the cards out in columns, with what is
   linked to on the left; a line that skips a column runs above or below the
   cards in it, and lines between two columns get their own lanes. Dragging a
-  card switches the lines to plain stepped paths. Hovering a card or a line
-  highlights its lines. Clicking a card's header opens the object in the
-  Objects tab, and clicking a row or a line opens that field there. React
-  Flow and dagre load only when the tab is first opened (`Diagram` in
-  `src/ui` is lazy). Event types are drawn as a distinct card (a tinted
-  header and a round icon, "Event" in the meta) with an About row, and each
-  draws `about` as a dashed line to one dashed "Any record" card, so the
-  link shows in the model without a fake relation field. The legend
-  explains the dashed line; clicking either opens nothing, as neither is a
-  field.
+  card switches the lines to stepped paths until Reset layout. Clicking a
+  card, row, or line highlights its relationships and opens their details
+  in a panel beside the canvas (below it on narrow screens). The panel can
+  focus on direct neighbors or open the corresponding definition in the
+  Objects tab. Find object centers on matches for display or API names.
+  Field labels appear as you zoom in. Full screen keeps the same canvas
+  and restores the page viewport on exit. React Flow and dagre load when
+  the Diagram tab is first opened. Event types have an About row with a
+  dashed line to an Any entity card. Show event types toggles these cards
+  and their connections.
 - **Change history.** `GET /v1/schema/changes` as a timeline, filterable by
   status (`?status=`): each change's summary and its steps, grouped as on
   the review card (a failed change, which has no diff, lists its request
