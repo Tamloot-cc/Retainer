@@ -5,7 +5,7 @@ import {
   type AgentTaskRequest,
   agentTaskRequestSchema,
 } from '@retainer/shared';
-import { jsonValue, type Tx } from '../db/tx.js';
+import { jsonValue, lockPrivacyShared, type Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
 import { JOB_TOKEN_PREFIX, mintToken } from './tokens.js';
 import { cancelTurn, GRACE_MS, TURN_MS } from './turns.js';
@@ -260,6 +260,13 @@ export function taskDeadline(task: Pick<TaskRow, 'expires_at'>, notAfter?: Date)
  * cancelled, expired), changes nothing: its answer is dropped.
  */
 export async function completeTask(tx: Tx, sessionId: string, result: TaskResult) {
+  // The privacy lock, shared, orders this with `forget`, which holds it
+  // exclusively: the answer lands either before forget erases routine
+  // content, or after, when its run no longer waits (§9.2).
+  const [owner] = await tx<{ workspace_id: string }[]>`
+    select workspace_id from agent_tasks where session_id = ${sessionId}`;
+  if (!owner) return false;
+  await lockPrivacyShared(tx, owner.workspace_id);
   const [task] = await tx<TaskRow[]>`
     select * from agent_tasks where session_id = ${sessionId} for update`;
   if (!task || !['staged', 'queued', 'running'].includes(task.state)) return false;

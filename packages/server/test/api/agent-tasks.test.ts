@@ -4,7 +4,7 @@ import { executeRoutine } from '@retainer/runner/routine';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { completeTask, expireTasks, TASK_EXPIRY_MARGIN_MS } from '../../src/agent-runtime/tasks.js';
 import { AgentTaskDispatcher } from '../../src/agent-sessions/dispatch.js';
-import { inWorkspace } from '../../src/db/tx.js';
+import { inWorkspace, lockForWrite } from '../../src/db/tx.js';
 import { cancelRuns } from '../../src/extension-runtime/locks.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
@@ -436,6 +436,25 @@ describe('agent tasks from a routine', () => {
     );
     expect(await s.effect(runId)).toMatchObject({ state: 'started', result: null });
     expect(await s.run(runId)).toMatchObject({ status: 'erased' });
+  });
+
+  it('keeps no answer when forget and the task’s completion race', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    let completing: Promise<unknown> | undefined;
+    // forget holds the privacy lock exclusively while it erases; the task
+    // completes on another connection meanwhile.
+    await db.owner.begin(async (tx) => {
+      await lockForWrite(tx, s.workspace, { privacy: 'exclusive' });
+      await eraseRoutineContent(tx, s.workspace);
+      completing = inWorkspace(s.app.sql, s.workspace, (task) =>
+        completeTask(task, taskId, { status: 'completed', answer: { round: 'Series A' } }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await completing;
+    expect(await s.run(runId)).toMatchObject({ status: 'erased' });
+    expect(await s.effect(runId)).toMatchObject({ result: null });
   });
 
   it('ends a task blocked by the day’s limit at once, with limit_reached', async () => {
