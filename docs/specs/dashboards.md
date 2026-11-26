@@ -1,8 +1,11 @@
 # Dashboards: spec
 
 Status: **proposed**, 2026-11-26. A local spike (branch `spike/dashboards`)
-proved the approach end to end (§11). Section 2 lists what is decided and
-what is only proposed.
+proved the approach end to end (§11). Revised the same day after a look at
+Twenty's dashboards: dashboards are stored by key and survive renames
+(§6.4), the agent reads a guide only when asked for a dashboard (§5.1), and
+it checks its program before answering (§5.3). Section 2 lists what is
+decided and what is only proposed.
 
 Builds on the workspace agent in [agent.md](agent.md). If accepted this spec
 amends:
@@ -10,8 +13,10 @@ amends:
 - `ARCHITECTURE.md` §1.4 (a new table, `dashboards`, beside `views`), §5
   (the aggregate read groups by dates and relations, §7) and §6.1 (new
   routes, §6.2).
-- `agent.md` §6.6 (a second system block on web chats, §5.1) and §8.1 (a new
-  read tool, `aggregate_records`, §5.3).
+- `agent.md` §6.6 (web chats tell the agent it can answer with a dashboard,
+  §5.1) and §8.1 (new read tools, `aggregate_records` and `check_dashboard`,
+  §5.3).
+- The MCP guides (a new `dashboards` guide, §5.1).
 - `FRONTEND.md` §5 (a Dashboards screen, and dashboards in the chat, §8).
 
 The write rules, the actor types and the rule that Retainer's core never calls
@@ -38,8 +43,8 @@ differs, and opening one never calls a model.
 ```
  person ──"deals by stage…"──▶ agent ──program──▶ chat shows it live ──Pin──▶ dashboards row
                                 │                                               │
-                     describe_schema, query_records,                 opened later: queries run
-                     aggregate_records (to check its queries)       in the browser, no model call
+                 get_guide("dashboards"), describe_schema,          opened later: queries run
+                 aggregate_records, check_dashboard                in the browser, no model call
 ```
 
 Everything runs inside Retainer. OpenUI's hosted product (Thesys's
@@ -62,6 +67,11 @@ Decided with the product owner on 2026-11-26:
 - **The spike's design carries over**: one component list shared by the
   agent's prompt and the web app's renderers (§4.2), data tools that run in
   the browser (§4.3), edits as patches (§5.2).
+- **Dashboards survive renames**, as views do: a renamed field or object
+  leaves every dashboard working (§6.4).
+- **From Twenty**: the agent reads how to build a dashboard only when one is
+  asked for (a guide, §5.1), and checks its program and gets the problems
+  back before answering (§5.3).
 
 Proposed in this document, open to change: the storage and routes (§6), the
 aggregate additions (§7), the chart library (§8.4), the limits (§9) and the
@@ -86,13 +96,14 @@ Considered and not taken:
 
 ### 3.1 Vocabulary
 
-| Term            | Meaning                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------- |
-| Dashboard       | A saved program with a name and a visibility, like a view                                 |
-| Program         | OpenUI Lang text: one statement per line, `name = Expression`, with `root = Dashboard(…)` |
-| Tile            | One component on a dashboard: a metric, a chart or a table                                |
-| Data tool       | A read a program's `Query` calls: `query_records` or `aggregate_records`                  |
-| Dashboard block | The second system block of a web chat, which teaches the agent the language (§5.1)        |
+| Term            | Meaning                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| Dashboard       | A saved program with a name and a visibility, like a view                                     |
+| Program         | OpenUI Lang text: one statement per line, `name = Expression`, with `root = Dashboard(…)`     |
+| Tile            | One component on a dashboard: a metric, a chart or a table                                    |
+| Data tool       | A read a program's `Query` calls: `query_records` or `aggregate_records`                      |
+| Alias           | A name a query gives one of its results, such as `pipeline`; the rest of the program reads it |
+| Dashboard guide | `get_guide("dashboards")`: the language, the components and the rules, read on demand (§5.1)  |
 
 ### 3.2 Where each part runs
 
@@ -119,24 +130,38 @@ dashboard fills in top-down as it streams. The parts used:
 - **Dot access and built-ins** such as `data.groups.label`, `@Count`,
   `@Sort`, `@Filter`: computed in the browser on query results.
 
+Two rules keep a program safe to store (§6.4):
+
+1. **Field names appear only inside a `Query`'s arguments.** Everything
+   outside reads aliases the query defines: `as` on each aggregate, and
+   `fields` on `query_records`, which maps aliases to fields. A table column
+   names an alias, never a field.
+2. **A `Query`'s arguments are plain values**: strings, numbers, booleans,
+   lists and objects, with no references to other statements.
+
 Not used: `Mutation`, `$variables`, forms, inputs, buttons and actions. The
 agent's prompt leaves them out (`bindings: false`) and the save check refuses
 `Mutation` (§6.3). A program cannot run code: the language has no functions
 of its own, and the renderer evaluates it without `eval`.
 
-An example in the form this spec proposes (the spike's programs also passed a
-currency code to each money tile, which §4.2 drops):
+An example in the form this spec proposes. The spike's programs read
+derived names such as `sum_amount` and passed a currency code to each money
+tile; both are gone:
 
 ```
 root = Dashboard("Deals", [kpis, stages, open])
-byStage = Query("aggregate_records", {object: "deal", groupBy: "stage", aggregates: [{field: "amount", op: "sum"}]}, {total: 0, values: {}, groups: []})
-recent = Query("query_records", {object: "deal", filter: {stage: {in: ["lead", "qualified", "proposal"]}}, sort: [{field: "amount", direction: "desc"}], limit: 10}, {records: []})
+byStage = Query("aggregate_records", {object: "deal", groupBy: "stage", aggregates: [{field: "amount", op: "sum", as: "pipeline"}]}, {total: 0, values: {}, groups: []})
+recent = Query("query_records", {object: "deal", filter: {stage: {in: ["lead", "qualified", "proposal"]}}, sort: [{field: "amount", direction: "desc"}], limit: 10, fields: {stage: "stage", amount: "amount"}}, {records: []})
 kpis = Row([count, pipeline])
 count = Metric("Deals", byStage.total)
-pipeline = Metric("Pipeline", byStage.values.sum_amount)
-stages = BarChart("Amount by stage", byStage.groups.label, byStage.groups.sum_amount)
+pipeline = Metric("Pipeline", byStage.values.pipeline)
+stages = BarChart("Amount by stage", byStage.groups.label, byStage.groups.pipeline)
 open = Table("Biggest open deals", recent.records, [TableColumn("Deal", "label"), TableColumn("Stage", "stage"), TableColumn("Amount", "amount")])
 ```
+
+The keys before the colons in `fields:` are aliases that happen to match the
+field names. If `amount` is renamed to `value`, the table still reads the
+alias `amount`; only the query's argument changes (§6.4).
 
 ### 4.2 Components
 
@@ -146,19 +171,19 @@ agent builds the library with `lang-core`'s `defineComponent` to generate its
 prompt, and the web app builds it with `react-lang`'s and its own renderers.
 The prompt and the renderers therefore cannot drift apart.
 
-| Component     | Props, in order                        | Shows                                                        |
-| ------------- | -------------------------------------- | ------------------------------------------------------------ |
-| `Dashboard`   | `title`, `children`                    | The root: a title and tiles, top to bottom                   |
-| `Row`         | `children`                             | Tiles side by side; stacked on a phone                       |
-| `Metric`      | `label`, `value`, `format?`            | One headline number                                          |
-| `BarChart`    | `title`, `labels`, `values`, `format?` | Values across categories                                     |
-| `StackedBar`  | `title`, `labels`, `series`, `format?` | Categories split by a second grouping                        |
-| `LineChart`   | `title`, `labels`, `series`, `format?` | Values over time (dates from §7.1)                           |
-| `PieChart`    | `title`, `labels`, `values`, `format?` | Shares of a whole; seven slices at most, the rest as "Other" |
-| `Table`       | `title`, `rows`, `columns`             | Records with chosen columns, at most 100 rows                |
-| `TableColumn` | `label`, `key`, `format?`              | One column of a `Table`                                      |
-| `Series`      | `name`, `values`                       | One line or one stack in a chart                             |
-| `Text`        | `text`                                 | A short note, plain text                                     |
+| Component     | Props, in order                        | Shows                                                                                       |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Dashboard`   | `title`, `children`                    | The root: a title and tiles, top to bottom                                                  |
+| `Row`         | `children`                             | Tiles side by side; stacked on a phone                                                      |
+| `Metric`      | `label`, `value`, `format?`            | One headline number                                                                         |
+| `BarChart`    | `title`, `labels`, `values`, `format?` | Values across categories                                                                    |
+| `StackedBar`  | `title`, `labels`, `series`, `format?` | Categories split by a second grouping                                                       |
+| `LineChart`   | `title`, `labels`, `series`, `format?` | Values over time (dates from §7.1)                                                          |
+| `PieChart`    | `title`, `labels`, `values`, `format?` | Shares of a whole; seven slices at most, the rest as "Other"                                |
+| `Table`       | `title`, `rows`, `columns`             | Records with chosen columns, at most 100 rows                                               |
+| `TableColumn` | `label`, `key`, `format?`              | One column of a `Table`; `key` is an alias from the query, or `label` for the record's name |
+| `Series`      | `name`, `values`                       | One line or one stack in a chart                                                            |
+| `Text`        | `text`                                 | A short note, plain text                                                                    |
 
 `format` is `number` (the default), `percent` or `date`. It is not needed
 for money: money values keep their currency (§4.3), and every component
@@ -173,10 +198,10 @@ their stored values. Empty groups show "No value".
 Two reads, the same in the browser and as agent tools (§5.3), so the agent
 can run exactly the query it is about to write.
 
-| Tool                | Input                                                                                            | Output                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `query_records`     | `object`, `filter`, `search`, `sort`, `limit` (at most 200), as `POST /v1/objects/:object/query` | `{ records: [{ id, label, <field>: value }] }`                                                         |
-| `aggregate_records` | `object`, `filter`, `search`, `aggregates`, `groupBy`, `granularity`, `limit` (§7)               | `{ total, values: { <op>_<field> }, groups: [{ value, label, total, <op>_<field> }], tooManyGroups? }` |
+| Tool                | Input                                                                                                                                | Output                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `query_records`     | `object`, `filter`, `search`, `sort`, `limit` (at most 200), as `POST /v1/objects/:object/query`, and `fields: { <alias>: <field> }` | `{ records: [{ id, label, <alias>: value }] }`                                                       |
+| `aggregate_records` | `object`, `filter`, `search`, `aggregates: [{ field, op, as }]`, `groupBy`, `granularity`, `limit` (§7)                              | `{ total, values: { <as>: value }, groups: [{ value, label, total, <as>: value }], tooManyGroups? }` |
 
 Values are made plain for display:
 
@@ -196,33 +221,42 @@ instead of adding them up.
 
 ## 5. The agent
 
-### 5.1 The dashboard block
+### 5.1 The dashboard guide
 
-Web chats get a second system block after the base prompt, generated from
-the component list with `lang-core`'s `library.prompt()`: the language, the
-components, the data tools, edit mode and inline mode (text with a fenced
-`openui-lang` block when a dashboard is asked for, plain text otherwise),
-followed by Retainer's own rules:
+The agent learns the language only when it needs it, as Twenty's agent loads
+its dashboard skill (§13). The instructions are a guide,
+`get_guide("dashboards")`, beside the existing ones such as `memory` and
+`log_from_chat`. Its text is generated from the component list with
+`lang-core`'s `library.prompt()`: the language, the components, the data
+tools, edit mode and inline mode (text with a fenced `openui-lang` block when
+a dashboard is asked for, plain text otherwise), followed by Retainer's own
+rules:
 
 - Answer with a dashboard only when one is asked for or clearly fits
   ("a breakdown", "a report I'll come back to"). Answer everything else in
   plain text.
-- Learn the object and field names with `describe_schema`, and run each
-  query with the matching tool before writing it into the program.
+- Learn the object and field names with `describe_schema`, try the queries
+  with `aggregate_records` and `query_records`, and call `check_dashboard`
+  on the finished program before answering (§5.3).
 - Never copy numbers into a program; every number comes from a `Query`.
+- Name fields only inside a `Query`, and give every result an alias (§4.1).
 - To chart a total per option, aggregate it in the grouped query and chart
-  `data.groups.<op>_<field>`. Never one `Query` per option, and never type
-  the options in: an option added later must still appear. (The spike's
-  first eval run did exactly that; this rule fixed it.)
+  `data.groups.<alias>`. Never one `Query` per option, and never type the
+  options in: an option added later must still appear. (The spike's first
+  eval run did exactly that; this rule fixed it.)
 
-The block is static text, cached with the base prompt, about 4,000 tokens.
-It is pinned when the chat is created, like the base prompt (`agent.md`
-§3.5), so a change reaches new chats only.
+A chat that never asks for a dashboard never carries the guide's 4,000 or so
+tokens. One that does pays one extra step the first time.
 
-**Web chats only.** `POST /v1/agent/chats` takes `{ "dashboards": true }`,
-which the web app sends. The terminal client does not, so its chats never
-get the block and never answer in a format they can't show. Tasks never get
-it.
+**Web chats only.** Only the web app can show a dashboard, so only the agent
+in a web chat is told about the guide. `POST /v1/agent/chats` takes
+`{ "dashboards": true }`, which the web app sends. The chat context the
+server adds to the first message (`agent.md` §6.6) then carries one line:
+"This chat is in Retainer's web app, which can show dashboards; read
+get_guide("dashboards") before writing one." The base prompt stays the same
+for every chat, so its cache is shared. The terminal client and tasks never
+send the flag. An agent connected over MCP can read the guide too, but its
+client won't draw the result; the guide's description says so.
 
 ### 5.2 Edits
 
@@ -236,23 +270,30 @@ revenue" came back as a 4-line patch.
 "The dashboard before" is the last program earlier in the chat, written by
 the agent or pasted by the person (§8.3).
 
-### 5.3 A new read tool: `aggregate_records`
+### 5.3 New read tools
 
-The agent can read records today but cannot run an aggregate, so in the
-spike it guessed at its grouped queries and said so ("the filter format is a
-guess"). `aggregate_records` becomes a Retainer read tool, in the MCP server
-and in the agent's `retainer.read` group, matching `POST
-/v1/objects/:object/aggregate` with the additions in §7. Any agent connected
-over MCP gets it too, which is useful beyond dashboards ("how many open
-deals are over $50k?").
+Two tools join the agent's `retainer.read` group and the MCP server, keeping
+the rule that the agent's Retainer tools match the MCP tools (`agent.md`
+§8.1).
 
-Its output is the API's, not the plain form of §4.3: the plain form is a
-display concern of the browser tools. The dashboard block explains the
-mapping (`sum` of `amount` is read as `values.sum_amount`).
+**`aggregate_records`** matches `POST /v1/objects/:object/aggregate`, with
+the additions in §7 and an optional `as` on each aggregate, echoed on its
+value. The agent can read records today but cannot run an aggregate, so in
+the spike it guessed at its grouped queries and said so ("the filter format
+is a guess"). Any agent gets it, which is useful beyond dashboards ("how
+many open deals are over $50k?"). Its output is the API's; the plain form
+of §4.3 is a display concern of the browser tools.
 
-No other agent tool is added. There is no tool to save, list or open a
-dashboard: the person saves (§2), and the person opens a saved one in a chat
-(§8.3).
+**`check_dashboard`** takes a program and returns its problems, as Twenty's
+`create_complete_dashboard` returns `widgetErrors` for the agent to repair
+(§13). It runs the save check (§6.3), then runs each query with the
+person's access and reports any that fail or come back empty:
+`{ ok, problems: [{ statement, message }], queries: [{ statement, rows }] }`.
+It saves nothing. The guide asks the agent to call it before answering and
+to fix what it reports, so a person rarely sees a broken tile.
+
+No tool saves, lists or opens a dashboard: the person saves (§2), and the
+person opens a saved one in a chat (§8.3).
 
 ## 6. Storage and API
 
@@ -295,29 +336,43 @@ invalid_dashboard`, listing every problem, when:
   outside §4.2;
 - it uses a name it never defines;
 - it calls `Mutation`, or a `Query` tool other than the two data tools;
+- a `Query`'s arguments are not plain values, or a table column's key is
+  neither `id`, `label` nor an alias the query behind its rows defines;
 - a `refresh` interval is under 60 seconds;
 - it has more than 20 queries, or is over 20 KB.
 
-It does not refuse names the schema lacks (§6.4): a dashboard saved before a
-field was removed must still load, so the same check runs on reads.
+It also refuses an object or field the schema lacks, since the program could
+not be stored by key (§6.4). A field removed after saving does not stop a
+dashboard from loading.
 
-### 6.4 Fields by name, with issues
+### 6.4 Fields by key, as views
 
-A program names objects and fields by their API names, inside its queries
-and in table column keys. Unlike a view, which stores field keys and so
-survives a rename (`ARCHITECTURE.md` §1.4 rule 1), a dashboard breaks when a
-field it uses is renamed or removed. Translating names to keys inside a
-program is possible (the API could rewrite each query's literal arguments)
-but would not reach derived names such as `sum_amount` or a table column's
-key, so v1 does not try.
+A view stores field keys, so renaming a field never breaks it
+(`ARCHITECTURE.md` §1.4 rule 1). A dashboard does the same:
 
-Instead, `GET /v1/dashboards/:id` checks the program's queries against the
-current schema and lists what no longer exists in `issues` ("deal has no
-field amount"). The tile whose query fails shows a plain note ("This part
-uses a field that was renamed or removed"), and the dashboard offers **Fix
+- **Stored by key.** On save, the API rewrites each `Query`'s arguments:
+  the object's name becomes its ID, and every field name (in `filter` keys,
+  `sort`, `groupBy`, `aggregates` and `fields`) becomes its `fields.key`.
+  The rest of the program is stored as written.
+- **Read by name.** On read, the API rewrites them back to the current
+  names, so the web app, the agent and anyone reading the API see names
+  only. Option values stay as stored, as views keep them.
+- **Possible because of §4.1.** Field names appear only in a `Query`'s
+  arguments, and those are plain values. The API parses each `Query`
+  statement with `lang-core`, translates its arguments as JSON, and prints
+  the statement back. The aliases outside (`pipeline`, `amount`) never name
+  a field, so a rename leaves them alone. The spike's programs broke this
+  rule (they read `sum_amount` and used field names as table keys), which
+  is why §4 changed.
+
+A renamed field or object therefore changes nothing a person sees. A
+**removed** field or option is different, as for views: the stored key
+names nothing. `GET /v1/dashboards/:id` lists it in `issues` ("deal has no
+field amount any more"), the tile whose query uses it shows a plain note
+("This part uses a field that was removed"), and the dashboard offers **Fix
 with the agent**, which opens it in a chat with the issues in the message
-(§8.3). A query that fails for another reason (no access, an invalid filter)
-shows the API's error in the tile.
+(§8.3). A query that fails for another reason (no access, an invalid
+filter) shows the API's error in the tile.
 
 ### 6.5 Deletion and privacy
 
@@ -439,9 +494,10 @@ One PR, in line with landing a feature whole:
 
 1. **shared**: the component list and data tool descriptions.
 2. **server**: the `dashboards` table and routes, the save and read checks,
-   `aggregate_records` as an MCP tool, date and relation grouping, and the
+   the name-and-key translation, the `dashboards` guide, `aggregate_records`
+   and `check_dashboard` as MCP tools, date and relation grouping, and the
    `dashboards` flag on chat creation.
-3. **agent**: the dashboard block and the new tool in `retainer.read`.
+3. **agent**: the two new tools in `retainer.read`.
 4. **web**: rendering in the chat, pin and update, the Dashboards screens,
    the chart components.
 
@@ -458,20 +514,24 @@ Recharts are added to `packages/web/THIRD_PARTY.md`'s dependency notes.
 - **Unit**: the component list builds the same library on both sides; the
   data tools make values plain (money keeps its currency, options and
   relations become labels); patches merge; the save check refuses each case
-  in §6.3; issues list renamed and removed fields.
+  in §6.3; a program stored by key and read by name comes back unchanged;
+  a renamed field or object reads under its new name and the dashboard
+  still renders; a removed field is listed in `issues`.
 - **Integration (Postgres)**: dashboard routes with visibility, `409` on a
   stale save, `chat_id` cleared when the chat is deleted; date grouping with
   gap filling and time zones; relation grouping with labels; the 50-group
-  cap; `aggregate_records` over MCP and as an agent tool with the person's
-  access.
+  cap; `aggregate_records` and `check_dashboard` over MCP and as agent
+  tools with the person's access; a web chat's first message names the
+  guide and a terminal chat's does not.
 - **End to end (Playwright)**: with a stubbed agent stream, a chat answer
   renders a dashboard; Pin saves it; the Dashboards page shows it with live
   numbers; a record change shows after reload; a viewer without access to
   an object sees that tile's error and the rest of the dashboard.
 - **Model eval (manual)**: `packages/server/scripts/dashboard-eval.ts`, from
-  the spike, runs the agent's model with both system blocks over a fake
-  workspace and checks every program it writes. Run it when the dashboard
-  block changes. It costs a few cents.
+  the spike, runs the agent's model over a fake workspace and checks every
+  program it writes. Update it to read the guide and answer
+  `check_dashboard`, and run it when the guide changes. It costs a few
+  cents.
 
 ## 11. The spike
 
@@ -494,8 +554,9 @@ Branch `spike/dashboards`, 2026-11-26:
 
 What the spike skipped, and this spec adds: storage in Postgres (it used
 local storage), line, stacked and pie charts, date and relation grouping,
-web-only chats, the save check on the server, issues on read, editing a
-saved dashboard.
+web-only chats, the guide read on demand (the spike pinned the instructions
+as a second system block), `check_dashboard`, storing by key, the save check
+on the server, issues on read, editing a saved dashboard.
 
 ## 12. Open questions
 
@@ -522,7 +583,10 @@ saved dashboard.
   by date with granularities and gap filling, grouping by relation with
   labels, a cap on groups with a "too many groups" flag, "No value" for
   empty groups, and AI tools that create a dashboard from object and field
-  names. Twenty stores dashboards as structured widget settings in a page
+  names: `create_complete_dashboard`, which returns `widgetErrors` for the
+  agent to repair (the model for `check_dashboard`), and a
+  "dashboard-building" skill its agent loads only for build requests (the
+  model for the guide, §5.1). Twenty stores dashboards as structured widget settings in a page
   layout with a 12-column grid, and does not handle mixed currencies (it
   sums `amountMicros` across currencies); Retainer refuses to.
   `twenty-server/src/modules/dashboard/` and
