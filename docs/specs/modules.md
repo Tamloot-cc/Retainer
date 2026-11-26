@@ -5,7 +5,9 @@ Status: **proposed**, 2026-11-26. Turns level 3 of
 a design. One module is planned: Dashboards. Revised the same day after a
 review against the code and against modules that may come later (§4), so
 the design fits more than its first module without building for the others
-yet. Section 2 lists what is decided and what is only proposed.
+yet. Revised again after a second review, on who owns each piece, who
+enforces the switch and what goes with the last module that uses it.
+Section 2 lists what is decided and what is only proposed.
 
 Already changed with this spec:
 
@@ -25,6 +27,9 @@ Changes that land with the code, in the Dashboards PR:
   `schema.ts`.
 - [extension-levels.md](../research/extension-levels.md) §3 ("Today": the
   first module) and its sketch of `defineModule`, which this spec replaces.
+- `packages/shared/package.json`: a wildcard subpath export for
+  `./modules/*` (§5.3).
+- CI: the build check that every web module has a server module (§6.2).
 
 ## 1. The idea on one page
 
@@ -97,6 +102,28 @@ Decided later the same day, after the review in §4:
   `alwaysOn: true` (§7).
 - **"Module" means this spec's module.** A folder in `packages/server/src`
   is called a folder.
+
+Decided after the second review, the same day:
+
+- **An extension point goes with its last module** (§10, §12), unless a
+  module still uses it or the core needs it for its own sake.
+- **A module declares its routes as data**, and the API mounts them,
+  applying authentication, the scope, the switch and restricted mode in one
+  place (§8.2). A module never imports `auth` or `http`.
+- **Each registry checks the clashes it can see**: the server's checks
+  server names, the web app's checks web paths and chat block languages
+  (§6.2).
+- **The switch is checked on every call, not only when listing** (§7). A
+  tool pinned on an old chat, or listed to an MCP client before the module
+  was switched off, answers `404`.
+- **An admin switches one module at a time**, in one atomic write, so two
+  admins switching different modules can't undo each other (§7).
+- **A module owns its folders across packages by its id** (§6.3). Its
+  shared folder is the subpath export `@retainer/shared/modules/<id>`, so
+  adding or removing one edits no shared file.
+- **Removal is rehearsed**, not only an empty registry tested: the
+  Dashboards PR removes Dashboards in a throwaway worktree and builds and
+  tests what is left (§13.1).
 
 Proposed in this document, open to change: the test for what is a module
 (§3), the shape (§5–§6), the extension points (§8–§9) and the rules
@@ -190,7 +217,7 @@ export default defineModule({
   name: 'Dashboards',
   description: 'Live dashboards the agent writes and people pin.',
   requires: ['agent'],
-  routes: (v1, deps) => dashboardRoutes(v1, deps),
+  routes: dashboardRoutes,                // data: method, path, scope, handler (§8.2)
   tools: [checkDashboardTool],            // MCP; `agent: 'read'` also pins it on chats
   guide: { name: 'dashboards', description: '…', text: dashboardGuide },
   chatContext: ({ client }) =>
@@ -233,8 +260,11 @@ screens has no web folder.
 ### 5.3 Shared contracts
 
 When the server and the web app share types or a component list, they live
-in `packages/shared/src/modules/<id>/` (MIT), exported from
-`@retainer/shared` under the module's name. A module with nothing to share
+in `packages/shared/src/modules/<id>/` (MIT). The package exports each
+module's folder as its own subpath, `@retainer/shared/modules/<id>`, through
+a wildcard entry in its `exports`, never from the package root. Adding or
+removing a shared folder therefore edits no shared file. Only the module's
+own server and web folders import it (§6.3). A module with nothing to share
 has no shared folder.
 
 ## 6. Where modules sit
@@ -243,7 +273,7 @@ has no shared folder.
 
 ```
 packages/server/src/modules/
-  api.ts              defineModule and the extension point types
+  api.ts              defineModule, defineRoutes, the extension point types
   index.ts            the list of modules: the only file that imports one
   registry.ts         createRegistry: which modules are on, and calling them
   dashboards/
@@ -262,13 +292,24 @@ module: unit tests beside the code, integration tests in
 
 The registry is a value, `createRegistry(modules)`. The API, the MCP server
 and the worker take it as an option that defaults to the list in
-`modules/index.ts`. Tests pass a fixture module, or no modules at all.
+`modules/index.ts`. Tests pass fixture modules, or no modules at all.
 
 At each extension point, the interface that owns it asks the registry for
-the modules that are on and calls them. `api/app.ts` mounts
-`registry.routes()` once, and each module's routes answer `404` in a
-workspace where it is off. `mcp/server.ts`, which already builds one server
-per caller, registers `registry.tools(caller)` after the core tools.
+the modules that are on and calls them. `api/app.ts` mounts every module's
+routes once, from their declarations (§8.2), and each answers `404` in a
+workspace where its module is off. `mcp/server.ts`, which already builds
+one server per caller, registers `registry.tools(caller)` after the core
+tools.
+
+The registry answers two different questions, and keeps them apart:
+
+- **Is the module on for this workspace now?** Asked on every call a
+  person or an agent makes: a route, a tool call, a guide read, a new chat.
+  It reads the workspace's current setting, so a call through something
+  advertised earlier still meets the switch (§7).
+- **Does the module own data here?** True while its tables exist, whether
+  it is on or off. Hooks that protect retained data (§9) ask this one. No
+  module has such a hook yet.
 
 Code in the layers below `modules` can't import the registry (§6.3), and
 some of it has to call modules: the agent's session code pins tools and
@@ -277,9 +318,17 @@ That code receives plain functions through the options it already takes,
 as it receives `RetainerToolHost` and `WriteContext.changes` today. No core
 file imports the registry or names a module.
 
-`createRegistry` refuses to start when two modules clash, or a module
-clashes with the core, on an id, a tool name, a guide name, a route path,
-a web path, a chat block language or a table prefix.
+Each registry refuses to start on a clash it can see, between two modules
+or between a module and the core:
+
+| Registry          | Checks                                                     |
+| ----------------- | ---------------------------------------------------------- |
+| Server's          | Id, tool name, guide name, route path, table prefix        |
+| Web app's         | Id, web path, chat block language, sidebar item            |
+| Build check (CI)  | Every web module's id has a server module of the same id   |
+
+Each check runs where its inputs are. The server never sees web paths, and
+the web app never sees tables.
 
 ### 6.3 Layers and rules
 
@@ -289,17 +338,23 @@ admin layer (the schema engine, workspaces), which is what lets it write
 records and events the normal way. The interfaces (API, MCP, worker) reach
 modules only through the registry.
 
-The checker enforces:
+A module is owned by its id across all three packages: `modules/<id>` in
+`server`, `web` and `shared` are one module. The checker enforces:
 
-1. Only `modules/index.ts` imports a module folder.
-2. A module imports the layers below, `modules/api.ts`, and its own folder:
-   never another module, never an interface.
-3. Module tables may reference core tables; core tables never reference
+1. Outside a module, only the registries import it: `modules/index.ts` in
+   the server and in the web app, each importing the module's entry point
+   (`module.ts`, `module.tsx`) and nothing else.
+2. A module's code imports the layers below, its package's
+   `modules/api.ts`, its own folder, and its own shared folder
+   (`@retainer/shared/modules/<same id>`). Never another module's folder in
+   any package, never `@retainer/shared/modules/<other id>`, never an
+   interface (`auth` and `http` included, §8.2).
+3. Core code never imports a module's folder in any package, shared
+   included.
+4. Module tables may reference core tables; core tables never reference
    module tables. `db/schema.ts` never imports a module's `schema.ts`.
-4. The same rules hold in `packages/web/src/modules/` and
-   `packages/shared/src/modules/`.
 
-Rule 2 keeps modules independent: two modules that need each other are one
+Rules 2 and 3 keep modules independent: two modules that need each other are one
 module, or one of them needs an extension point.
 
 ### 6.4 Repo rules still apply
@@ -348,14 +403,34 @@ When a module is off for a workspace:
 - its sidebar item, screens and chat renderers don't show;
 - its data stays, and switching it back on shows it again.
 
-Three details:
+Two rules say what "off" does:
+
+1. **Every call checks the switch now.** Listing is not enough, because
+   some lists outlive the switch. A tool call, a route and a guide read all
+   ask the registry at the time of the call, and answer `404 not_found`
+   when the module is off, even through a tool that was pinned or listed
+   while it was on.
+2. **Data the module holds is still looked after.** Hooks that protect
+   retained data, such as `forget` and merge (§9), run while the module's
+   tables exist, on or off.
+
+Rule 1 is built with the first module. Rule 2 waits for the first hook.
+
+Four details:
 
 - **Chats.** Switching a module on doesn't change the pinned tools or the
   context of a chat that already exists (agent spec §8.3); new chats get
-  them.
+  them. Switching it off leaves its tools pinned on old chats, and by rule
+  1 a call to one answers `404`; the agent reads that as a failed tool
+  call.
 - **MCP clients.** A connection's tool list is fixed (`listChanged` stays
   `false`, as `mcp/server.ts` explains), so a connected client sees a
-  module's tools after it reconnects.
+  module's tools after it reconnects. Until then a call to a tool of a
+  module switched off answers `404` by rule 1.
+- **One module at a time.** The admin switches one module, `{ id, on }`,
+  and the server adds or removes that one id in a single atomic update of
+  `settings.modules`. It never writes the whole list, so two admins
+  switching different modules at once both win.
 - **Restricted mode.** Module routes and tools are not on the allowlist in
   `api/restricted.ts`, so they are not served while the API is restricted.
 
@@ -395,10 +470,40 @@ reading the migrated database's catalog.
 
 ### 8.2 Routes
 
-`routes(v1, deps)` mounts under `/v1/<module id>/…` with the usual
-authentication, scopes and rate limits. The registry wraps them: a
-workspace where the module is off gets `404 not_found`. `deps` is a short
-list that grows on purpose. It starts as `{ sql }`.
+A module declares its routes as data. The API mounts them under
+`/v1/<module id>/…` and applies, for every route, the same admission as
+core routes: authentication, the declared scope, rate limits, restricted
+mode, and the switch (`404 not_found` where the module is off). The module
+writes only the handler, and imports nothing from `auth`, `http` or `api`.
+
+```ts
+// packages/server/src/modules/dashboards/routes.ts
+import { defineRoutes } from '../api.js';
+import { readDashboard, updateDashboard, updateDashboardSchema } from './service.js';
+
+export const dashboardRoutes = defineRoutes([
+  {
+    method: 'get',
+    path: '/:id',                       // served at /v1/dashboards/:id
+    scope: 'read',
+    handler: ({ caller, params, deps }) => readDashboard(deps.sql, caller, params.id),
+  },
+  {
+    method: 'patch',
+    path: '/:id',
+    scope: 'write',
+    body: updateDashboardSchema,        // zod: parsed and refused with 400 by the host
+    handler: ({ caller, params, body, deps }) =>
+      updateDashboard(deps.sql, caller, params.id, body),
+  },
+]);
+```
+
+A handler gets the authenticated `caller`, the path `params`, the parsed
+`body` and `deps`, and returns a value the host sends as JSON, or
+`{ status, body }` for another status. Errors are the core's `AppError`
+from `errors` (foundation). `deps` is a short list that grows on purpose.
+It starts as `{ sql }`.
 
 ### 8.3 Tools
 
@@ -413,7 +518,8 @@ The agent pins Retainer's tools from a fixed list of names in
 of the modules that are on, placed after the core's and sorted by name. It
 gets them through `RetainerToolHost` (§6.2), so the agent package needs no
 module code. Write tools follow the agent's rules for writes (`agent.md`
-D9).
+D9). Every call of a module's tool, over MCP or from the agent, checks the
+switch first (§7 rule 1).
 
 ### 8.4 Guide and chat context
 
@@ -432,7 +538,7 @@ client send. It is a core field that names no module.
 group, after the core items, in registry order; the command palette lists
 it too. `chatBlocks` maps a fenced block's language (`openui-lang`) to a
 lazy renderer. The chat shows a block's source as code when no module that
-is on claims it.
+is on claims it. The web registry checks these for clashes (§6.2).
 
 ## 9. Extension points for later
 
@@ -492,6 +598,15 @@ change with its own review:
 Two modules that need the same thing share the extension point; neither
 imports the other.
 
+An extension point lives as long as something uses it. When the last
+module that uses one is removed, the point goes with it: its field in
+`api.ts`, its host wiring, its fixture test and its entry in §8, which
+returns to §9. It stays only when a module still uses it, or when the core
+needs it for its own sake, said in the removal PR. The registry, the
+switch and Settings → Experiments are the system itself and always stay.
+Without this rule, every failed experiment would leave hooks in the core
+after its folders were gone.
+
 ## 11. Dashboards, the first module
 
 As [dashboards.md](dashboards.md), with its pieces in the module's folders:
@@ -499,8 +614,8 @@ the `dashboards` table, its routes, `check_dashboard`, the guide, the chat
 context line, the Dashboards screens and the `openui-lang` chat renderer.
 
 Dashboards brings the module system with it: `defineModule`,
-`defineWebModule`, the registry, the switch, the layer rules, the fixture
-module, and the extension points in §8.
+`defineWebModule`, the registries, the switch, the layer rules, the fixture
+modules, and the extension points in §8.
 
 [dashboards.md](dashboards.md) was changed with this spec:
 
@@ -529,7 +644,8 @@ check, and `@openuidev/react-lang` and Recharts in the web app.
 ## 12. Removing a module
 
 1. Delete every path that contains `modules/<id>`, in `server` (code,
-   tests, scripts), `web` and `shared`, and its line in each registry.
+   tests, scripts), `web` and `shared`, and its line in each registry. The
+   shared subpath export is a wildcard, so it needs no edit.
 2. `pnpm db:generate --name drop_<module>` writes the migration that drops
    its tables, with their policies and grants. A SQL function the module
    added, such as a job's discovery function, needs a hand-written drop
@@ -541,9 +657,11 @@ check, and `@openuidev/react-lang` and Recharts in the web app.
    - its id in `RETAINER_MODULES`, on the hosted service too (stale ids in
      workspace settings do no harm, §7);
    - a hosted extension that existed only for it.
+4. Remove each extension point no other module uses (§10): its field in
+   `api.ts`, its host wiring and its fixture test.
 
-What the module added to the core stays: an extension point, or a core
-read such as `aggregate_records`.
+A core read the module brought, such as `aggregate_records`, stays: it is
+a core feature that serves views and every agent, not an extension point.
 
 Two cautions:
 
@@ -556,7 +674,9 @@ Two cautions:
   deployed (`docs/migration-compatibility.md`).
 
 A test runs the whole suite with an empty registry, so the core can't
-depend on a module without anyone noticing.
+depend on a module without anyone noticing. It can't prove removal: the
+module's files, dependencies and tables are still there. The rehearsal in
+§13.1 does.
 
 ## 13. Delivery and tests
 
@@ -570,17 +690,31 @@ one line, and the extension points they add.
 
 ### 13.1 Acceptance tests
 
-- **Unit**: `defineModule` rejects a module without an id; `createRegistry`
-  refuses each clash in §6.2; a module is on only when the instance offers
-  it, the workspace uses it and its requirements are met.
-- **Integration (Postgres)**, with the fixture module: its routes answer
-  when on and `404` when off; its tools are listed over MCP and pinned on
-  new chats only when on; its guide and chat line appear only when on, and
-  the chat line is given the chat's client.
+- **Unit**: `defineModule` rejects a module without an id; each registry
+  refuses each clash in §6.2 that it checks; the build check fails a web
+  module with no server module; a module is on only when the instance
+  offers it, the workspace uses it and its requirements are met.
+- **Integration (Postgres)**, with **two fixture modules** switched on and
+  off independently (fixture modules have no tables): each one's routes
+  answer when on and `404` when off, whatever the other's state; routes
+  apply their declared scope; tools are listed over MCP and pinned on new
+  chats only when on; a tool pinned while on answers `404` once switched
+  off, from the agent and over MCP; guide and chat line appear only when
+  on, and the chat line is given the chat's client.
+- **Concurrent switching**: two admins switch two different modules at
+  the same time, and both changes stay.
 - **Module tables**: the catalog check in §8.1, over the real list.
-- **Layers**: `scripts/test-check-layers.mjs` gets fixtures for each rule
-  in §6.3.
+- **Layers**: `scripts/test-check-layers.mjs` gets a passing and a failing
+  fixture for each rule in §6.3, including a module importing its own
+  shared folder (passes) and another module's (fails).
 - **Empty registry**: the server and web test suites pass with no modules.
+- **Removal rehearsal**, once, in the Dashboards PR: in a throwaway
+  worktree with a migrated database holding dashboards, follow §12 to
+  remove Dashboards, generate and apply the drop migration, build the
+  server and the web app, and run the tests with the fixture modules. Any
+  shared file that also needed an edit is a gap in §12, fixed in the same
+  PR. A rehearsal with two real modules, removing one and keeping the
+  other, waits for the second real module.
 - **End to end (Playwright)**: switching Dashboards on in Settings →
   Experiments shows its sidebar item; switching it off hides it.
 
