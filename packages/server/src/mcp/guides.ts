@@ -377,7 +377,9 @@ Where your user got it decides the source:
 Write values, facts and tasks in the order the server instructions give
 for any conversation, each citing the event from step 2 as source. Quote
 your user's own words in a fact when it helps, and give a task the due date
-that was said.
+that was said. When saving several records in one step, use upsert_records
+with a list of items and the source on each item. Check the results in order
+for errors and fields waiting for approval.
 
 When you create a person who came back from step 2 unmatched, log that
 event again with the same input and the new record's ID as the

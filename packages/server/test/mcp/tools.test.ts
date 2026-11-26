@@ -55,6 +55,7 @@ const TOOLS = [
   'remember',
   'search',
   'upsert_record',
+  'upsert_records',
 ];
 
 async function toolsByName(client: McpTestClient) {
@@ -561,6 +562,40 @@ describe('describe_schema, list_templates and apply_template', () => {
     // Neither interactions nor the hidden internal-note type are listed.
     expect(objects.map((o) => o.nameSingular)).not.toContain('interaction');
     expect(JSON.stringify(res.body)).not.toMatch(/internal.?note/i);
+  });
+});
+
+describe('upsert_records', () => {
+  it('advertises the single-upsert fields and returns malformed items as individual errors', async () => {
+    const schema = (await toolsByName(agent)).get('upsert_records')?.inputSchema;
+    const single = (await toolsByName(agent)).get('upsert_record')?.inputSchema;
+    expect(schema?.properties?.items).toMatchObject({
+      type: 'array',
+      maxItems: 50,
+      items: { required: ['object'], properties: single?.properties },
+    });
+
+    const res = await agent.call('upsert_records', {
+      items: [
+        { object: 'person', values: { name: 'First Batch Person', emails: email() } },
+        null,
+        { object: 'company', values: { name: 'Last Batch Company' } },
+      ],
+    });
+    expect(res.isError).toBe(false);
+    expect(res.body.results).toMatchObject([
+      { created: true, fields: { name: 'applied' }, record: { label: 'First Batch Person' } },
+      { error: { code: 'invalid_request' } },
+      { created: true, record: { label: 'Last Batch Company' } },
+    ]);
+  });
+
+  it('refuses batches above the maximum', async () => {
+    const res = await agent.call('upsert_records', {
+      items: Array.from({ length: 51 }, () => ({ object: 'person' })),
+    });
+    expect(res.isError).toBe(true);
+    expect(JSON.stringify(res.body)).toContain('pass at most 50 items');
   });
 });
 

@@ -1,5 +1,4 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
-import { z } from 'zod';
 import { missingScope } from '../auth/middleware.js';
 import type { Caller } from '../caller.js';
 import type { ApiKeyScope } from '../db/schema.js';
@@ -10,6 +9,8 @@ import {
   readOnlyViolation,
 } from '../http/maintenance.js';
 import { errorBody, toAppError } from '../http/response.js';
+
+export { objectName } from '../http/request.js';
 
 /** What every MCP tool file uses: running a call, its result and shared inputs. */
 
@@ -54,8 +55,3 @@ export async function run(
     return failure(toAppError(error));
   }
 }
-
-export const objectName = z
-  .string()
-  .min(1)
-  .describe('Singular API name of the object, e.g. "person", as describe_schema lists it.');

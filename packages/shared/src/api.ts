@@ -195,6 +195,13 @@ export type WriteResponse = {
   fields: Record<string, 'applied' | 'pending_review' | 'superseded'>;
   record: PresentedRecord;
 };
+/** One result per item, in the order passed to `POST /v1/records/upsert`. */
+export type UpsertRecordsResponse = {
+  results: (
+    | WriteResponse
+    | { error: { code: string; message: string; details?: Record<string, unknown> } }
+  )[];
+};
 /** How an event is attached to a record (7.1). */
 export const EVENT_ATTACHMENTS = ['participant', 'about', 'field'] as const;
 export type EventAttachment = (typeof EVENT_ATTACHMENTS)[number];

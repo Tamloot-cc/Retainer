@@ -72,6 +72,23 @@ await retainer.remember(dana.id, {
 });
 ```
 
+## Save several records
+
+Pass 1–50 items at a time. Each result is a write response or an error at the
+same index as its input. Give each create without an ID or match a stable key
+so retrying it returns the original result.
+
+```ts
+const { results } = await retainer.upsertRecords([
+  { object: 'company', values: { name: 'Northwind' }, idempotencyKey: 'import-42-northwind' },
+  { object: 'person', id: dana.id, values: { jobTitle: 'VP Operations' }, source: call.id },
+]);
+
+for (const result of results) {
+  if ('error' in result) console.error(result.error.message);
+}
+```
+
 ## Read it back
 
 ```ts

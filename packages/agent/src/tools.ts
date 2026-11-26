@@ -16,7 +16,12 @@ export const RETAINER_READ_TOOL_NAMES = [
   'get_event_content',
   'get_guide',
 ] as const;
-export const RETAINER_WRITE_TOOL_NAMES = ['upsert_record', 'log_event', 'remember'] as const;
+export const RETAINER_WRITE_TOOL_NAMES = [
+  'upsert_record',
+  'upsert_records',
+  'log_event',
+  'remember',
+] as const;
 export const RETAINER_TOOL_NAMES: readonly string[] = [
   ...RETAINER_READ_TOOL_NAMES,
   ...RETAINER_WRITE_TOOL_NAMES,

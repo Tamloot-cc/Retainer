@@ -1511,6 +1511,7 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `GET` · `POST /v1/objects/:object/views`          | The object's saved views (1.4), or save a new one                                                                                       |
 | `GET` · `PATCH` · `DELETE /v1/views/:id`          | One saved view                                                                                                                          |
 | `POST /v1/objects/:object/upsert`                 | Update or create a record found by `id` or `match`, with `ifMissing` (6.2)                                                              |
+| `POST /v1/records/upsert`                        | Create or update several records and return the result of each write (6.2)                                                              |
 | `GET` · `PATCH` · `DELETE /v1/records/:id`        | One record                                                                                                                              |
 | `GET /v1/records/:id/delete-impact`               | Records a delete would cascade to, at any depth, counted by object                                                                      |
 | `POST /v1/records/delete-impact`                  | The same for several records deleted together, overlaps counted once                                                                    |
@@ -1577,7 +1578,7 @@ Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
 
 `describe_schema`, `list_templates`, `apply_template`, `get_guide`,
-`query_records`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`,
+`query_records`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`, `upsert_records`,
 `log_event`, `remember`, `propose_schema_change`, `move_events`. Events are listed with
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
@@ -1679,6 +1680,23 @@ An agent that knows only a name or a phone number searches first
 (`search` or `query_records`), then updates by `id`. With several
 candidates, it tells them apart by company, email or recent events, or
 asks its user.
+
+#### Saving several records
+
+`upsert_records` and `POST /v1/records/upsert` take `{ items: [...] }` with
+1–50 items. Each takes the same fields as `upsert_record`, including
+`object`, and uses the same credential and write rules. The REST request
+body is limited to 2 MiB. A valid batch returns `{ results: [...] }` (HTTP 200)
+with one entry per input item, in order. Each entry is the normal write
+response or `{ error: { code, message, details? } }`.
+
+Each item runs in its own short transaction. Record, schema and privacy locks
+are released after each item, and a later item can see earlier commits.
+Use a distinct `idempotencyKey` for each unconditional create and reuse it on
+retry. For retryable create-or-update writes, use `match` on a unique field.
+Repeated updates can add assertions to history. Use `id` for a known record:
+if `ifMissing: "create"` finds no record at that ID, the new record receives
+a generated ID.
 
 Create-style writes (`remember`, record creation and merge requests) accept
 a caller idempotency key scoped by workspace and operation. Store the request

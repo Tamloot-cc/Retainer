@@ -5,12 +5,15 @@ import { JsonBlock, LogoMark, type LogoMood, Markdown, Notice } from '../../ui/i
 import {
   type ChatMessage,
   type ChatPart,
+  groupTraceParts,
   isToolPart,
   messageText,
   type ToolPart,
   TURN_ENDINGS,
   toolError,
   toolErrorText,
+  toolGroupLine,
+  toolHasFailures,
   toolLine,
   turnEnd,
 } from './model.js';
@@ -26,7 +29,7 @@ function Disclosure({
   tone?: 'muted' | 'error';
 }) {
   return (
-    <details className="group/details text-xs">
+    <details className="text-xs open:[&>summary>svg]:rotate-90">
       <summary
         className={cn(
           'flex cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 [&::-webkit-details-marker]:hidden',
@@ -34,11 +37,7 @@ function Disclosure({
           tone === 'error' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground',
         )}
       >
-        <ChevronRight
-          size={12}
-          aria-hidden
-          className="shrink-0 transition-transform group-open/details:rotate-90"
-        />
+        <ChevronRight size={12} aria-hidden className="shrink-0 motion-safe:transition-transform" />
         <span className="min-w-0">{summary}</span>
       </summary>
       <div className="mt-1 ms-4.5 flex flex-col gap-2">{children}</div>
@@ -62,7 +61,7 @@ function ToolCall({ part }: { part: ToolPart }) {
   const line = toolLine(part);
   return (
     <Disclosure
-      tone={error ? 'error' : 'muted'}
+      tone={toolHasFailures(part) ? 'error' : 'muted'}
       summary={error ? `${line}, but ${toolErrorText(error)}` : line}
     >
       {part.input !== undefined ? <JsonBlock label="Input" value={part.input} /> : null}
@@ -105,14 +104,35 @@ function AssistantParts({ message, streaming }: { message: ChatMessage; streamin
   const parts = message.parts;
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-      {parts.map((part, i) => {
-        const key = `${message.id}-${i}`;
+      {groupTraceParts(parts).map((entry) => {
+        const key = `${message.id}-${entry.index}`;
+        if ('calls' in entry) {
+          const { calls } = entry;
+          const [first] = calls;
+          if (calls.length === 1) return <ToolCall key={key} part={first} />;
+          return (
+            <Disclosure
+              key={key}
+              summary={toolGroupLine(calls)}
+              tone={toolHasFailures(first) ? 'error' : 'muted'}
+            >
+              <ol className="flex flex-col gap-1">
+                {calls.map((call, index) => (
+                  <li key={call.toolCallId ?? index}>
+                    <ToolCall part={call} />
+                  </li>
+                ))}
+              </ol>
+            </Disclosure>
+          );
+        }
+        const { part, index } = entry;
         if (part.type === 'reasoning')
           return (
             <Reasoning
               key={key}
               text={part.text}
-              streaming={streaming && i === parts.length - 1 && part.state !== 'done'}
+              streaming={streaming && index === parts.length - 1 && part.state !== 'done'}
             />
           );
         if (part.type === 'text')

@@ -3,61 +3,19 @@ import { PROFILE_ALIASES } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
-import { AppError } from '../../errors.js';
+import {
+  upsertRecordInput,
+  upsertRecords,
+  upsertRecordsInput,
+  writeRecord,
+} from '../../http/record-upserts.js';
 import { MAX_PARTICIPANTS, participantInputSchema } from '../../memory/event-links.js';
 import { logEventInputSchema } from '../../memory/events.js';
 import { rememberInputSchema } from '../../memory/facts.js';
 import { moveEventsInputSchema } from '../../memory/move.js';
 import { logEventFor, moveEventsFor, remember } from '../../memory/service.js';
-import {
-  createRecord,
-  upsertInputSchema,
-  upsertRecord,
-  valuesSchema,
-} from '../../records/service.js';
 import { requestSchemaChange, schemaChangeRequestSchema } from '../../schema-engine/service.js';
-import { objectName, run } from '../shared.js';
-
-const upsertRecordInput = z.strictObject({
-  object: objectName,
-  ...upsertInputSchema.shape,
-  id: upsertInputSchema.shape.id.describe('Update this record.'),
-  match: upsertInputSchema.shape.match.describe(
-    'Find the record by one unique field and its value, e.g. { "emails": "dana@acme.com" }. ' +
-      'Names and phones are not unique: find those records with search or query_records first.',
-  ),
-  values: valuesSchema
-    .default({})
-    .describe(
-      "Field name to value, in its type's format from describe_schema's valueFormats. " +
-        'Composite fields (emails, phones, links, money, full_name, address) are replaced whole, so include the values to keep. null clears a field. ' +
-        'A many_to_many relation takes the whole list of record IDs ([] clears it): read ' +
-        'the record first and send every member to keep. Fields marked readOnly are not yours ' +
-        'to write: an inverse relation (isInverse) is written from the other side, and any ' +
-        'other is written only by the app that added it.',
-    ),
-  ifMissing: upsertInputSchema.shape.ifMissing.describe(
-    'When id or match finds nothing: "fail" (default) or "create". Use "create" only ' +
-      'when you mean to add a new record.',
-  ),
-  expectedUpdatedAt: upsertInputSchema.shape.expectedUpdatedAt.describe(
-    'Reject the write if the record changed since this updatedAt.',
-  ),
-  source: upsertInputSchema.shape.source.describe(
-    'The event id (from log_event) these values come from. Values then carry the ' +
-      "event's date, so an older email cannot overwrite a newer claim. Omit only for " +
-      'values that come from no conversation.',
-  ),
-  idempotencyKey: z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .describe(
-      'Only for creates without id or match: retrying with the same key returns the first ' +
-        'result instead of creating a second record.',
-    ),
-});
+import { run } from '../shared.js';
 
 const logEventInput = z.strictObject({
   ...logEventInputSchema.shape,
@@ -169,24 +127,22 @@ export function registerWriteTools(server: McpServer, sql: Sql, caller: Caller):
       inputSchema: upsertRecordInput,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ object, idempotencyKey, ...input }) =>
-      run(caller, 'write', () => {
-        if (!input.id && !input.match) {
-          return createRecord(sql, caller, object, input.values, {
-            ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-            ...(input.source !== undefined ? { source: input.source } : {}),
-          });
-        }
-        if (idempotencyKey !== undefined) {
-          throw new AppError(
-            400,
-            'invalid_request',
-            'idempotencyKey applies only to creates without id or match; ' +
-              'a write by id or match is already safe to retry',
-          );
-        }
-        return upsertRecord(sql, caller, object, input);
-      }),
+    (input) => run(caller, 'write', () => writeRecord(sql, caller, input)),
+  );
+
+  server.registerTool(
+    'upsert_records',
+    {
+      title: 'Create or update several records',
+      description:
+        'Use this to save several records at once, each with the same inputs and rules as ' +
+        'upsert_record. Results come back per item in input order, including field outcomes ' +
+        'or an error. Other items still run if one fails. For creates without id or match, ' +
+        'give each item its own idempotencyKey so the batch can be retried without duplicates.',
+      inputSchema: upsertRecordsInput,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    ({ items }) => run(caller, 'write', () => upsertRecords(sql, caller, items)),
   );
 
   server.registerTool(

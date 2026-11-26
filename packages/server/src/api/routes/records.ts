@@ -2,6 +2,11 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
+import {
+  UPSERT_RECORDS_MAX_BYTES,
+  upsertRecords,
+  upsertRecordsInput,
+} from '../../http/record-upserts.js';
 import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { clearMyMemory } from '../../memory/service.js';
@@ -70,6 +75,11 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
     const input = await readBody(c, upsertInputSchema);
     const result = await upsertRecord(sql, c.get('caller'), c.req.param('object'), input);
     return c.json(result, result.created ? 201 : 200);
+  });
+
+  app.post('/records/upsert', requireScope('write'), async (c) => {
+    const { items } = await readBody(c, upsertRecordsInput, UPSERT_RECORDS_MAX_BYTES);
+    return c.json(await upsertRecords(sql, c.get('caller'), items));
   });
 
   app.get('/records/:id', requireScope('read'), async (c) =>

@@ -463,6 +463,30 @@ describe('tools', () => {
     expect(web.body).toMatchObject({ ok: false, error: { code: 'tool_not_available' } });
   });
 
+  it('pins upsert_records on a new session and writes as the agent', async () => {
+    const id = await newChat();
+    const turn = await claimed(id);
+    const result = await runtime(id, turn.turnToken, '/tools/upsert_records', {
+      toolCallId: 'bulk',
+      input: {
+        items: [{ object: 'company', values: { name: 'Agent Batch Company' } }, { object: 'nope' }],
+      },
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      ok: true,
+      output: {
+        results: [
+          {
+            created: true,
+            record: { createdBy: { type: 'agent', id: 'retainer-agent:key:desk' } },
+          },
+          { error: { code: 'not_found' } },
+        ],
+      },
+    });
+  });
+
   it('refuses writes to a read-only key and stops a revoked key at once', async () => {
     const id = await newChat(keys.reader);
     const turn = await claimed(id, keys.reader);

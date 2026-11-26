@@ -50,7 +50,7 @@ const READ_TOOLS = new Set([
   'web_search',
 ]);
 /** Tools that write to Retainer. */
-const WRITE_TOOLS = new Set(['upsert_record', 'log_event', 'remember']);
+const WRITE_TOOLS = new Set(['upsert_record', 'upsert_records', 'log_event', 'remember']);
 
 /** Whether the call has been made and its result is in. */
 export function toolFinished(part: ToolPart) {
@@ -74,6 +74,106 @@ function inputOf(part: ToolPart) {
     string,
     unknown
   >;
+}
+
+function dryRun(part: ToolPart) {
+  return (part.output as { dryRun?: boolean } | undefined)?.dryRun === true;
+}
+
+function upsertCounts(part: ToolPart) {
+  if (part.state !== 'output-available') return undefined;
+  const { results } = (part.output ?? {}) as { results?: unknown };
+  if (!Array.isArray(results)) return undefined;
+  const failed = results.filter(
+    (item) => item && typeof item === 'object' && 'error' in item,
+  ).length;
+  return { saved: results.length - failed, failed };
+}
+
+const records = (count: number) => `${count} ${count === 1 ? 'record' : 'records'}`;
+
+function savedRecords(saved: number, failed: number) {
+  return `Saved ${records(saved)}${failed ? `, ${failed} failed` : ''}`;
+}
+
+function bulkToolLine(part: ToolPart) {
+  const counts = upsertCounts(part);
+  if (counts) return savedRecords(counts.saved, counts.failed);
+  const { items } = inputOf(part);
+  const label = Array.isArray(items) ? records(items.length) : 'records';
+  if (dryRun(part)) return `Would save ${label}`;
+  return toolFinished(part) ? `Tried to save ${label}` : `Saving ${label}`;
+}
+
+type ToolRun = [ToolPart, ...ToolPart[]];
+type TracePart = { index: number; part: ChatPart } | { index: number; calls: ToolRun };
+
+function outcome(part: ToolPart) {
+  const error = toolError(part);
+  if (error !== undefined) return `error:${error}`;
+  if (dryRun(part)) return 'dry_run';
+  if (toolName(part) === 'upsert_records') {
+    const counts = upsertCounts(part);
+    if (!counts) return 'unknown';
+    if (counts.failed) return counts.saved ? 'partial' : 'failed';
+  }
+  return 'success';
+}
+
+/** Groups finished, adjacent calls in the displayed trace, leaving streaming calls in place. */
+export function groupTraceParts(parts: ChatPart[]): TracePart[] {
+  const trace: TracePart[] = [];
+  let previous: { name: string; outcome: string; calls: ToolRun } | undefined;
+  for (const [index, part] of parts.entries()) {
+    // Step boundaries are wire metadata and don't appear in the trace.
+    if (part.type === 'step-start') continue;
+    if (!isToolPart(part) || !toolFinished(part)) {
+      trace.push({ index, part });
+      previous = undefined;
+      continue;
+    }
+    const name = toolName(part);
+    const key = outcome(part);
+    if (previous?.name === name && previous.outcome === key) {
+      previous.calls.push(part);
+    } else {
+      const calls: ToolRun = [part];
+      trace.push({ index, calls });
+      previous = { name, outcome: key, calls };
+    }
+  }
+  return trace;
+}
+
+export function toolGroupLine(calls: ToolRun) {
+  const [first] = calls;
+  const name = toolName(first);
+  const count = calls.length;
+  const error = toolError(first);
+  if (name === 'upsert_record' && !dryRun(first)) {
+    return error
+      ? `Tried to save ${records(count)}, but ${toolErrorText(error)}`
+      : savedRecords(count, 0);
+  }
+  if (name === 'upsert_records' && upsertCounts(first)) {
+    let saved = 0;
+    let failed = 0;
+    for (const call of calls) {
+      const counts = upsertCounts(call);
+      saved += counts?.saved ?? 0;
+      failed += counts?.failed ?? 0;
+    }
+    return savedRecords(saved, failed);
+  }
+  const label = toolLine({ ...first, input: undefined });
+  return `${label} (${count} calls)${error ? `, but ${toolErrorText(error)}` : ''}`;
+}
+
+export function toolHasFailures(part: ToolPart) {
+  return (
+    toolError(part) !== undefined ||
+    (toolName(part) === 'upsert_records' && (upsertCounts(part)?.failed ?? 0) > 0)
+  );
 }
 
 /** One short line saying what a tool call does, in plain words. */
@@ -112,7 +212,10 @@ export function toolLine(part: ToolPart): string {
     case 'get_event_content':
       return verb('Reading a conversation', 'Read a conversation');
     case 'upsert_record':
+      if (dryRun(part)) return 'Would save a record';
       return verb('Saving a record', 'Saved a record');
+    case 'upsert_records':
+      return bulkToolLine(part);
     case 'log_event':
       return verb('Logging an event', 'Logged an event');
     case 'remember':

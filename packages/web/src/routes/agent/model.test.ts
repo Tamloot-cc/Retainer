@@ -4,9 +4,11 @@ import {
   type ChatMessage,
   chatRequestBody,
   errorCode,
+  groupTraceParts,
   sendErrorText,
   type ToolPart,
   toolError,
+  toolGroupLine,
   toolLine,
   turnEnd,
 } from './model.js';
@@ -54,11 +56,75 @@ describe('toolLine', () => {
       'Reading your personal memory',
     );
   });
+  it('counts saved and failed bulk items and labels in-flight and dry-run writes', () => {
+    const bulk = { type: 'tool-upsert_records', input: { items: [{}, {}] } };
+    const result = (results: unknown[]) =>
+      toolLine({ ...bulk, state: 'output-available', output: { results } });
+    expect(result([{ id: 'a' }, { id: 'b' }])).toBe('Saved 2 records');
+    expect(result([{ id: 'a' }, { error: { code: 'not_found' } }])).toBe(
+      'Saved 1 record, 1 failed',
+    );
+    expect(result([{ error: {} }, { error: {} }])).toBe('Saved 0 records, 2 failed');
+    expect(toolLine({ ...bulk, state: 'input-available' })).toBe('Saving 2 records');
+    expect(toolLine({ ...bulk, state: 'output-available', output: { dryRun: true } })).toBe(
+      'Would save 2 records',
+    );
+  });
+
   it('names a tool it has no words for, dynamic ones included', () => {
     expect(toolLine(tool('tool-ext_lookup'))).toBe('Using ext_lookup');
     expect(toolLine(tool('dynamic-tool', { toolName: 'ext_crm', state: 'output-available' }))).toBe(
       'Used ext_crm',
     );
+  });
+});
+
+describe('groupTraceParts', () => {
+  it('groups adjacent finished calls across hidden step starts, with a label for the count', () => {
+    const calls = Array.from({ length: 31 }, (_, i) => ({
+      type: 'tool-upsert_record',
+      toolCallId: `save-${i}`,
+      state: 'output-available',
+    }));
+    const parts = assistant(calls.flatMap((call) => [{ type: 'step-start' }, call])).parts;
+    const [group] = groupTraceParts(parts);
+    expect(group).toEqual({ index: 1, calls });
+    if (!group || !('calls' in group)) throw new Error('expected a tool group');
+    expect(toolGroupLine(group.calls)).toBe('Saved 31 records');
+  });
+
+  it('keeps different outcomes, tools and visible intervening parts apart', () => {
+    const save = { type: 'tool-upsert_record', state: 'output-available' };
+    const failure = { ...save, output: { error: { code: 'not_found' } } };
+    const otherFailure = { ...save, output: { error: { code: 'role' } } };
+    const dry = { ...save, output: { dryRun: true } };
+    const running = { ...save, state: 'input-available' };
+    const search = { ...save, type: 'tool-search' };
+    const text = { type: 'text', text: 'Then I saved another one.' };
+    const parts = assistant([
+      save,
+      failure,
+      failure,
+      otherFailure,
+      dry,
+      running,
+      save,
+      search,
+      text,
+      save,
+    ]).parts;
+    expect(groupTraceParts(parts)).toEqual([
+      { index: 0, calls: [save] },
+      { index: 1, calls: [failure, failure] },
+      { index: 3, calls: [otherFailure] },
+      { index: 4, calls: [dry] },
+      { index: 5, part: running },
+      { index: 6, calls: [save] },
+      { index: 7, calls: [search] },
+      { index: 8, part: text },
+      { index: 9, calls: [save] },
+    ]);
+    expect(toolGroupLine([failure, failure])).toBe('Tried to save 2 records, but not found');
   });
 });
 

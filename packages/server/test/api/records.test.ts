@@ -186,6 +186,80 @@ describe('GET, PATCH and DELETE /v1/records/:id', () => {
   });
 });
 
+describe('POST /v1/records/upsert', () => {
+  const batch = (items: unknown[], key = keys.agent) =>
+    t.request('/v1/records/upsert', { key, body: { items } });
+
+  it('returns each write or error in order, and later items see earlier writes', async () => {
+    const address = email();
+    const created = { object: 'person', values: { name: 'Bulk Patient', emails: address } };
+    const res = await batch([
+      created,
+      { ...created, actor: { type: 'user', id: 'fake' } },
+      { object: 'person', id: 'not-a-uuid' },
+      { object: 'appointment', values: { status: 'invalid' } },
+      { object: 'person', match: { emails: address }, values: { name: 'Renamed Patient' } },
+      { object: 'company', values: { name: 'Bulk Company' } },
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.body.results).toMatchObject([
+      {
+        created: true,
+        record: { label: 'Bulk Patient', createdBy: { type: 'agent', id: 'front-desk' } },
+      },
+      { error: { code: 'invalid_request' } },
+      { error: { code: 'invalid_request' } },
+      { error: { code: 'invalid_values' } },
+      { id: res.body.results[0].id, created: false, record: { label: 'Renamed Patient' } },
+      { created: true, record: { label: 'Bulk Company' } },
+    ]);
+  });
+
+  it('replays keyed creates and never makes a duplicate match on concurrent retries', async () => {
+    const address = email();
+    const items = [
+      { object: 'company', values: { name: 'Bulk Retry Company' }, idempotencyKey: 'bulk-company' },
+      {
+        object: 'person',
+        match: { emails: address },
+        ifMissing: 'create',
+        values: { name: 'Bulk Retry Person' },
+      },
+    ];
+
+    const [first, retry] = await Promise.all([batch(items), batch(items)]);
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(first.body.results[0]).toMatchObject({ id: expect.any(String), created: true });
+    expect(retry.body.results[0]).toEqual(first.body.results[0]);
+    expect(first.body.results[1]).toMatchObject({ id: expect.any(String) });
+    expect(retry.body.results[1].id).toBe(first.body.results[1].id);
+    expect([first, retry].filter((res) => res.body.results[1].created)).toHaveLength(1);
+
+    const company = await t.request('/v1/objects/company/query', {
+      key: keys.agent,
+      body: { filter: { name: { eq: 'Bulk Retry Company' } } },
+    });
+    expect(company.status).toBe(200);
+    expect(company.body.records).toMatchObject([{ id: first.body.results[0].id }]);
+  });
+
+  it('requires the write scope and rejects empty and oversized envelopes before any write', async () => {
+    const item = { object: 'person', values: { emails: email() } };
+    expect((await batch([item], keys.reader)).status).toBe(403);
+    expect((await batch([])).status).toBe(400);
+    const oversized = await batch(Array.from({ length: 51 }, () => item));
+    expect(oversized.status).toBe(400);
+    expect(oversized.body.error.details.issues).toContainEqual({
+      path: 'items',
+      message: 'pass at most 50 items',
+    });
+    const tooManyBytes = await batch([{ ...item, values: { name: 'a'.repeat(2 * 1024 * 1024) } }]);
+    expect(tooManyBytes.status).toBe(413);
+    expect((await create('person', item.values)).status).toBe(201);
+  });
+});
+
 describe('POST /v1/objects/:object/upsert', () => {
   it('updates by match and creates with ifMissing', async () => {
     const address = email();
