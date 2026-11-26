@@ -35,11 +35,8 @@ test('the cross-type event query exports its shared sort fields and event record
   const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
   const query = contract.paths['/v1/events/query'].post;
   const { schemas } = contract.components;
-  assert.equal(
-    query.requestBody.content['application/json'].schema.$ref,
-    '#/components/schemas/EventQuery',
-  );
-  assert.deepEqual(schemas.EventQuery.properties.sort.items.properties.field.enum, [
+  const request = query.requestBody.content['application/json'].schema;
+  assert.deepEqual(request.properties.sort.items.properties.field.enum, [
     'occurredAt',
     'channel',
     'externalId',
@@ -53,4 +50,14 @@ test('the cross-type event query exports its shared sort fields and event record
   );
   assert.equal(schemas.EventPage.properties.records.items.$ref, '#/components/schemas/EventRecord');
   assert.deepEqual(schemas.EventRecord.allOf[1].required, ['type', 'event']);
+});
+
+test('event claims require their historical fact status in the OpenAPI contract', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const claims = contract.paths['/v1/events/{id}/claims'].get;
+  const { facts } = claims.responses['200'].content['application/json'].schema.properties;
+  assert.equal(facts.items.$ref, '#/components/schemas/HistoricalFact');
+  const status = contract.components.schemas.HistoricalFact.allOf[1];
+  assert.deepEqual(status.required, ['status']);
+  assert.deepEqual(status.properties.status.enum, ['current', 'retracted', 'superseded', 'ended']);
 });

@@ -1,7 +1,10 @@
+import { bindingWriteStampSchema } from '@retainer/extension';
 import { isProfileAlias } from '@retainer/shared';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import { AppError, profileNotSupported } from '../errors.js';
+
+export const deleteBindingsInput = z.strictObject({ bindings: bindingWriteStampSchema.optional() });
 
 /** Reads a body of at most `maxBytes`, or undefined (and the rest cancelled) when it is larger. */
 export async function readCapped(

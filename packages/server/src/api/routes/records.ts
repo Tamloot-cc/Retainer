@@ -7,7 +7,7 @@ import {
   upsertRecords,
   upsertRecordsInput,
 } from '../../http/record-upserts.js';
-import { idParam, limitParam, readBody } from '../../http/request.js';
+import { deleteBindingsInput, idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { clearMyMemory } from '../../memory/service.js';
 import { linkedRecordPage } from '../../reads/linked.js';
@@ -39,7 +39,7 @@ import {
   withRead,
 } from '../../records/service.js';
 
-const createSchema = z.strictObject({
+export const createRecordInput = z.strictObject({
   values: valuesSchema,
   source: sourceSchema.optional(),
   bindings: bindingWriteStampSchema.optional(),
@@ -47,7 +47,7 @@ const createSchema = z.strictObject({
 
 export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.post('/objects/:object/records', requireScope('write'), async (c) => {
-    const { values, source, bindings } = await readBody(c, createSchema);
+    const { values, source, bindings } = await readBody(c, createRecordInput);
     const idempotencyKey = c.req.header('idempotency-key');
     const result = await createRecord(sql, c.get('caller'), c.req.param('object'), values, {
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
@@ -115,9 +115,7 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   );
 
   app.delete('/records/:id', requireScope('write'), async (c) => {
-    const { bindings } = c.req.header('content-type')
-      ? await readBody(c, z.strictObject({ bindings: bindingWriteStampSchema.optional() }))
-      : {};
+    const { bindings } = c.req.header('content-type') ? await readBody(c, deleteBindingsInput) : {};
     return c.json(await deleteRecord(sql, c.get('caller'), idParam(c), bindings));
   });
 

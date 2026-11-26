@@ -6,14 +6,14 @@ import type { FileStorage } from '../../file-storage/contract.js';
 import { Files, fileIntentSchema } from '../../files/service.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
+
+export const fileErasureStatusInput = z.strictObject({ ids: z.array(z.uuid()).min(1).max(10000) });
+
 export function fileRoutes(app: Hono<AppEnv>, sql: Sql, storage?: FileStorage, quota?: number) {
   const files = new Files(sql, storage, quota);
   app.post('/files/erasure-status', requireScope('admin'), async (c) =>
     c.json(
-      await files.erasureStatus(
-        c.get('caller'),
-        (await readBody(c, z.strictObject({ ids: z.array(z.uuid()).min(1).max(10000) }))).ids,
-      ),
+      await files.erasureStatus(c.get('caller'), (await readBody(c, fileErasureStatusInput)).ids),
     ),
   );
   app.post('/files/intents', requireScope('write'), async (c) =>

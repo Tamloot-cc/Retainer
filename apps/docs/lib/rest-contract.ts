@@ -6,13 +6,17 @@ import type {
   ParameterObject,
   ResponseObject,
 } from 'fumadocs-openapi';
+import requestSchemas from './request-schemas.json' with { type: 'json' };
 
 type Schema = OpenAPIV3_2.SchemaObject | OpenAPIV3_2.ReferenceObject;
+// The JSON import widens schema keywords such as "object" to string.
+const requestSchemasByOperation = requestSchemas as unknown as Partial<Record<string, Schema>>;
 
 const text = { type: 'string' } as const;
 const id = { type: 'string', format: 'uuid' } as const;
 const timestamp = { type: 'string', format: 'date-time' } as const;
 const integer = { type: 'integer' } as const;
+const number = { type: 'number' } as const;
 const boolean = { type: 'boolean' } as const;
 const choice = (...values: string[]) => ({ type: 'string' as const, enum: values });
 const array = (items: Schema, limits: { minItems?: number; maxItems?: number } = {}): Schema => ({
@@ -44,47 +48,18 @@ const stringLength = (minLength: number, maxLength: number) =>
     maxLength,
   }) satisfies Schema;
 const nullString: Schema = { type: ['string', 'null'] };
+const nullId: Schema = { type: ['string', 'null'], format: 'uuid' };
 const nullable = (schema: Schema): Schema => ({ anyOf: [schema, { type: 'null' }] });
-const aggregateOperation = choice(
-  'countEmpty',
-  'countNotEmpty',
-  'percentEmpty',
-  'percentNotEmpty',
-  'countUnique',
-  'sum',
-  'avg',
-  'min',
-  'max',
-);
 const paged = (name: string, item: Schema) =>
   object({ [name]: array(item), nextCursor: nullString });
 const attachment = choice('participant', 'about', 'field');
-const bindings = ref('Bindings');
+const factStatus = choice('current', 'retracted', 'superseded', 'ended');
 const recordFields: Schema = {
   type: 'object',
   additionalProperties: true,
-  description: 'Keys are API field names from the workspace schema. Null clears a value.',
+  description: 'Keys are API field names from the workspace schema.',
 };
-const sortBy = (field: Schema) =>
-  array(object({ field, direction: choice('asc', 'desc') }, ['field']), { maxItems: 3 });
-const sort = sortBy(text);
-const eventQueryColumn = choice(
-  'occurredAt',
-  'channel',
-  'externalId',
-  'id',
-  'createdAt',
-  'updatedAt',
-);
-const queryFields = {
-  search: stringLength(1, 500),
-  filter: map(),
-  sort,
-  limit: bound(1, 200, 50),
-  cursor: text,
-  include: array(choice('relationReferences')),
-  linked: object({ record: id, link: attachment }, ['record']),
-};
+const sort = array(object({ field: text, direction: choice('asc', 'desc') }, ['field']));
 const recordPage = (record: Schema) =>
   object(
     {
@@ -94,46 +69,6 @@ const recordPage = (record: Schema) =>
     },
     ['records', 'nextCursor'],
   );
-const writeFields = { values: recordFields, source: id, bindings };
-const upsertFields = {
-  ...writeFields,
-  id,
-  match: {
-    ...map(),
-    minProperties: 1,
-    maxProperties: 1,
-    description: 'Match exactly one unique field.',
-  },
-  ifMissing: { ...choice('fail', 'create'), default: 'fail' },
-  expectedUpdatedAt: timestamp,
-} satisfies Record<string, Schema>;
-const upsertTarget = { not: { required: ['id', 'match'] } };
-const recordLinkFields = {
-  participants: array(object({ handle: text, recordId: id, role: text }, []), { maxItems: 200 }),
-  about: array(id, { maxItems: 200 }),
-};
-const viewFields = {
-  name: text,
-  kind: choice('table', 'board', 'calendar'),
-  visibility: choice('private', 'workspace'),
-  filter: { type: ['object', 'null'], additionalProperties: true } satisfies Schema,
-  sort: nullable(sort),
-  columns: nullable(
-    object(
-      {
-        order: array(text, { maxItems: 200 }),
-        widths: map(bound(40, 2000)),
-        aggregates: map(aggregateOperation),
-      },
-      ['order'],
-    ),
-  ),
-  position: { type: 'number' },
-  groupBy: nullString,
-  dateField: nullString,
-  groupAggregate: nullable(object({ field: text, op: aggregateOperation })),
-  hiddenGroups: nullable(array(nullString, { maxItems: 200 })),
-} satisfies Record<string, Schema>;
 const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
   Workspace: object({ id, name: text, slug: text }),
   Actor: object(
@@ -163,11 +98,6 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     },
     ['status', 'version', 'database'],
   ),
-  Bindings: object({
-    bindings_revision: { type: 'integer', minimum: 1 },
-    objectId: id,
-    fieldIds: map(id),
-  }),
   Record: object(
     {
       id,
@@ -193,33 +123,34 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     fields: map(choice('applied', 'pending_review', 'superseded')),
     record: ref('Record'),
   }),
-  RecordQuery: object(queryFields, []),
-  EventQuery: object(
-    {
-      ...queryFields,
-      filter: {
-        ...map(),
-        description:
-          'Filter by a shared event column or by type. The type filter supports eq, neq, and in.',
-      },
-      sort: sortBy(eventQueryColumn),
-    },
-    [],
-  ),
   EventPage: recordPage(ref('EventRecord')),
   EventRecord: {
     allOf: [ref('Record'), object({ type: text, event: ref('EventDetails') })],
   },
   Deleted: object({ id, deleted: { type: 'boolean', const: true } }),
-  EventDetails: object({
-    occurredAt: timestamp,
-    channel: nullString,
-    externalId: nullString,
-    title: nullString,
-    summary: nullString,
-    participants: ref('Participants'),
-    about: array(id),
-  }),
+  EventDetails: object(
+    {
+      occurredAt: timestamp,
+      channel: nullString,
+      externalId: nullString,
+      title: nullString,
+      summary: nullString,
+      participants: ref('Participants'),
+      about: array(id),
+      content: {
+        type: 'boolean',
+        const: true,
+        description: 'Full text is available at GET /v1/events/{id}/content.',
+      },
+      source: object({
+        sourceItemId: id,
+        revisionId: id,
+        current: boolean,
+        previousEventId: nullId,
+      }),
+    },
+    ['occurredAt', 'channel', 'externalId', 'title', 'summary', 'participants', 'about'],
+  ),
   Participants: object({
     matched: array(object({ id, handle: nullString, role: nullString, recordId: id })),
     unmatched: array(
@@ -232,20 +163,6 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     ),
   }),
   AddedLinks: object({ participants: ref('Participants'), about: array(id) }),
-  LogEvent: object(
-    {
-      type: stringLength(1, 100),
-      channel: stringLength(1, 100),
-      externalId: stringLength(1, 500),
-      occurredAt: timestamp,
-      title: stringLength(0, 500),
-      summary: stringLength(0, 20000),
-      fields: recordFields,
-      bindings,
-      ...recordLinkFields,
-    },
-    ['type', 'channel', 'occurredAt'],
-  ),
   LoggedEvent: object(
     {
       id,
@@ -309,6 +226,7 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
       kind: choice('stated', 'inferred'),
       validFrom: timestamp,
       validTo: nullString,
+      status: factStatus,
       writtenBy: ref('Actor'),
       sources: array(
         object({ event: nullString, quote: nullString, internal: boolean }, ['event', 'quote']),
@@ -316,6 +234,7 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     },
     ['id', 'content', 'kind', 'validFrom', 'validTo', 'writtenBy', 'sources'],
   ),
+  HistoricalFact: { allOf: [ref('Fact'), object({ status: factStatus })] },
   Comment: object({
     id,
     record: id,
@@ -331,7 +250,7 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     name: text,
     kind: choice('table', 'board', 'calendar'),
     visibility: choice('private', 'workspace'),
-    position: integer,
+    position: number,
     filter: { type: ['object', 'null'], additionalProperties: true },
     sort: nullable(sort),
     columns: { type: ['object', 'null'], additionalProperties: true },
@@ -432,7 +351,7 @@ type Endpoint = {
   access: Access;
   description?: string;
   parameters?: ParameterObject[];
-  request?: { schema: Schema; example?: unknown; optional?: true };
+  request?: { example?: unknown; optional?: true };
   response: { schema?: Schema; example?: unknown; status?: number; description?: string };
   additionalResponses?: Record<string, ResponseObject>;
 };
@@ -458,6 +377,8 @@ function endpoint({
   response: success,
   additionalResponses,
 }: Endpoint) {
+  const requestSchema = requestSchemasByOperation[operationId];
+  if (request && !requestSchema) throw new Error(`Missing request schema for ${operationId}`);
   paths[path] ??= {};
   const pathParameters: ParameterObject[] = [...path.matchAll(/\{(\w+)\}/g)].map(([, name]) => ({
     in: 'path',
@@ -490,11 +411,11 @@ function endpoint({
     description: [description, accessText].filter(Boolean).join(' '),
     ...(access === 'public' ? { security: [] } : {}),
     parameters: [...pathParameters, ...parameters],
-    ...(request
+    ...(requestSchema
       ? {
           requestBody: {
-            required: !request.optional,
-            content: json(request.schema, request.example),
+            required: !request?.optional,
+            content: json(requestSchema, request?.example),
           },
         }
       : {}),
@@ -567,7 +488,7 @@ endpoint({
   summary: 'Create a record',
   access: 'write',
   parameters: [idempotency],
-  request: { schema: object(writeFields, ['values']), example: { values: { name: 'Acme' } } },
+  request: { example: { values: { name: 'Acme' } } },
   response: { status: 201, schema: ref('WriteResult') },
 });
 endpoint({
@@ -602,7 +523,6 @@ endpoint({
   description:
     'Set fields by API name. Supply expectedUpdatedAt to reject changes if the record has changed.',
   request: {
-    schema: object({ ...writeFields, expectedUpdatedAt: timestamp }, ['values']),
     example: { values: { name: 'Acme Ltd' }, source: evidenceId },
   },
   response: { schema: ref('WriteResult') },
@@ -615,7 +535,7 @@ endpoint({
   summary: 'Query records',
   access: 'read',
   description: 'Filter, sort, and page the records of a single object by workspace field names.',
-  request: { schema: ref('RecordQuery'), example: { filter: { name: 'Acme' }, limit: 10 } },
+  request: { example: { filter: { name: 'Acme' }, limit: 10 } },
   response: { schema: ref('RecordPage'), example: { records: [], nextCursor: null } },
 });
 endpoint({
@@ -628,7 +548,6 @@ endpoint({
   description:
     'Identify the record by ID or one unique field. Set ifMissing to create to add a record when there is no match.',
   request: {
-    schema: { ...object(upsertFields, []), ...upsertTarget },
     example: { id: simpleId, values: { name: 'Acme Ltd' }, ifMissing: 'fail' },
   },
   response: { schema: ref('WriteResult'), description: 'An existing record was found.' },
@@ -642,27 +561,6 @@ endpoint({
   summary: 'Write multiple records',
   access: 'write',
   description: 'Process records in order. Each item returns its own result or error.',
-  request: {
-    schema: object({
-      items: array(
-        {
-          ...object(
-            {
-              ...upsertFields,
-              object: text,
-              idempotencyKey: {
-                ...stringLength(1, 200),
-                description: 'For creates that supply neither id nor match.',
-              },
-            },
-            ['object'],
-          ),
-          ...upsertTarget,
-        },
-        { minItems: 1, maxItems: 50 },
-      ),
-    }),
-  },
   response: { schema: object({ results: array({ anyOf: [ref('WriteResult'), ref('Error')] }) }) },
 });
 endpoint({
@@ -673,21 +571,6 @@ endpoint({
   summary: 'Aggregate matching records',
   access: 'read',
   request: {
-    schema: object(
-      {
-        search: queryFields.search,
-        filter: queryFields.filter,
-        groupBy: text,
-        aggregates: array(
-          object({
-            field: text,
-            op: aggregateOperation,
-          }),
-          { maxItems: 50 },
-        ),
-      },
-      [],
-    ),
     example: { aggregates: [{ field: 'amount', op: 'sum' }] },
   },
   response: {
@@ -708,7 +591,6 @@ endpoint({
   description:
     'Log a conversation using an event type from your workspace. Reusing a channel and externalId returns the existing event and adds any new links.',
   request: {
-    schema: ref('LogEvent'),
     example: {
       type: 'conversation',
       channel: 'calendar',
@@ -733,7 +615,7 @@ endpoint({
   summary: 'Query across event types',
   access: 'read',
   description: 'Filter by shared event columns or event type, and page the results.',
-  request: { schema: ref('EventQuery'), example: { filter: { type: 'conversation' }, limit: 10 } },
+  request: { example: { filter: { type: 'conversation' }, limit: 10 } },
   response: { schema: ref('EventPage') },
 });
 endpoint({
@@ -754,13 +636,6 @@ endpoint({
   access: 'write',
   description: 'Add participants or records the event is about. Existing links are preserved.',
   request: {
-    schema: {
-      ...object({ ...recordLinkFields, bindings }, []),
-      anyOf: [
-        { required: ['participants'], properties: { participants: { minItems: 1 } } },
-        { required: ['about'], properties: { about: { minItems: 1 } } },
-      ],
-    },
     example: { about: [simpleId] },
   },
   response: { schema: { allOf: [ref('Record'), object({ added: ref('AddedLinks') })] } },
@@ -776,10 +651,6 @@ endpoint({
     'Cite the event a fact came from when it is available. The ID can also be workspace or me for a memory profile.',
   parameters: [idempotency],
   request: {
-    schema: object(
-      { text: stringLength(1, 5000), source: id, quote: stringLength(1, 5000), supersedes: id },
-      ['text'],
-    ),
     example: { text: 'Acme needs legal review before renewal.', source: evidenceId },
   },
   response: { status: 201, schema: object({ fact: ref('Fact') }) },
@@ -825,10 +696,6 @@ endpoint({
   access: 'read',
   description: 'Search workspace text. The limit applies separately to each result category.',
   request: {
-    schema: object(
-      { query: stringLength(1, 500), limit: bound(1, 50, 10), includeContext: boolean },
-      ['query'],
-    ),
     example: { query: 'Acme renewal', limit: 10 },
   },
   response: {
@@ -930,15 +797,6 @@ endpoint({
   access: 'schema:write',
   description:
     'Submit schema operations. Changes that need review are proposed for a workspace administrator.',
-  request: {
-    schema: object(
-      {
-        operations: array(object({ op: text }, ['op']), { minItems: 1, maxItems: 100 }),
-        reason: stringLength(0, 2000),
-      },
-      ['operations'],
-    ),
-  },
   response: {
     schema: schemaResult,
     description: 'The schema change was applied or made no changes.',
@@ -1023,7 +881,6 @@ const eventRetraction = {
   recomputedRecordIds: array(id),
   hiddenFactIds: array(id),
 };
-const optionalBindings = { schema: object({ bindings }, []), optional: true as const };
 endpoint({
   tag: 'Records',
   method: 'get',
@@ -1040,7 +897,6 @@ endpoint({
   operationId: 'get-bulk-delete-impact',
   summary: 'Preview the impact of several record deletions',
   access: 'read',
-  request: { schema: object({ ids: array(id, { minItems: 1, maxItems: 200 }) }) },
   response: { schema: object({ ids: array(id), records: impactedRecords }) },
 });
 endpoint({
@@ -1051,7 +907,7 @@ endpoint({
   summary: 'Soft-delete a record',
   access: 'write',
   description: 'For events, also retracts facts and field claims that depended on the event.',
-  request: optionalBindings,
+  request: { optional: true },
   response: {
     schema: object(
       { id, deleted: { const: true }, deletedRecordIds: array(id), ...eventRetraction },
@@ -1068,7 +924,6 @@ endpoint({
   access: 'write',
   description: 'The caller must act as a user. The ID in the URL identifies the survivor.',
   parameters: [idempotency],
-  request: { schema: object({ recordId: id, values: recordFields, bindings }, ['recordId']) },
   response: {
     schema: object({
       id,
@@ -1131,18 +986,6 @@ endpoint({
   description:
     'Use dryRun to preview the change. Applying a move requires a user with admin scope.',
   request: {
-    schema: object(
-      {
-        from: text,
-        to: text,
-        events: array(id, { minItems: 1, maxItems: 1000 }),
-        fields: map(text),
-        drop: array(text, { maxItems: 200 }),
-        defaults: recordFields,
-        dryRun: boolean,
-      },
-      ['from', 'to'],
-    ),
     example: { from: 'meeting', to: 'conversation', defaults: { medium: 'meeting' }, dryRun: true },
   },
   response: {
@@ -1165,7 +1008,7 @@ endpoint({
   operationId: 'delete-event',
   summary: 'Delete an event and retract its claims',
   access: 'write',
-  request: optionalBindings,
+  request: { optional: true },
   response: { schema: object({ id, deleted: { const: true }, ...eventRetraction }) },
 });
 for (const { suffix, operationId, summary } of [
@@ -1222,7 +1065,7 @@ endpoint({
   response: {
     schema: object({
       assertions: array(ref('Assertion')),
-      facts: array(ref('Fact')),
+      facts: array(ref('HistoricalFact')),
       nextCursors: object({ assertions: nullString, facts: nullString }),
     }),
   },
@@ -1318,7 +1161,6 @@ endpoint({
   summary: 'Create a saved view',
   access: 'write',
   request: {
-    schema: object(viewFields, ['name', 'kind']),
     example: { name: 'Pipeline', kind: 'table', visibility: 'workspace' },
   },
   response: { status: 201, schema: ref('SavedView') },
@@ -1340,7 +1182,7 @@ endpoint({
   summary: 'Update a saved view',
   access: 'write',
   description: 'Only fields included in the request are changed.',
-  request: { schema: object(viewFields, []), example: { name: 'Open deals' } },
+  request: { example: { name: 'Open deals' } },
   response: { schema: ref('SavedView') },
 });
 endpoint({
@@ -1371,7 +1213,6 @@ endpoint({
   },
 });
 const commentBody = {
-  schema: object({ body: stringLength(1, 10000) }),
   example: { body: 'Loop in legal before renewal.' },
 };
 endpoint({
@@ -1495,18 +1336,6 @@ endpoint({
   description:
     'Upload the bytes to the signed transfer URL, then finalize the file before referencing it.',
   parameters: [{ ...idempotency, required: true }],
-  request: {
-    schema: object(
-      {
-        name: text,
-        mediaType: text,
-        bytes: integer,
-        sha256: text,
-        sourceItemId: id,
-      },
-      ['name', 'mediaType', 'bytes', 'sha256'],
-    ),
-  },
   response: { status: 201, schema: object({ id, upload: ref('FileTransfer') }) },
 });
 endpoint({
@@ -1543,7 +1372,6 @@ endpoint({
   operationId: 'get-file-erasure-status',
   summary: 'Check file erasure jobs',
   access: 'admin',
-  request: { schema: object({ ids: array(id, { minItems: 1, maxItems: 10000 }) }) },
   response: {
     schema: object({
       pending: integer,
