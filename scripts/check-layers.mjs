@@ -68,6 +68,39 @@ const ACCOUNTS_ENTRIES = ['packages/server/src/index.ts', 'packages/server/src/l
  */
 const MODEL_IMPORTERS = ['api', 'extension-control', 'operator', 'lambda'];
 
+/**
+ * Only the agent loads Mastra (docs/specs/agent.md §4.3): packages/agent, and
+ * in the server the agent-sessions module and these entry files (the agent
+ * runtime's entries and the migration step that creates Mastra's tables).
+ * Importing @retainer/agent loads Mastra too.
+ */
+const MASTRA_SERVER_MODULES = ['agent-sessions'];
+const MASTRA_SERVER_FILES = [
+  'packages/server/src/index.ts',
+  'packages/server/src/lambda/agent.ts',
+  'packages/server/src/migrate.ts',
+  'packages/server/src/db/migrate.ts',
+];
+const MASTRA_PACKAGES = ['agent'];
+const loadsMastra = (specifier) => /^(@mastra\/|@retainer\/agent(\/|$))/.test(specifier);
+/**
+ * Mastra's Enterprise-licensed features (spec §3.3): anything from an `ee/`
+ * path, and the auth, FGA, RBAC, editor and agent-builder exports.
+ */
+const enterpriseMastra = (specifier) =>
+  /^@mastra\//.test(specifier) &&
+  (/(^|\/)ee(\/|$)/.test(specifier) ||
+    /^@mastra\/(auth|auth-[^/]+|editor|agent-builder|rbac|fga)(\/|$)/.test(specifier) ||
+    /^@mastra\/core\/(auth|editor|agent-builder|license|fga|rbac)(\/|$)/.test(specifier));
+const mastraProblems = (name, specifier, allowed) => [
+  ...(enterpriseMastra(specifier)
+    ? [`${name}: imports Mastra Enterprise code (${specifier}); see docs/specs/agent.md §3.3`]
+    : []),
+  ...(loadsMastra(specifier) && !allowed
+    ? [`${name}: only the agent may load Mastra (${specifier}); see docs/specs/agent.md §4.3`]
+    : []),
+];
+
 const layerOf = new Map(LAYERS.flatMap(([, modules], i) => modules.map((m) => [m, i])));
 const layerName = (module) => LAYERS[layerOf.get(module)][0];
 
@@ -159,6 +192,13 @@ for (const file of sourceFiles(SERVER)) {
     if (/^(better-auth|@better-auth\/)/.test(specifier) && from !== 'accounts') {
       problems.push(`${name}: only the accounts module may import ${specifier}`);
     }
+    problems.push(
+      ...mastraProblems(
+        name,
+        specifier,
+        MASTRA_SERVER_MODULES.includes(from) || MASTRA_SERVER_FILES.includes(name),
+      ),
+    );
     if (!specifier.startsWith('.')) continue;
     const target = resolve(file, specifier);
     if (!target?.startsWith(SERVER)) continue;
@@ -193,6 +233,9 @@ for (const cycle of cycles(fileGraph)) {
 for (const pkg of MIT_PACKAGES) {
   for (const file of sourceFiles(join(ROOT, 'packages', pkg, 'src'))) {
     for (const specifier of importsOf(file)) {
+      problems.push(
+        ...mastraProblems(relative(ROOT, file), specifier, MASTRA_PACKAGES.includes(pkg)),
+      );
       const absolute = normalize(join(dirname(file), specifier));
       if (
         specifier.startsWith('@retainer/server') ||

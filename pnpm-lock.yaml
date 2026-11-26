@@ -186,6 +186,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: 4.0.94
         version: 4.0.94(zod@4.6.7)
+      '@hono/node-server':
+        specifier: ^2.1.11
+        version: 2.1.11(hono@4.13.19)
       '@mastra/ai-sdk':
         specifier: 1.12.1
         version: 1.12.1(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))(zod@4.6.7)
@@ -198,6 +201,9 @@ importers:
       '@mastra/pg':
         specifier: 1.38.0
         version: 1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))
+      hono:
+        specifier: ^4.13.19
+        version: 4.13.19
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -311,6 +317,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: ^2.4.0
         version: 2.4.0
+      '@retainer/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@retainer/extension':
         specifier: workspace:*
         version: link:../extension

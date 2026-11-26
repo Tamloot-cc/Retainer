@@ -1,6 +1,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Claim, ReportAnswer, StepReport, ToolAnswer, TurnState } from '../src/api-client.js';
+import type {
+  Claim,
+  ReportAnswer,
+  StepReport,
+  ToolAnswer,
+  ToolPending,
+  TurnState,
+} from '../src/api-client.js';
 import { BASE_SYSTEM_PROMPT } from '../src/prompt.js';
 import type { PinnedTool } from '../src/tools.js';
 
@@ -47,7 +54,10 @@ export class FakeApi {
     action: 'continue',
   });
   reportStatus = 200;
-  toolAnswer: (name: string, input: unknown) => Promise<ToolAnswer> | ToolAnswer | 'fenced' = (
+  toolAnswer: (
+    name: string,
+    input: unknown,
+  ) => Promise<ToolAnswer | ToolPending> | ToolAnswer | ToolPending | 'fenced' = (
     _name,
     input,
   ) => ({ ok: true, output: { hits: [], echo: input } });

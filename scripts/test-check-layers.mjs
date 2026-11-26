@@ -65,3 +65,27 @@ test('the API and the Lambda entry points may import it', () => {
   });
   assert.equal(result.status, 0, result.stderr);
 });
+
+test('a server module outside the agent may not load Mastra', () => {
+  const result = check({
+    'records/agent.ts': "import { Agent } from '@mastra/core/agent';\nexport const x = Agent;\n",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /records\/agent\.ts: only the agent may load Mastra/);
+});
+
+test('the agent runtime entry may load Mastra', () => {
+  const result = check({
+    'lambda/agent.ts':
+      "import { createAgentApp } from '@retainer/agent/runtime';\nexport const x = createAgentApp;\n",
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('nothing may import Mastra Enterprise code', () => {
+  const result = check({
+    'lambda/agent.ts': "import { x } from '@mastra/core/auth';\nexport const y = x;\n",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /imports Mastra Enterprise code \(@mastra\/core\/auth\)/);
+});
