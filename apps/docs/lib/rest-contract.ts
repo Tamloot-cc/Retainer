@@ -280,9 +280,13 @@ endpoint({
   operationId: 'query-records',
   summary: 'Query records',
   access: 'read',
-  description: 'Filter, sort, and page the records of a single object by workspace field names.',
+  description:
+    'Filter, sort, and page one object by its workspace field names. The reserved object names event and events use the shared event columns and return an event page. Use POST /v1/events/query for the cross-type query schema.',
   request: { example: { filter: { name: 'Acme' }, limit: 10 } },
-  response: { schema: ref('RecordPage'), example: { records: [], nextCursor: null } },
+  response: {
+    schema: { anyOf: [ref('RecordPage'), ref('EventPage')] },
+    example: { records: [], nextCursor: null },
+  },
 });
 endpoint({
   tag: 'Records',

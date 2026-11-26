@@ -51,6 +51,12 @@ test('the cross-type event query exports its shared sort fields and event record
   assert.equal(schemas.EventPage.properties.records.items.$ref, '#/components/schemas/EventRecord');
   assert.ok(schemas.EventRecord.required.includes('type'));
   assert.ok(schemas.EventRecord.required.includes('event'));
+  const queryObject = contract.paths['/v1/objects/{object}/query'].post;
+  assert.deepEqual(queryObject.responses['200'].content['application/json'].schema.anyOf, [
+    { $ref: '#/components/schemas/RecordPage' },
+    { $ref: '#/components/schemas/EventPage' },
+  ]);
+  assert.match(queryObject.description, /POST \/v1\/events\/query/);
 });
 
 test('event claims require their historical fact status in the OpenAPI contract', async () => {
