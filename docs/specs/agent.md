@@ -240,6 +240,16 @@ spec:
     model's rules (§3.4, §3.5). Accepted: what a switch needs is worked
     out when one is wanted.
 
+Decided 2026-11-26 by the product owner, after PR 1's checks:
+
+- **Web search is `web_search_20250305`, and there is no web fetch yet.**
+  The only Anthropic key available belongs to a HIPAA-configured
+  organization, which refuses `web_fetch` in every version and code
+  execution, which `web_search_20260209`'s dynamic filtering needs. So
+  sessions pin `web_search_20250305` with `max_uses` 10, and no fetch tool,
+  until the key's organization allows them. Switching back to the
+  `20260209` tools is a later change (§3.4, §8.1).
+
 ### 2.1 Considered: the agent inside the model proxy
 
 The 2026-11-25 draft ran the agent inside the model proxy: one `model`
@@ -282,8 +292,8 @@ would be thrown away once suspend and resume exists.
 | Step and time limits                 | Built-in         | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, an `abortSignal` the runtime owns (§6.5)                                                                                                                        |
 | Retries                              | Built-in         | `maxRetries: 2`, the AI SDK's default: only requests that got no response (§10.2)                                                                                                                                       |
 | Tool call caps                       | Built on a hook  | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                                                                                                        |
-| Web search                           | Built-in, AI SDK | Anthropic's `web_search_20260209` as an AI SDK provider tool, with a constant `max_uses`. Not Mastra's `webSearchTool`, which sends the older `web_search_20250305`                                                     |
-| Web fetch                            | Built-in, AI SDK | Anthropic's `web_fetch_20260209` as an AI SDK provider tool, with a constant `max_uses`. Not Mastra's `webFetchTool`, which fetches from the agent runtime (§8)                                                         |
+| Web search                           | Built-in, AI SDK | Anthropic's `web_search_20250305` as an AI SDK provider tool, with a constant `max_uses`. Not `20260209`, which needs code execution (§2)                                                                               |
+| Web fetch                            | Later            | Refused for a HIPAA-configured organization (§2). Then Anthropic's `web_fetch`, never Mastra's `webFetchTool`, which fetches from the agent runtime                                                                     |
 | Retainer tools                       | Ours             | `createTool` over `@retainer/sdk` (§8)                                                                                                                                                                                  |
 | Storage                              | Built-in         | `@mastra/pg` (`MemoryPG`, `WorkflowsPG`) runs in the agent runtime, as the `mastra`-only role `retainer_mastra` (D8, §3.2)                                                                                              |
 | Resumable streams                    | Off              | They need a shared PubSub such as Redis. `durable: false`, and the handler keeps consuming when the client leaves; reconnecting reads the saved history (§6.5)                                                          |
@@ -426,9 +436,10 @@ own model (`routines.md` §4.5). What it means for the harness:
   a task's typed answer must use native structured output
   (`output_config.format`), not a forced tool. PR 2 checks which one
   Mastra's `structuredOutput` sends.
-- **Web tools** are the `20260209` versions, which filter results
-  dynamically. PR 1 checks that they work without a `container`. A long
-  server-tool step can stop with `pause_turn`.
+- **Web search** is `web_search_20250305` (§2): the `20260209` version
+  filters results dynamically with code execution, which a
+  HIPAA-configured organization refuses. There is no web fetch yet. A
+  long server-tool step can stop with `pause_turn`.
 - **Stop reasons.** The AI SDK maps `pause_turn` to an ordinary stop, and
   `max_tokens` and `model_context_window_exceeded` both to `length`.
   `onStepFinish` sees only that mapped reason, but Mastra's full stream
@@ -482,6 +493,9 @@ messages, and a change anywhere invalidates everything after it.
     schedules use (`routines.md` §7), or UTC when none is set.
     These server-added parts carry a marker, so the chat read endpoint
     (§6.1) and the stream show only what the person wrote.
+    The chat's context and a date count as told only once a turn that
+    carried them reports a step, which comes after its message is saved;
+    a turn that died before then hands them to the next one.
   - **History only grows** (§3.4). Nothing is injected into a request and
     removed from the next. A change mid-chat (an elevation, a removed
     extension) shows up as a tool's error result (§8.3).
@@ -535,12 +549,12 @@ messages, and a change anywhere invalidates everything after it.
 | The agent's model calls             | From the `agent` function to Anthropic                  | From the `agent` container to Anthropic                 |
 | The agent's store (`mastra` schema) | `agent` function, in the VPC, as `retainer_mastra` (D8) | `agent` container, as `retainer_mastra` (D8)            |
 | Model proxy                         | `model` function, unchanged                             | Server process, unchanged                               |
-| Web search and fetch                | At Anthropic, as server tools                           | Same                                                    |
+| Web search                          | At Anthropic, as a server tool                          | Same                                                    |
 
 The `agent` function and container hold one database credential, the
 `mastra`-only role (D8), and the Anthropic key (D6). They need no network
-beyond Postgres, Retainer's API and Anthropic, because web search and fetch
-run at Anthropic.
+beyond Postgres, Retainer's API and Anthropic, because web search runs at
+Anthropic.
 
 ### 4.3 Code layout
 
@@ -583,7 +597,7 @@ Ours, in Drizzle's schema like every other table:
 | Table            | Holds                                                                                                                                                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent_sessions` | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3) and system blocks (§3.5), the last date sent (§3.5), limits and use, created, last active       |
-| `agent_turns`    | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches and fetches, error code, durations, the Mastra run IDs the claim issued (§5.2). IDs and counts only |
+| `agent_turns`    | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches, error code, durations, the Mastra run IDs the claim issued (§5.2). IDs and counts only |
 
 Mastra's, in the `mastra` schema, created by `@mastra/pg`:
 
@@ -681,7 +695,13 @@ logs codes and metadata only.
 
 - **A chat** is kept until its person deletes it. It is private to them:
   admins see that it exists and its usage, not its content. Deleting a
-  chat cancels a running turn, then erases the session.
+  chat cancels a running turn and erases its content at once. If a turn
+  was running, the session row stays, marked deleted and without its
+  title, until that runtime has stopped or its deadline plus the grace has
+  passed: the turn stays fenced as `cancelled`, so the runtime's poll sees
+  the cancel and a step under way still counts (§6.5). Maintenance then
+  erases again, catching a step saved after the first erasure, and deletes
+  the row.
 - **A task's** messages are kept while the task runs, then for 7 days so a
   person can inspect it, then erased (below) by its session ID alone, the
   rule for routine run results (`routines.md` §6.6).
@@ -1079,8 +1099,7 @@ of the agent's.
 | ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------- |
 | `retainer.read`  | `search`, `query_records`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content` | Agent runtime, through the API     | Yes         | If listed              |
 | `retainer.write` | `upsert_record`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
-| `web.search`     | Anthropic's `web_search_20260209`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
-| `web.fetch`      | Anthropic's `web_fetch_20260209`, as an AI SDK provider tool                                                   | At Anthropic                       | Yes         | If listed              |
+| `web.search`     | Anthropic's `web_search_20250305`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
 | `tools.<name>`   | Extension tools declared `read` (`extensions-tools.md`)                                                        | Through Retainer, as their own job | `read` only | `read` only, if listed |
 
 - **Retainer's tools match the MCP tools** in name and behaviour, so the
@@ -1092,10 +1111,10 @@ of the agent's.
   again and a Retainer write may repeat (§8.4).
 - **A chat's extension tools** are the `read` tools installed in the
   workspace that the person's role allows when the chat is created (§8.3).
-- **Web fetch at Anthropic, not from the agent runtime.** Mastra's own
-  `webFetchTool` fetches from the process that runs the agent; Anthropic's
-  runs at Anthropic and can only open URLs already in the conversation. PR 1
-  checks that Anthropic's tool passes through Mastra as a provider tool.
+- **No web fetch yet** (§2). When it comes, it is Anthropic's, at
+  Anthropic, which can only open URLs already in the conversation; not
+  Mastra's `webFetchTool`, which fetches from the process that runs the
+  agent.
 - **Not in this spec:** extension `write` and `send` tools (D9, §6.4),
   Anthropic-side MCP servers (`mcp_servers`), code execution, files, and a
   person's own connected accounts such as Gmail (the member agent:
@@ -1120,7 +1139,7 @@ changed between turns would lose its earlier thinking, or get a `400`.
 - **Pinned at creation.** A session's tool definitions and their order are
   fixed when it is created and stored on the session: every tool its caller
   could use there, write tools included, even when a CLI chat starts
-  read-only (§6.7). The web tools carry a constant `max_uses` (§10.1).
+  read-only (§6.7). Web search carries a constant `max_uses` (§10.1).
 - **Authority at dispatch.** A tool is never removed to take access away.
   A tool the caller can't use now returns an error result that says why:
   `elevation_required`, `role` or `extension_removed`.
@@ -1165,7 +1184,7 @@ What may repeat:
 const { round } = await retainer.ai.agent({
   instructions: 'Find this company\'s latest funding round. Answer null if you are not sure.',
   input: { name: record.name, domain: record.domain },
-  tools: ['retainer.read', 'web.search', 'web.fetch'],
+  tools: ['retainer.read', 'web.search'],
   output: { /* JSON schema */ },
 });
 ```
@@ -1325,24 +1344,21 @@ real usage.
 | Output per step                    | 32,000 tokens        | 32,000 tokens   | `maxOutputTokens`                                        |
 | Tool calls                         | 200                  | 500             | `hooks.beforeToolCall`                                   |
 | Web searches                       | 30                   | 100             | Counted from each step's usage (§10.2)                   |
-| Web fetches                        | 30                   | 100             | Counted from each step's usage (§10.2)                   |
-| Searches or fetches in one request | 10 each              | 10 each         | The web tools' constant `max_uses`                       |
+| Searches in one request            | 10                   | 10              | Web search's constant `max_uses`                         |
 | Request size                       | The 1M-token context | Same            | Anthropic's refusal or context stop ends the turn (§5.5) |
 | Time                               | 14 minutes           | 14 minutes      | The turn's deadline (§6.3)                               |
 | Tasks per routine run              | n/a                  | 10              | The session API                                          |
 | Agent steps per person per day     | 2,000                | n/a             | Checked at claim, counted from step reports (§10.2)      |
 | Agent steps per workspace per day  | 20,000               | 20,000          | Checked at claim, counted from step reports (§10.2)      |
 
-**Web searches and fetches.** `max_uses` can't follow the turn's remaining
-allowance, because changing it changes the tool definitions (§8.3). So it
-stays at 10 on every request, and both web tools must carry it: Anthropic
-sets no default cap for web fetch, so the agent's web tools always set it
-(§8.3).
+**Web searches.** `max_uses` can't follow the turn's remaining allowance,
+because changing it changes the tool definitions (§8.3). So it stays at 10
+on every request. A web fetch tool, when it comes, must carry it too:
+Anthropic sets no default cap for web fetch.
 
 - **Counted after each step.** Each step's report adds the
   `server_tool_use` counts from its usage to the turn's totals. If they
-  are missing, the step counts as the full 10 of each web tool it carried;
-  a task without `web.fetch` is never counted for fetches.
+  are missing, a step that carried web search counts as the full 10.
 - **The bound.** `prepareStep` waits for the last report's answer before
   the next request (§10.2), so a turn can pass a cap by at most one step's
   allowance (10).
@@ -1380,7 +1396,7 @@ Anthropic workspace's monthly spend limit stays the hard backstop.
   `inputTokens − cachedInputTokens − cacheCreationInputTokens` (the AI
   SDK's `inputTokens` already includes cache reads and writes), cache
   reads `cachedInputTokens`, cache writes `cacheCreationInputTokens`,
-  output `outputTokens`, and web searches and fetches from
+  output `outputTokens`, and web searches from
   `providerMetadata.anthropic.usage.server_tool_use`. A zero stays zero;
   the full web allowance (§10.1) is charged only when a finished step's
   counts are missing. A step that failed (`onStepFinish` with an error and
@@ -1418,7 +1434,7 @@ its caller: the person, or the routine and run, or the installation and
 job. The extension model token's own `agent` kind
 (`extension-runtime/tokens.ts`), which nothing mints, is removed: the
 agent holds no model token (D6). A routine's or an extension's cost
-includes its tasks. Web search and fetch counts are in the stored `usage`
+includes its tasks. Web search counts are in the stored `usage`
 object already.
 
 ## 11. Hidden instructions
@@ -1450,7 +1466,7 @@ Unchanged (D6). It keeps serving extension and routine model calls as
 today. The agent doesn't use it: it calls Anthropic directly, with the
 request shape set in its own code. That code holds what a proxy list
 would have checked: the one model, no `fallbacks` (D1), no
-`context_management` (§3.5), and the web tools' constant `max_uses`
+`context_management` (§3.5), and web search's version and constant `max_uses`
 (§10.1). Its beta flags are the ones Mastra's bundled AI SDK sends, and
 `thinking-binding-controls-2026-08-01` for the history check's drop
 setting (§3.4).
@@ -1621,11 +1637,11 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - Step usage maps to the right columns: 40 uncached, 500 read and 20
   written in (`inputTokens` 560) are stored as 40, 500 and 20; zero web
   counts stay zero; a failed step's callback reports nothing.
-- Search and fetch counts add up across steps; the report
-  answers `stop` at the cap. A report with missing counts counts the full
-  allowance; a report that can't be made ends the turn.
-- A search-only task with a low fetch cap and missing usage is never
-  stopped on fetches.
+- Search counts add up across steps; the report answers `stop` at the
+  cap. A report with missing counts counts the full allowance; a report
+  that can't be made ends the turn.
+- Web search (`20250305`) runs on the HIPAA-configured key, and its
+  searches are counted.
 - A step report that arrives just after a cancel or the deadline, and one
   sent after a newer claim replaced its turn, counts once, against the
   session and the day, answers `stop`, and leaves the newer claim alone.
@@ -1706,8 +1722,7 @@ None. What a PR must prove is written where it applies, as "PR 1 checks"
 or "PR 2 checks":
 
 - thinking blocks and their signatures round-trip through Mastra (§3.4);
-- the web tools work without a `container` (§3.4), and through Mastra as
-  provider tools (§8.1);
+- web search works through Mastra as a provider tool (§3.4, §8.1);
 - that the raw stop reason reaches the full stream on every path, and
   whether `handleChatStream` lets the runtime read that stream (§3.4,
   §6.2);
@@ -1724,6 +1739,55 @@ or "PR 2 checks":
   decides the tail's TTL (§3.5);
 - which structured output Mastra's `structuredOutput` sends (§3.4), in
   PR 2.
+
+Checked in PR 1 (2026-11-26, Mastra 1.86.0, `@ai-sdk/anthropic` 4.0.94,
+against Anthropic with `packages/agent/test/live.test.ts` and the fake
+upstream in `test/turn.test.ts`):
+
+- **Thinking round-trips.** Mastra stores each thinking block as a
+  reasoning part with its signature and replays it unchanged; consecutive
+  request bodies are byte-identical up to the appended step or turn, and
+  later turns complete. Sonnet 5.5 at `medium` rarely thinks on short
+  prompts (none of ours did; `max` did), so the live check raises the
+  effort to get a block.
+- **Drop setting.** The bundled provider sends `thinking.block_binding`
+  with `prefix_mismatch_behavior: "drop_block"` and the beta
+  `thinking-binding-controls-2026-08-01`; Anthropic accepts it, and a turn
+  whose earlier user message was changed under a thinking block completes.
+- **Web tools on the available key.** Its Anthropic organization is
+  HIPAA-configured, which refuses `web_fetch` (every version) and code
+  execution, which `web_search_20260209`'s dynamic filtering needs: any
+  request carrying either tool is a `400`. So sessions pin
+  `web_search_20250305` and no fetch tool (decided, §2). Through the agent
+  on that key, a chat turn ran a real search and completed, and its
+  usage carried `server_tool_use.web_search_requests`, which the step
+  report counted.
+- **Raw stop reasons.** Each step's raw reason is on the full stream's
+  `step-finish` (`tool_use`, `end_turn` live; `max_tokens`,
+  `model_context_window_exceeded`, `pause_turn`, `refusal` and a missing
+  reason with the fake upstream). The runtime calls `stream()` and
+  `toAISdkStream` itself and reads `fullStream` beside it;
+  `handleChatStream` isn't used, since it hides the full stream.
+- **No resend after the stream starts.** Mastra's own retry layers are off
+  (the Agent's `maxRetries: 0`, `errorProcessorDefaults: false`, which
+  also drops its default stream-error retry that resent a broken stream);
+  the AI SDK's `maxRetries: 2` goes per step through `prepareStep`. A
+  persistent 529 sends three requests; a stream cut after it started sends
+  one.
+- **Tables.** A turn writes `mastra_threads` and `mastra_messages` only
+  (`thread_id`, `resource_id`, both the session ID). No `workflows` row is
+  written without approvals, so that domain is left out (§5.1): the store
+  has the `memory` domain only.
+- **Cache.** Within a turn, each step reads the previous step's whole
+  input. Between turns, a turn after one with no thinking reads the whole
+  chat; a turn after one whose steps carried thinking read only up to that
+  turn's first user message and rewrote the rest once, although the
+  request bodies were identical, so the change is in how Anthropic treats
+  an earlier turn's thinking. Accepted as one rewrite per such turn. The
+  gap between turns needs real chats; the step reports' times give it, and
+  the tail stays on 5 minutes until then.
+- **Not checked here:** the VPC-attached function URL (§13), which needs
+  the hosted deploy.
 
 Answered 2026-11-25:
 

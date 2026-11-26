@@ -324,7 +324,7 @@ describe('API-key lookup', () => {
 describe('SECURITY DEFINER functions', () => {
   // Every way around RLS is listed here (ARCHITECTURE.md 7.2, accounts spec
   // 7.4). Adding one means adding it here, on purpose, with a review.
-  const ALLOWED: Record<string, string | null> = {
+  const ALLOWED: Record<string, string | string[] | null> = {
     retainer_adopt_extension_secret: RUNTIME_ROLE,
     retainer_member_pending_secrets: RUNTIME_ROLE,
     retainer_connection_secret_names: RUNTIME_ROLE,
@@ -376,6 +376,14 @@ describe('SECURITY DEFINER functions', () => {
     retainer_token_workspaces: RUNTIME_ROLE,
     retainer_workspaces_due: RUNTIME_ROLE,
     retainer_workspace_extension_cleanup_pending: 'retainer_control',
+    // The workspace agent (agent spec §5.4, §6.7): a person's access for a
+    // chat turn, the erasure of a workspace's stored agent content (chat
+    // delete and retention as the runtime role, the purge as control), the
+    // orphan sweep, and the maintenance discovery.
+    retainer_agent_access: RUNTIME_ROLE,
+    retainer_erase_agent_content: ['retainer_control', RUNTIME_ROLE],
+    retainer_sweep_agent_orphans: RUNTIME_ROLE,
+    retainer_agent_maintenance_due: 'retainer_executor',
   };
 
   it('exist only on the reviewed list, each fixing its search_path and execution role', async () => {
@@ -389,7 +397,8 @@ describe('SECURITY DEFINER functions', () => {
     expect(rows.map((r) => r.name)).toEqual(Object.keys(ALLOWED).sort());
     for (const row of rows) {
       expect(row.config, row.name).toContain('search_path=pg_catalog, pg_temp');
-      expect(row.grantees, row.name).toEqual(ALLOWED[row.name] ? [ALLOWED[row.name]] : []);
+      const allowed = ALLOWED[row.name];
+      expect([...row.grantees].sort(), row.name).toEqual(allowed ? [allowed].flat().sort() : []);
     }
   });
 });

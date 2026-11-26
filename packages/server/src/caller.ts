@@ -16,6 +16,10 @@ export type Caller = {
   installation?: InstallationBinding;
   /** A routine run's credential (routines spec §3.3); never reaches personal memory. */
   routine?: RoutineCaller;
+  /** A workspace agent turn's credential (agent spec §7.3): writes re-check the turn. */
+  agent?: AgentBinding;
+  /** The API key the request came with, by its hash: a chat minted from it re-checks it (agent spec §7.3). */
+  apiKey?: { hash: string };
   scopes: readonly ApiKeyScope[];
   /** The signed-in person, in accounts mode. */
   userId?: string;
@@ -49,7 +53,22 @@ export type PersonCheck =
   | { kind: 'session'; token: string }
   | { kind: 'oauth'; subject: string; workspace: string; client: string }
   | ({ kind: 'cli' } & CliIdentity)
-  | { kind: 'key'; hash: string };
+  | { kind: 'key'; hash: string }
+  /** A workspace agent chat's person (agent spec §7.1): their membership, through `retainer_agent_access`. */
+  | { kind: 'agent'; userId: string };
+
+/**
+ * One claimed turn of a workspace agent session (agent spec §6.3). Writes
+ * re-check it in their own transaction: a cancelled, timed-out or replaced
+ * turn writes nothing more. A turn minted from the CLI login also needs that
+ * login's elevation for each write (§6.7).
+ */
+export type AgentBinding = {
+  sessionId: string;
+  turnId: string;
+  generation: number;
+  cli?: CliIdentity;
+};
 
 /** Only a `user` actor with `admin` scope is a human approval (3). */
 export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope[]): boolean {

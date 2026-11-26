@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { LAST_SIGN_IN_COOKIE } from '@retainer/shared';
 import type { Hono } from 'hono';
 import { createAccountsServer } from '../../src/accounts/index.js';
-import { createApp } from '../../src/api/app.js';
+import { type AppDeps, createApp } from '../../src/api/app.js';
 import { CONTROL_ROLE, loadConfig } from '../../src/config.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
 import type { ExtensionCatalog } from '../../src/extensions/catalog.js';
@@ -77,6 +77,8 @@ export function startAccountsApp(
     hostedOnboarding?: boolean;
     extensionCatalog?: ExtensionCatalog;
     fileStorage?: FileStorage;
+    /** Turns the workspace agent's routes on (agent spec §6.1). */
+    agent?: AppDeps['agent'];
   } = {},
 ): AccountsTestApp {
   const config = loadConfig({
@@ -134,6 +136,7 @@ export function startAccountsApp(
     accountsSecret: AUTH_SECRET,
     ...(options.extensionCatalog ? { extensionCatalog: options.extensionCatalog } : {}),
     ...(options.fileStorage ? { fileStorage: options.fileStorage } : {}),
+    ...(options.agent ? { agent: options.agent } : {}),
   });
 
   /** Better Auth's sign-in, as a page starts it. */

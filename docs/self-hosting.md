@@ -107,6 +107,25 @@ over HTTPS; Secure cookies require it. Revoking the key ends access at once.
 In [accounts mode](#accounts-mode) people sign in with Google, Microsoft or a
 passkey instead, and each workspace has its own address, `/app/w/<slug>/`.
 
+## The workspace agent
+
+The workspace agent (a chat in the web app and `retainer agent chat`) runs
+in a container of its own, added by an overlay:
+
+```sh
+ANTHROPIC_API_KEY=... \
+RETAINER_AGENT_RUNTIME_SECRET=$(openssl rand -hex 32) \
+RETAINER_MASTRA_PASSWORD=$(openssl rand -hex 16) \
+docker compose -f docker/compose.yml -f docker/compose.agent.yml up -d
+```
+
+Put the three values in an `.env` file next to the Compose files to keep
+them. The agent's only database login is the `retainer_mastra` role, which
+reaches the `mastra` schema (its chats) and nothing else; it reads and writes
+Retainer's data through the API, with the person's access. The server
+forwards each chat's stream to it, so the web app keeps one origin. The agent
+calls Anthropic with your key; web search and fetch run at Anthropic.
+
 ## Accounts mode
 
 By default Retainer runs in key mode: everyone, people included, uses an API

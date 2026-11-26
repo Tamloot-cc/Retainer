@@ -4,6 +4,7 @@ import { createApp } from './api/app.js';
 import {
   accountsMode,
   accountsOrigin,
+  agentApiConfig,
   loadConfig,
   ownerDatabaseUrl,
   rateLimitPerMinute,
@@ -24,6 +25,14 @@ import { rebuildSearchText } from './records/rebuild-search.js';
 import { startWorker } from './worker/index.js';
 import { startPurger } from './worker/purge.js';
 import { upgradeWorkspaces } from './workspaces/upgrade.js';
+
+// The agent runtime (docs/specs/agent.md §4.3, §13) runs alone: it opens no
+// pool but the `mastra` role's and runs no migrations, so it branches before
+// anything below loads the configuration or connects as the owner.
+if (process.env.RETAINER_ROLE === 'agent') {
+  const { serveAgentRuntime } = await import('@retainer/agent/runtime');
+  await serveAgentRuntime();
+}
 
 const config = loadConfig();
 setLogLevel(config.LOG_LEVEL);
@@ -125,6 +134,7 @@ if (role === 'api' || role === 'all' || role === 'control' || role === 'extensio
             upstream: config.RETAINER_MODEL_UPSTREAM_ORIGIN,
           },
           modelUsageSecret: config.RETAINER_MODEL_USAGE_SECRET,
+          agent: agentApiConfig(config),
           routines: {
             available: extensions.routinesAvailable,
             modelAvailable: !!(config.RETAINER_MODEL_API_KEY || config.RETAINER_MODEL_ORIGIN),

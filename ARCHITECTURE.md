@@ -803,6 +803,13 @@ every unfinished routine run, queued or in flight, so its next effect is
 refused and it ends as `erased` (`routine-runtime/admission.ts`,
 [routines.md](docs/specs/routines.md) §6.6).
 
+`forget` doesn't reach the workspace agent's sessions
+([agent.md](docs/specs/agent.md) §5.4). A chat's stored history goes only by
+its own lifecycle: its person deleting it, a task's 7-day retention, and the
+hard workspace purge, which erases it in the transaction that deletes the
+workspace. Content from a forgotten record can stay in a chat until its
+person deletes it.
+
 How this is built:
 
 - **Who.** `forget` needs the `admin` scope and a `user` actor; an agent
@@ -2119,6 +2126,7 @@ a pool of its own.
 | `packages/mcp`       | MIT      | stdio bridge to the hosted MCP endpoint                                  |
 | `packages/extension` | MIT      | Build-time contracts for extensions (`@retainer/extension`)              |
 | `packages/runner`    | MIT      | Runs first-party extension functions and routine code in fresh processes |
+| `packages/agent`     | MIT      | The workspace agent: Mastra's loop, its store, tools and the chat stream |
 | `plugins/retainer`   | MIT      | Claude Code plugin: the MCP server and a Stop hook that logs from chats  |
 | `docker/`            | AGPL-3.0 | Dockerfile and Compose file                                              |
 | `docs/`              | AGPL-3.0 | Guides, plus design records in `specs/` and `research/`                  |
@@ -2128,14 +2136,14 @@ a pool of its own.
 Each server module in `packages/server/src` belongs to a layer and imports only
 from its own layer and the ones below it:
 
-| Layer      | Modules                                                                                                                                              | Holds                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Entry      | `index`, `cli`, `migrate`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                                        | Starting the server, the CLI and the Lambda functions                             |
-| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`                       | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
-| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`, `routines`                                                                                 | Changing a schema, creating workspaces, extensions and routines                   |
-| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                                            | Built on records and memory                                                       |
-| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                                        | The write rules                                                                   |
-| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `routine-runtime`, `file-storage` | The database and reading a schema                                                 |
+| Layer      | Modules                                                                                                                                                               | Holds                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Entry      | `index`, `cli`, `migrate`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                                              | Starting the server, the CLI and the Lambda functions                             |
+| Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`                                        | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
+| Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`, `routines`, `agent-sessions`                                                                                | Changing a schema, creating workspaces, extensions and routines; agent sessions   |
+| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                                                             | Built on records and memory                                                       |
+| Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                                                         | The write rules                                                                   |
+| Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `routine-runtime`, `agent-runtime`, `file-storage` | The database and reading a schema                                                 |
 
 The schema engine sits above the records because a schema change rewrites
 records and views, while records only need to read a schema: `schema` holds the
@@ -2146,7 +2154,14 @@ when a new module has no layer. It also refuses MIT packages importing server
 code, and lets only `api`, `extension-control`, `operator` and `lambda` import
 `model`, the proxy for extension model calls
 ([extensions-model-calls.md](docs/specs/extensions-model-calls.md) §3.5).
-Retainer's core never calls a model.
+Retainer's core never calls a model. The workspace agent's server modules,
+`agent-runtime` (tokens, the turn lease, the erasure of stored agent content)
+and `agent-sessions` (the session API and runtime routes), are never imported
+by the core: `forget` doesn't reach agent sessions
+([agent.md](docs/specs/agent.md) §5.4). The agent itself runs in
+`packages/agent`, outside the server, in its own `agent` function or
+container, and connects to Postgres only as `retainer_mastra`, a role that
+reaches the `mastra` schema and nothing else.
 
 ## 9. Stack
 

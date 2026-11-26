@@ -14,11 +14,12 @@ COPY packages/extension/package.json ./packages/extension/
 COPY packages/sdk/package.json ./packages/sdk/
 COPY packages/mcp/package.json ./packages/mcp/
 COPY packages/runner/package.json ./packages/runner/
+COPY packages/agent/package.json ./packages/agent/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 RUN pnpm install --frozen-lockfile
 COPY packages ./packages
-RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
+RUN pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/agent build && pnpm --filter @retainer/web build && pnpm --filter @retainer/server build
 RUN pnpm --filter @retainer/server deploy --legacy --prod /out
 
 FROM node:${NODE_VERSION}-slim
@@ -36,5 +37,6 @@ RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/retai
 RUN mkdir -p /data/files && chown node:node /data/files
 USER node
 EXPOSE 8787
-# Applies pending migrations, then starts the role set by RETAINER_ROLE.
+# Applies pending migrations, then starts the role set by RETAINER_ROLE. The
+# agent container overrides it: it runs no migrations (docs/specs/agent.md §4.3).
 CMD ["sh", "-c", "node dist/migrate.js && node dist/index.js"]

@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { migrateAgentStore } from './agent-runtime/store-migration.js';
 import { loadConfig, ownerDatabaseUrl } from './config.js';
 import { createSql } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
@@ -10,7 +11,11 @@ async function main(reportOnly: boolean) {
   const config = loadConfig();
   const url = ownerDatabaseUrl(config);
   const catalog = parseExtensionCatalog(config.RETAINER_EXTENSION_CATALOG);
-  if (!reportOnly) await runMigrations(url);
+  if (!reportOnly) {
+    await runMigrations(url);
+    // Mastra's tables for the workspace agent, after Drizzle's (agent spec §5.2).
+    await migrateAgentStore(url);
+  }
   const sql = createSql(url, { max: 1 });
   try {
     const report = await migrateExtensionBindings(sql, catalog, reportOnly);

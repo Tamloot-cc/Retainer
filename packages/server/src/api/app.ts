@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { OAUTH_SCOPES, pinnedMcpAddress, ROUTINE_LIMITS } from '@retainer/shared';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
+import { AgentSessions } from '../agent-sessions/service.js';
 import { admitCliRoutes } from '../auth/cli-routes.js';
 import { authenticate } from '../auth/middleware.js';
 import { cliOAuthSettings, installationOAuthSettings, oauthSettings } from '../auth/oauth-token.js';
@@ -13,7 +14,7 @@ import { ExtensionQueue } from '../extension-runtime/queue.js';
 import type { SecretBroker } from '../extension-runtime/secrets.js';
 import type { RunTokens } from '../extension-runtime/tokens.js';
 import { MODEL_PROXY_PATH } from '../extension-runtime/tokens.js';
-import type { ExtensionCatalog } from '../extensions/catalog.js';
+import { ExtensionCatalog } from '../extensions/catalog.js';
 import type { ExtensionOAuthClients } from '../extensions/oauth-clients.js';
 import { Extensions } from '../extensions/service.js';
 import type { FileStorage } from '../file-storage/contract.js';
@@ -21,6 +22,7 @@ import { Files } from '../files/service.js';
 import { maintenanceResponse, readOnlyViolation } from '../http/maintenance.js';
 import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
+import { agentToolHost } from '../mcp/agent-tools.js';
 import { hostedSetup } from '../mcp/hosted-setup.js';
 import { mcpRoute, PINNED_MCP_ROUTE } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
@@ -29,6 +31,7 @@ import { Routines } from '../routines/service.js';
 import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
 import { admitRestrictedApi, admitRestrictedCredential } from './restricted.js';
+import { agentChatRoutes, agentRuntimeRoutes, agentStreamForward } from './routes/agent.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
 import { extensionDataRoutes } from './routes/extension-data.js';
@@ -87,6 +90,23 @@ export type AppDeps = {
    * process serves the model proxy with a key, or a hosted `model` function's
    * origin is set.
    */
+  /**
+   * The workspace agent (agent spec §6.1, §13): chats and the runtime routes.
+   * Off without the runtime credential.
+   */
+  agent?: {
+    runtimeSecret?: string | undefined;
+    /** Hosted: the agent function URL's origin, where clients stream. */
+    origin?: string | undefined;
+    /** Self-hosted: the agent container this server forwards the stream to. */
+    upstream?: string | undefined;
+    /** The `retainer_mastra` login for the chat read endpoint. */
+    readStoreUrl?: string | undefined;
+    personDailySteps?: number;
+    workspaceDailySteps?: number;
+    /** How long one extension tool request waits before answering `pending`. */
+    extensionWaitMs?: number;
+  };
   routines?: {
     available?: boolean;
     modelAvailable?: boolean;
@@ -95,6 +115,11 @@ export type AppDeps = {
     modelCallsPerDay?: number;
   };
 };
+
+/** Extension `read` tools for agent sessions run as jobs on the extension queue (agent spec §8.1). */
+function agentExtensions(sql: Sql, catalog: ExtensionCatalog) {
+  return { catalog: catalog.runtime, queue: new ExtensionQueue(sql, catalog.runtime) };
+}
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<AppEnv>();
@@ -124,6 +149,31 @@ export function createApp(deps: AppDeps) {
       return c.json({ status: 'error', version: VERSION, database: 'unreachable' }, 503);
     }
   });
+
+  // Before /v1's authentication: these routes take their own credentials.
+  const agent = deps.agent?.runtimeSecret
+    ? new AgentSessions(
+        deps.sql,
+        agentToolHost(deps.sql, {
+          extensionCatalog: deps.extensionCatalog,
+          extensionActivation: deps.extensionActivation,
+          fileStorage: deps.fileStorage,
+          fileQuota: deps.fileQuota,
+        }),
+        {
+          runtimeSecret: deps.agent.runtimeSecret,
+          agentOrigin: deps.agent.origin,
+          readStoreUrl: deps.agent.readStoreUrl,
+          personDailySteps: deps.agent.personDailySteps ?? 2000,
+          workspaceDailySteps: deps.agent.workspaceDailySteps ?? 20000,
+          keys: !deps.accountsSecret,
+          extensionWaitMs: deps.agent.extensionWaitMs,
+        },
+        agentExtensions(deps.sql, deps.extensionCatalog ?? new ExtensionCatalog()),
+      )
+    : undefined;
+  if (agent) agentRuntimeRoutes(app, agent);
+  if (!deps.agent?.origin) agentStreamForward(app, agent ? deps.agent?.upstream : undefined);
 
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
@@ -162,6 +212,7 @@ export function createApp(deps: AppDeps) {
   commentRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
+  agentChatRoutes(v1, agent, publicOrigin);
   const extensions = new Extensions(
     deps.sql,
     deps.extensionCatalog,

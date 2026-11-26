@@ -1,6 +1,7 @@
 import { PINNED_MCP_PATH } from '@retainer/shared';
+import { eraseAgentContent } from '../agent-runtime/erasure.js';
 import { RUNTIME_ROLE, type Sql } from '../db/client.js';
-import { inWorkspaceTransaction, lockSchemaShared, type Tx } from '../db/tx.js';
+import { inWorkspaceTransaction, lockSchemaShared, setScope, type Tx } from '../db/tx.js';
 import { getWorkspace, type Workspace } from '../db/workspaces.js';
 import { AppError } from '../errors.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
@@ -21,6 +22,9 @@ import { log } from '../log.js';
  * removal waits for that cleanup to finish or pass its deadline, and never
  * longer. Restoring the workspace does not reinstall them.
  */
+
+/** The purge found the workspace restored or not yet due: its transaction rolls back. */
+class KeptWorkspace extends Error {}
 
 /** Days between deleting a workspace and removing it for good. */
 export const DELETION_GRACE_DAYS = 7;
@@ -125,20 +129,32 @@ export async function purgeDeletedWorkspaces(sql: Sql): Promise<PurgeReport> {
         log.warn(
           `Deleted workspace ${id}: ${cleanup.unfinished} extension cleanup(s) did not finish by their deadline; provider webhooks may remain registered. Removing it anyway.`,
         );
-      const deleted = await sql.begin(async (tx) => {
-        await lockSchemaShared(tx, id);
-        const gone = await tx`
-          delete from workspaces
-          where id = ${id}
-            and deletion_scheduled_at <= now() - make_interval(days => ${DELETION_GRACE_DAYS})
-            and not retainer_workspace_extension_cleanup_pending(${id}::uuid)
-          returning 1`;
-        // The address pinned to it was an OAuth resource (accounts spec 4.7);
-        // its client links cascade.
-        if (gone.length > 0)
+      const deleted = await sql
+        .begin(async (tx) => {
+          await lockSchemaShared(tx, id);
+          // Mastra's tables have no workspace column, so the cascade can't
+          // reach the agent's stored chats (agent spec §5.4): they are erased
+          // first, while the session rows that map them still exist. If the
+          // delete then finds the workspace restored or not yet due, the
+          // whole transaction rolls back, erasure included.
+          await setScope(tx as unknown as Tx, id);
+          await eraseAgentContent(tx as unknown as Tx, id, null);
+          const gone = await tx`
+            delete from workspaces
+            where id = ${id}
+              and deletion_scheduled_at <= now() - make_interval(days => ${DELETION_GRACE_DAYS})
+              and not retainer_workspace_extension_cleanup_pending(${id}::uuid)
+            returning 1`;
+          if (gone.length === 0) throw new KeptWorkspace();
+          // The address pinned to it was an OAuth resource (accounts spec 4.7);
+          // its client links cascade.
           await tx`delete from oauth_resources where identifier like ${`%${PINNED_MCP_PATH}${id}`}`;
-        return gone;
-      });
+          return gone;
+        })
+        .catch((error: unknown) => {
+          if (error instanceof KeptWorkspace) return [];
+          throw error;
+        });
       report.purged += deleted.length;
     } catch (error) {
       report.failed += 1;

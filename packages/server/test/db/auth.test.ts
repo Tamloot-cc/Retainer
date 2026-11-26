@@ -57,7 +57,13 @@ describe('authentication', () => {
     const res = await call('/v1/whoami', readKey);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      caller: { workspaceId, scopes: ['read'], actor: { type: 'agent', id: 'reader' } },
+      caller: {
+        workspaceId,
+        scopes: ['read'],
+        actor: { type: 'agent', id: 'reader' },
+        // Which key, by its stored hash: a chat opened with it follows it (agent spec §6.7).
+        apiKey: { hash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      },
       transaction: { ws: workspaceId, role: RUNTIME_ROLE },
     });
   });
