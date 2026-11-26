@@ -1364,8 +1364,8 @@ Anthropic sets no default cap for web fetch.
   allowance (10).
 
 **A task job delivered again** after a crash (§9.3) gets the task's
-remaining steps and web allowance from its claim, since step reports are
-counted per session. Its tool-call cap starts over (accepted).
+remaining steps, tool calls and web allowance from its claim, since step
+reports are counted per session.
 
 A task's caller may pass lower limits. Self-hosted operators set the daily
 numbers with environment variables. On the hosted service the Anthropic

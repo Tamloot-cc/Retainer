@@ -292,6 +292,8 @@ export async function completeTask(tx: Tx, sessionId: string, result: TaskResult
         release_digest: string;
         function_id: string;
         input: unknown;
+        change_snapshot: unknown;
+        source_item_id: string | null;
         input_hash: string;
         cause: string[];
         cause_depth: number | null;
@@ -303,11 +305,13 @@ export async function completeTask(tx: Tx, sessionId: string, result: TaskResult
       returning *`;
     if (parent)
       await tx`insert into extension_jobs (workspace_id, installation_id, connection_id, connection_generation,
-          generation, release_digest, function_id, input, trigger_kind, input_hash, dedupe_key, cause,
-          cause_depth, agent_task_id, expires_at)
+          generation, release_digest, function_id, input, change_snapshot, source_item_id, trigger_kind,
+          input_hash, dedupe_key, cause, cause_depth, agent_task_id, expires_at)
         values (${task.workspace_id}, ${parent.installation_id}, ${parent.connection_id},
           ${parent.connection_generation}, ${parent.generation}, ${parent.release_digest},
-          ${parent.function_id}, ${tx.json(jsonValue(parent.input))}, ${parent.trigger_kind},
+          ${parent.function_id}, ${tx.json(jsonValue(parent.input))},
+          ${parent.change_snapshot === null ? null : tx.json(jsonValue(parent.change_snapshot))},
+          ${parent.source_item_id}, ${parent.trigger_kind},
           ${parent.input_hash}, ${`agent-result:${sessionId}`}, ${tx.json(parent.cause)},
           ${parent.cause_depth}, ${sessionId},
           greatest(${parent.expires_at}::timestamptz, clock_timestamp() + interval '1 hour'))

@@ -9,6 +9,8 @@ import { cancelRuns } from '../../src/extension-runtime/locks.js';
 import { ExtensionQueue } from '../../src/extension-runtime/queue.js';
 import type { RunTokens } from '../../src/extension-runtime/tokens.js';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { eraseExtensionState } from '../../src/privacy/extension-erasure.js';
+import { eraseRoutineContent } from '../../src/routine-runtime/admission.js';
 import { pauseRoutine } from '../../src/routines/runs.js';
 import { RoutineExecutor } from '../../src/worker/routines.js';
 import { RUNTIME_SECRET } from '../helpers/agent.js';
@@ -196,7 +198,7 @@ async function claimJob(s: Setup, taskId: string) {
         tools: { name: string }[];
       };
       task: { firstMessage: string; outputSchema: unknown; repaired: boolean };
-      limits: { maxSteps: number };
+      limits: { maxSteps: number; maxToolCalls: number };
     };
   };
 }
@@ -207,14 +209,14 @@ const close = (s: Setup, id: string, turnToken: string, body: Record<string, unk
     body: { errorCode: null, durationMs: 1000, ...body },
   });
 
-const report = (s: Setup, id: string, turnToken: string, stepId: string) =>
+const report = (s: Setup, id: string, turnToken: string, stepId: string, toolCalls = 0) =>
   s.app.request(`${runtimeBase(id)}/report`, {
     key: turnToken,
     body: {
       stepId,
       usage: { input: 40, cacheRead: 0, cacheWrite: 0, output: 7 },
       webSearches: 0,
-      toolCalls: 0,
+      toolCalls,
       finishReason: 'tool-calls',
     },
   });
@@ -375,7 +377,7 @@ describe('agent tasks from a routine', () => {
     const first = await claimJob(s, taskId);
     expect(first.body.limits.maxSteps).toBe(100);
     for (const step of ['s1', 's2', 's3'])
-      expect((await report(s, taskId, first.body.turnToken, step)).status).toBe(200);
+      expect((await report(s, taskId, first.body.turnToken, step, 2)).status).toBe(200);
     // The delivery dies: its turn runs past its deadline and grace, and its
     // lease runs out.
     await db.owner`update agent_turns set deadline = now() - interval '5 minutes' where session_id = ${taskId}`;
@@ -383,12 +385,61 @@ describe('agent tasks from a routine', () => {
     const second = await claimJob(s, taskId);
     expect(second.status, JSON.stringify(second.body)).toBe(200);
     expect(second.body.limits.maxSteps).toBe(97);
+    // The tool-call allowance is the whole task's too.
+    expect(second.body.limits.maxToolCalls).toBe(first.body.limits.maxToolCalls - 6);
     expect(second.body.session.firstTurn).toBe(false);
     const late = await report(s, taskId, first.body.turnToken, 's3');
     expect(late.status).not.toBe(200);
     const [{ steps } = { steps: 0 }] = await db.owner<{ steps: number }[]>`
       select coalesce(sum(steps), 0)::int as steps from agent_turns where session_id = ${taskId}`;
     expect(steps).toBe(3);
+  });
+
+  it('ends a task whose steps ran out when its job comes back, and the ending sticks', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    await db.owner`update agent_sessions set limits = limits || '{"maxSteps": 2}' where id = ${taskId}`;
+    const first = await claimJob(s, taskId);
+    for (const step of ['s1', 's2']) await report(s, taskId, first.body.turnToken, step);
+    await db.owner`update agent_turns set deadline = now() - interval '5 minutes' where session_id = ${taskId}`;
+    await db.owner`update agent_tasks set lease_until = now() - interval '1 second' where session_id = ${taskId}`;
+    const second = await claimJob(s, taskId);
+    expect(second.status).toBe(429);
+    const [task] = await db.owner<{ state: string; code: string }[]>`
+      select state, code from agent_tasks where session_id = ${taskId}`;
+    expect(task).toMatchObject({ state: 'failed', code: 'limit_reached' });
+    expect(await s.effect(runId)).toMatchObject({ state: 'failed', code: 'limit_reached' });
+  });
+
+  it('ends a task that expired before its delivery claimed, and the ending sticks', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    s.delivered.length = 0;
+    await s.dispatcher.tick();
+    const delivery = s.delivered.find((d) => d.sessionId === taskId);
+    await db.owner`update agent_tasks set expires_at = now() - interval '1 second' where session_id = ${taskId}`;
+    const claim = await s.app.request(`${runtimeBase(taskId)}/claim`, {
+      key: RUNTIME_SECRET,
+      body: { job: delivery?.jobToken },
+    });
+    expect(claim.status).toBe(409);
+    expect(await s.effect(runId)).toMatchObject({ state: 'failed', code: 'timed_out' });
+  });
+
+  it('cancels a waiting run’s task when forget erases routine content', async () => {
+    const s = await setup();
+    const { runId, taskId } = await s.park();
+    await inWorkspace(s.app.sql, s.workspace, (tx) => eraseRoutineContent(tx, s.workspace));
+    expect(await s.run(runId)).toMatchObject({ status: 'erased' });
+    const [task] = await db.owner<{ state: string; code: string; input: unknown }[]>`
+      select state, code, input from agent_tasks where session_id = ${taskId}`;
+    expect(task).toMatchObject({ state: 'cancelled', code: 'run_erased', input: null });
+    // A late answer is dropped: nothing reaches the erased run's effect.
+    const stored = await inWorkspace(s.app.sql, s.workspace, (tx) =>
+      completeTask(tx, taskId, { status: 'completed', answer: { round: 'Series A' } }),
+    );
+    expect(stored).toBe(false);
+    expect(await s.effect(runId)).toMatchObject({ state: 'started', result: null });
   });
 
   it('ends a run whose input changed while it waited as diverged, flagged on its page', async () => {
@@ -567,15 +618,21 @@ describe('agent tasks from an extension', () => {
       select status, agent_task_id from extension_jobs where id = ${job.jobId}`;
     expect(parked).toMatchObject({ status: 'waiting', agent_task_id: taskId });
 
+    // A change-triggered invocation's pinned change reaches the answer's call too.
+    await db.owner`update extension_jobs set change_snapshot = '{"position": "7"}' where id = ${job.jobId}`;
     const done = () =>
       inWorkspace(e.app.sql, e.workspace, (tx) =>
         completeTask(tx, taskId, { status: 'completed', answer: { round: 'Series A' } }),
       );
     await Promise.all([done(), done()]);
-    const children = await db.owner<{ status: string; input: unknown }[]>`
-      select status, input from extension_jobs where agent_task_id = ${taskId} and id <> ${job.jobId}`;
+    const children = await db.owner<{ status: string; input: unknown; change_snapshot: unknown }[]>`
+      select status, input, change_snapshot from extension_jobs where agent_task_id = ${taskId} and id <> ${job.jobId}`;
     expect(children).toHaveLength(1);
-    expect(children[0]).toMatchObject({ status: 'queued', input: { company: 'Acme' } });
+    expect(children[0]).toMatchObject({
+      status: 'queued',
+      input: { company: 'Acme' },
+      change_snapshot: { position: '7' },
+    });
     const [parent] = await db.owner<{ status: string }[]>`
       select status from extension_jobs where id = ${job.jobId}`;
     expect(parent?.status).toBe('succeeded');
@@ -588,6 +645,22 @@ describe('agent tasks from an extension', () => {
     await e.queue.complete(job, { status: 'succeeded' });
     const rows = await db.owner`select 1 from agent_tasks where session_id = ${taskId}`;
     expect(rows).toHaveLength(0);
+  });
+
+  it('requeues a waiting invocation and cancels its task when privacy erases', async () => {
+    const e = await extensionSetup();
+    const { job, client } = await e.start();
+    const { taskId } = await client.start(request);
+    await e.queue.complete(job, { status: 'succeeded', wait: taskId });
+    await inWorkspace(e.app.sql, e.workspace, (tx) =>
+      eraseExtensionState(tx, e.workspace, [], [], [], []),
+    );
+    const [task] = await db.owner<{ state: string; code: string; input: unknown }[]>`
+      select state, code, input from agent_tasks where session_id = ${taskId}`;
+    expect(task).toMatchObject({ state: 'cancelled', code: 'privacy_erased', input: null });
+    const [parent] = await db.owner<{ status: string; agent_task_id: string | null }[]>`
+      select status, agent_task_id from extension_jobs where id = ${job.jobId}`;
+    expect(parent).toMatchObject({ status: 'queued', agent_task_id: null });
   });
 
   it('cancels the task of a waiting invocation that is cancelled', async () => {

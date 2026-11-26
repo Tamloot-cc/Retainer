@@ -410,7 +410,10 @@ export class AgentSessions {
     if (!parsed || parsed.id !== sessionId?.toLowerCase())
       throw new AppError(401, 'unauthorized', 'the job token is invalid or expired');
     const workspaceId = parsed.workspaceId;
-    return inWorkspace(this.sql, workspaceId, async (tx) => {
+    // A task that can't run any more is ended in a transaction that commits,
+    // and the claim is refused after it: throwing inside would roll the
+    // ending back, and every redelivery would try again.
+    const claimed = await inWorkspace(this.sql, workspaceId, async (tx) => {
       const session = await lockSession<SessionRow>(tx, sessionId);
       const [task] = await tx<TaskRow[]>`
         select * from agent_tasks where session_id = ${sessionId} for update`;
@@ -424,17 +427,17 @@ export class AgentSessions {
         throw new AppError(401, 'unauthorized', 'the job token is invalid or expired');
       if (task.expires_at.getTime() <= Date.now()) {
         await completeTask(tx, sessionId, { status: 'failed', code: 'timed_out' });
-        throw new AppError(409, 'task_expired', 'the task expired before it could run');
+        return new AppError(409, 'task_expired', 'the task expired before it could run');
       }
       const access = { kind: 'task' as const, sessionId };
       // The grant holds only while the caller waits on this task (§9.2).
       await agentCaller(tx, workspaceId, access);
       await this.checkDay(tx, session);
       const limits = sessionLimits(session);
-      const { steps } = await sessionTotals(tx, sessionId);
+      const { steps, tool_calls: toolCalls } = await sessionTotals(tx, sessionId);
       if (steps >= limits.maxSteps) {
         await completeTask(tx, sessionId, { status: 'failed', code: 'limit_reached' });
-        throw new AppError(429, 'limit_reached', 'the task used all its steps');
+        return new AppError(429, 'limit_reached', 'the task used all its steps');
       }
       const deadline = taskDeadline(task, input.notAfter ? new Date(input.notAfter) : undefined);
       const claimed = await claimTurn(tx, workspaceId, {
@@ -469,11 +472,14 @@ export class AgentSessions {
         limits: {
           maxSteps: limits.maxSteps - steps,
           maxOutputTokens: limits.maxOutputTokens,
-          maxToolCalls: limits.maxToolCalls,
+          // What the whole task has left, like its steps (§10.1).
+          maxToolCalls: Math.max(0, limits.maxToolCalls - toolCalls),
           webMaxUses: limits.webMaxUses,
         },
       };
     });
+    if (claimed instanceof AppError) throw claimed;
+    return claimed;
   }
 
   /**
