@@ -1,0 +1,30 @@
+{
+  "name": "@retainer/agent",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Retainer's workspace agent: the Mastra harness, its store, tools and chat stream.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@mastra/ai-sdk": "1.12.1",
+    "@mastra/core": "1.86.0",
+    "@mastra/memory": "1.41.3",
+    "@mastra/pg": "1.38.0",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15",
+    "@types/pg": "^8.23.1"
+  }
+}
