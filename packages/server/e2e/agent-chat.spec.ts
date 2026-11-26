@@ -95,8 +95,9 @@ test.describe('with the agent', () => {
     const region = messages.getByRole('region', { name: 'Markdown table' });
     await expect(region.getByRole('columnheader', { name: 'Next step' })).toBeVisible();
     await expect(messages.getByText('Revenue is unavailable for Juniper Systems.')).toBeVisible();
-    expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    expect(await page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
+    // Layout can settle after the text is visible: poll the measurements.
+    await expect.poll(() => region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect.poll(() => page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
     await region.focus();
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);

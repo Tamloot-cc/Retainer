@@ -309,6 +309,13 @@ export const test = base.extend<
     configureFixture: boolean;
     configureSecretFixture: boolean;
     tamlootFixture: boolean;
+    /**
+     * One fake Anthropic API per worker. Mastra caches a model instance per
+     * process by model, key and configured URL; the URL comes from
+     * ANTHROPIC_BASE_URL, which is not in that key. A fake per test would
+     * leave later tests calling the first test's stopped server.
+     */
+    fakeAnthropic: FakeAnthropic;
   }
 >({
   routineFixture: [false, { option: true }],
@@ -324,12 +331,22 @@ export const test = base.extend<
   tamlootFixture: [false, { option: true, scope: 'worker' }],
   memberFixture: [false, { option: true, scope: 'worker' }],
   oauthMemberFixture: [false, { option: true, scope: 'worker' }],
+  fakeAnthropic: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright reads fixture dependencies from the pattern.
+    async ({}, use) => {
+      const fake = await new FakeAnthropic().start();
+      await use(fake);
+      await fake.stop();
+    },
+    { scope: 'worker' },
+  ],
   retainer: async (
     {
       browserName: _browserName,
       extensionFixture,
       routineFixture,
       agentFixture,
+      fakeAnthropic,
       workspaceTemplate,
       standaloneFixture,
       fileStorage: withFiles,
@@ -490,7 +507,8 @@ export const test = base.extend<
     fileOrigins.push(url);
     // The agent runtime as self-hosted (agent spec §13): the server forwards each
     // stream to it, and it calls back the server's runtime routes.
-    const anthropic = agentFixture ? await new FakeAnthropic().start() : undefined;
+    const anthropic = agentFixture ? fakeAnthropic : undefined;
+    anthropic?.reset();
     let agentServer: ReturnType<typeof serve> | undefined;
     let agentUrl: string | undefined;
     if (anthropic) {
@@ -902,7 +920,6 @@ export const test = base.extend<
           if ('closeAllConnections' in closing) closing.closeAllConnections();
         });
       }
-      await anthropic?.stop();
       await new Promise<void>((resolve, reject) => {
         server.close((e) => (e ? reject(e) : resolve()));
         // Canceled browser requests can leave active sockets open after the
