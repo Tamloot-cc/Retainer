@@ -15,6 +15,10 @@ dropped (D2). A third review round's fixes to those changes are in place
 stores its own history with a `mastra`-only database role (D8), runs in
 its own function and calls Anthropic directly, leaving the model proxy
 untouched (D6, revised), and that `forget` doesn't reach agent sessions.
+After a review of that settled text, the same day: v1 is leaner (D9).
+Approvals and extension `write` and `send` tools wait, a task is one job
+of at most 14 minutes, transient model errors are retried, and a thinking
+block that fails Anthropic's history check is dropped instead of refused.
 §2 lists what is decided.
 
 Builds on [extensions-model-calls.md](extensions-model-calls.md) (the model
@@ -26,10 +30,10 @@ AI SDK facts are from `@ai-sdk/anthropic` 4.0.109, read on 2026-11-26.
 
 If accepted this spec amends:
 
-- `extensions-model-calls.md` §3.4 (`ai_usage` rows of kind
-  `workspace_agent` name the session) and §11 (now this spec; its
-  decisions are refined in §2 here). The model proxy itself doesn't
-  change.
+- `extensions-model-calls.md` §3.4 (`ai_usage` rows of kind `agent` name
+  the session, and the extension model token loses its unused `agent`
+  kind, §10.3) and §11 (now this spec; its decisions are refined in §2
+  here). The model proxy itself doesn't change.
 - `routines.md` §4.4 and §4.5 (a new SDK call, `retainer.ai.agent`), §6.2 (a
   run can wait for a task), §6.5 (a task's writes and tool jobs keep its
   run's cause chain), §6.6 (stored session content, waiting runs and their
@@ -38,13 +42,11 @@ If accepted this spec amends:
   job started by a routine's task is admitted while its run waits (§9.2).
 - `cli.md` §3, §5.2, §9.1 and §11: a chat from the CLI writes, as the agent,
   while the login is elevated (§6.7).
-- `accounts-and-access.md`, the workspace purge: it locks and rechecks the
-  workspace, then erases the agent's stored content in the transaction that
-  deletes the workspace (§5.4).
+- `accounts-and-access.md`, the workspace purge: it erases the agent's
+  stored content in the transaction that deletes the workspace (§5.4).
 - `ARCHITECTURE.md` §2.1 (`forget` doesn't reach agent sessions, §5.4)
   and §8 (a new package, two server modules, and the `agent` function,
   which connects to the `mastra` schema with a role of its own, D8).
-- `FRONTEND.md`, whose "no agent chat" line is already out of date.
 
 The write rules and actor types in `ARCHITECTURE.md` don't change. The agent
 writes as an agent, for a person or for a routine or extension (§7).
@@ -83,8 +85,8 @@ set of tools.
   access, never more, and its writes are recorded as an agent acting for
   that caller.
 - **Mastra for the loop, Retainer for the data.** Mastra runs the loop,
-  streams, pauses for approvals and keeps the message history. Its storage
-  is Mastra's own Postgres store, `@mastra/pg`, on Retainer's database. The
+  streams and keeps the message history. Its storage is Mastra's own
+  Postgres store, `@mastra/pg`, on Retainer's database. The
   agent runtime runs it itself, with a database role that reaches the
   `mastra` schema and nothing else (D8, §3.2). All CRM data stays behind
   Retainer's API, reached through tools.
@@ -126,9 +128,9 @@ Refined from §11 there (2026-11-25):
   is `@mastra/pg`, run by the agent runtime** with a `mastra`-only role
   (D8). The data stays in Retainer's Postgres, in a `mastra` schema (§3.2).
 - "Each task runs as a series of short jobs, one per step" becomes: **a task
-  runs as one job, or a few** if it outlasts one, with each step saved as it
-  ends (§9.3). Mastra runs the loop inside a job; splitting it per step would
-  mean replacing Mastra's loop.
+  runs as one job**, with each step saved as it ends (§9.3, D9). Mastra runs
+  the loop inside a job; splitting it per step would mean replacing
+  Mastra's loop.
 - "An `agent` Lambda function" stays: **the agent runs in its own `agent`
   function** (D6 below), with no model token and no proxy hop.
 - "The worker container on Compose" becomes: **an `agent` container of its
@@ -154,7 +156,8 @@ Decided 2026-11-25 by the product owner, on what the review left open:
   request as too long or too large, or stops a response at the context
   window, the turn ends as `context_limit_reached` and the person starts a
   new chat (or as `incomplete`, where the raw stop reason isn't available,
-  §3.4). Compaction is set aside (§5.5).
+  §3.4). There is no compaction: the 1M-token context is enough (D9,
+  §5.5).
 - **D3. Self-hosted turns run in their own container (revised by D8).**
   Chat and task turns run in an `agent` Compose container. Its only
   database credential is the `mastra`-only role (D8); it has no other
@@ -171,16 +174,15 @@ Decided 2026-11-25 by the product owner, on what the review left open:
   effect's argument hash stays whole, input included (§9.2). Code that
   takes its input from the trigger snapshot avoids it, and recording reads
   would store CRM content for each run.
-- **D5. A crashed step is sampled again (relaxed 2026-11-25).** A task slice
-  that dies mid-step resumes from the last saved step and asks the model
-  again. A dead chat turn isn't retried; the person's next message continues
-  from the saved steps (§8.4). A Retainer write the dead step already made
-  may be made a second time; Retainer's writes are mostly safe to repeat (an
-  upsert by identity, an assertion of the same value), and a repeated fact
-  or event is acceptable. An extension `write` or `send` call still needs
-  its one-use approval, which makes one job keyed by the tool call ID; the
-  job is delivered at least once with that key, as every tool job is, and
-  the tool must honour it (§6.4, §8.4).
+- **D5. A crashed step is sampled again (relaxed 2026-11-25).** A task job
+  that dies mid-step is delivered again, resumes from the last saved step
+  and asks the model again. A dead chat turn isn't retried; the person's
+  next message continues from the saved steps (§8.4). A Retainer write the
+  dead step already made may be made a second time; Retainer's writes are
+  mostly safe to repeat (an upsert by identity, an assertion of the same
+  value), and a repeated fact or event is acceptable. Extension `write`
+  and `send` tools, which would need a one-use approval, aren't in v1 (D9,
+  §6.4).
 
 Decided 2026-11-25 by the product owner, after the second review round:
 
@@ -216,6 +218,28 @@ Decided 2026-11-26 by the product owner:
   the hard workspace purge (§5.4). Accepted: content from a forgotten
   record can stay in a chat until its person deletes it.
 
+Decided 2026-11-26 by the product owner, after a review of the settled
+spec:
+
+- **D9. A lean v1.**
+  - **No approvals yet.** Extension `write` and `send` tools aren't offered
+    in a chat or a task, so nothing in v1 pauses for a person's yes.
+    Approvals come with those tools (§6.4).
+  - **A task is one job** of at most 14 minutes, on the same lease as a
+    chat turn. No slices and no handoff; longer tasks wait for a real need
+    (§9.3).
+  - **Transient model errors are retried.** A request that got no response
+    (a 429, a 5xx or a connection error) is sent again, up to twice. After
+    that the turn or task ends as `model_unavailable` (§10.2).
+  - **A thinking block that fails Anthropic's history check is dropped,
+    not refused** (§3.4).
+  - **No compaction.** The 1M-token context is enough (§5.5).
+  - **No conformance suite for Mastra's store**, which is used as shipped
+    (§3.3), and no extra lock in the workspace purge (§5.4).
+  - **Fixed on Anthropic and Sonnet 5.5.** The design leans on that
+    model's rules (§3.4, §3.5). Accepted: what a switch needs is worked
+    out when one is wanted.
+
 ### 2.1 Considered: the agent inside the model proxy
 
 The 2026-11-25 draft ran the agent inside the model proxy: one `model`
@@ -247,22 +271,23 @@ would be thrown away once suspend and resume exists.
 | ------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The agent loop                       | Built-in         | `Agent` with `stream()`, for chats and tasks alike; the runtime reads its full stream (§3.4)                                                                                                                            |
 | Model access                         | Built-in         | Mastra's model string `anthropic/claude-sonnet-5-5` (§3.4), the key from `ANTHROPIC_API_KEY`; no provider instance or `fetch` of our own (D6)                                                                           |
-| Anthropic options                    | Built-in         | `providerOptions.anthropic`: adaptive thinking with summaries shown, effort, caching (§3.4, §3.5). No refusal fallbacks (D1), no context management, which would edit history (§3.5)                                    |
+| Anthropic options                    | Built-in         | `providerOptions.anthropic`: adaptive thinking with summaries shown, the history check's drop setting, effort, caching (§3.4, §3.5). No refusal fallbacks (D1), no context management, which would edit history (§3.5)  |
 | Message history                      | Built-in         | `Memory` with `savePerStep: true`, stored by `@mastra/pg` in the agent runtime (§3.2). No trimming: `lastMessages: Number.MAX_SAFE_INTEGER` (§5.5). The person's message is saved before the first model request (§6.2) |
 | Semantic recall                      | Off              | Retainer has no embeddings (`semanticRecall: false`, no vector store, no embedder)                                                                                                                                      |
 | Working memory, observational memory | Off              | Retainer's own memory (`me`, `workspace`, records) is the memory; the agent uses it through tools                                                                                                                       |
 | Thread titles                        | Ours             | The first 80 characters of the first message's text. No model call                                                                                                                                                      |
 | Streaming to a UI                    | Built-in         | `handleChatStream` from `@mastra/ai-sdk`, UI message version pinned, `sendReasoning: true`. Its parameters are built by the server, never from the request (§6.2)                                                       |
-| Approvals                            | Built-in         | `requireApproval` and `requireToolApproval`; the resume is built from the API's approval record, and dispatch checks that record (§6.4)                                                                                 |
+| Approvals                            | Later            | Mastra's `requireApproval` and `requireToolApproval`, with extension `write` and `send` tools (D9, §6.4)                                                                                                                |
 | Per-request auth                     | Built-in         | `RequestContext`, read by tools; it holds the turn token, which is never persisted (§7.3)                                                                                                                               |
-| Step and time limits                 | Built-in         | `maxSteps` (a task's remaining steps, §10.1), `modelSettings.timeout`, `maxOutputTokens`, an `abortSignal` the runtime owns (§6.5)                                                                                      |
+| Step and time limits                 | Built-in         | `maxSteps`, `modelSettings.timeout`, `maxOutputTokens`, an `abortSignal` the runtime owns (§6.5)                                                                                                                        |
+| Retries                              | Built-in         | `maxRetries: 2`, the AI SDK's default: only requests that got no response (§10.2)                                                                                                                                       |
 | Tool call caps                       | Built on a hook  | `hooks.beforeToolCall` returns `{ proceed: false }` past the cap                                                                                                                                                        |
 | Web search                           | Built-in, AI SDK | Anthropic's `web_search_20260209` as an AI SDK provider tool, with a constant `max_uses`. Not Mastra's `webSearchTool`, which sends the older `web_search_20250305`                                                     |
 | Web fetch                            | Built-in, AI SDK | Anthropic's `web_fetch_20260209` as an AI SDK provider tool, with a constant `max_uses`. Not Mastra's `webFetchTool`, which fetches from the agent runtime (§8)                                                         |
 | Retainer tools                       | Ours             | `createTool` over `@retainer/sdk` (§8)                                                                                                                                                                                  |
 | Storage                              | Built-in         | `@mastra/pg` (`MemoryPG`, `WorkflowsPG`) runs in the agent runtime, as the `mastra`-only role `retainer_mastra` (D8, §3.2)                                                                                              |
 | Resumable streams                    | Off              | They need a shared PubSub such as Redis. `durable: false`, and the handler keeps consuming when the client leaves; reconnecting reads the saved history (§6.5)                                                          |
-| Durable agents                       | Evaluate in PR 2 | Beta. A candidate for long tasks (§9.3)                                                                                                                                                                                 |
+| Durable agents                       | Later            | Beta. A candidate if a task ever needs more than one job (§9.3)                                                                                                                                                         |
 | Guardrail processors                 | Later            | Built-in processors exist (`PromptInjectionDetector`, `PIIDetector`, `ToolCallFilter`, …); part of the study in §11                                                                                                     |
 | Tracing                              | Off              | Decided 2026-11-25. The saved messages are the trace (§5.3)                                                                                                                                                             |
 | Logging                              | Replaced         | Mastra's logger is set to one that logs codes and metadata only (§5.3)                                                                                                                                                  |
@@ -290,9 +315,8 @@ Mastra agent ── MemoryPG / WorkflowsPG ───────────▶ 
   checks each storage call any more: isolation between sessions rests on
   the runtime's code. That is part of D8's accepted risk.
 - **We write no message or snapshot tables and no SQL for them**, except to
-  erase them (§5.4). Mastra's tested store
-  keeps them in its own format, so history, approvals and
-  `handleChatStream`'s approval flow work as Mastra expects.
+  erase them (§5.4). Mastra's tested store keeps them in its own format,
+  so history and `handleChatStream` work as Mastra expects.
 
 **The accepted risk (D8).** The process that reads untrusted text (web
 pages, emails, records anyone could write) now holds a database password.
@@ -318,9 +342,10 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
   a licence key.
 - **What we use is all Apache-2.0**: `@mastra/core`'s agent, memory,
   workflows and processors, `@mastra/memory`, `@mastra/ai-sdk`, and
-  `@mastra/pg` 1.38.0 in the API. None of the Enterprise features is
-  configured: no FGA or RBAC provider, no auth
-  provider, no Studio, no editor, no agent builder.
+  `@mastra/pg` 1.38.0, in the agent runtime and, for the chat read
+  endpoints, in the API (§5.2). None of the Enterprise features is
+  configured: no FGA or RBAC provider, no auth provider, no Studio, no
+  editor, no agent builder.
 - **One catch.** `@mastra/core` bundles code built from
   `packages/_internals/auth/src/ee/` into its runtime, and the agent loop
   calls one function from it, `requireFGA`, on every tool call. With no FGA
@@ -355,10 +380,10 @@ Checked on 2026-11-25 against `@mastra/core` 1.86.0, its `LICENSE.md`, the
     chat stream to the AI SDK alone, without changing the API or the
     clients. Stored chats would move out of Mastra's tables with a one-off
     script.
-- **Versions** are pinned. Mastra moves fast (core 1.86 on 2026-11-25); the
-  storage has a conformance test against Mastra's domain contracts, and an
-  upgrade is a PR that runs it, Mastra's migrations (§5.2) and the licence
-  check.
+- **Versions** are pinned. Mastra moves fast (core 1.86 on 2026-11-25); an
+  upgrade is a PR that runs the history round-trip and request tests (§15),
+  Mastra's migrations (§5.2) and the licence check. Mastra's store is used
+  as shipped, so it gets no conformance suite of ours (D9).
 
 ### 3.4 The model: Claude Sonnet 5.5
 
@@ -379,6 +404,24 @@ own model (`routines.md` §4.5). What it means for the harness:
   thread (§5.5), and a chat's tool list is fixed when it is created (§8.3).
   The same rule keeps the prompt cache warm (§3.5). PR 1 checks that
   Mastra stores and replays thinking blocks with their signatures.
+- **A block that fails the check is dropped, not refused (D9).** Anthropic
+  checks that the system prompt, the tools and every earlier message are
+  unchanged since a thinking block was produced. It enforces this by
+  default only for accounts created on or after 2026-08-31. There, a
+  replayed block that fails is a `400`, on every later request of that
+  chat: a bug of ours, or a Mastra upgrade that renders stored messages
+  differently, could break every existing chat at once. So every request
+  sets `prefix_mismatch_behavior: "drop_block"` under
+  `thinking.block_binding`, with the beta
+  `thinking-binding-controls-2026-08-01`. Anthropic then drops the failing
+  block and the thinking blocks after it, and the request goes on: the
+  chat loses some earlier reasoning and one cache read, and continues.
+  Setting the field also turns the check on for older accounts, so hosted
+  and self-hosted behave alike. PR 1 checks that Mastra's bundled provider
+  can send the field and the beta. If it can't, the `400` (`Invalid
+  signature in thinking block`) ends the turn as `history_rejected`, and
+  the chat says to start a new one; no `fetch` of ours is added for it
+  (D6).
 - **No forced tool choice.** `tool_choice` `any` and `tool` are refused, so
   a task's typed answer must use native structured output
   (`output_config.format`), not a forced tool. PR 2 checks which one
@@ -435,6 +478,8 @@ messages, and a change anywhere invalidates everything after it.
   - **The date moves on by appending.** When a turn starts on a later date
     than the last one the chat recorded, the claim gives the runtime a
     short "Today is …" text part, appended to that turn's user message.
+    The date is read in the workspace's time zone, the one routine
+    schedules use (`routines.md` §7), or UTC when none is set.
     These server-added parts carry a marker, so the chat read endpoint
     (§6.1) and the stream show only what the person wrote.
   - **History only grows** (§3.4). Nothing is injected into a request and
@@ -449,10 +494,13 @@ messages, and a change anywhere invalidates everything after it.
   as Anthropic requires. A step that adds more than 20 blocks (several web
   searches and a cited answer) can push the previous entry out of
   Anthropic's lookback and miss once; accepted, and PR 1 measures it.
-- **Between turns** the conversation tail stays on 5 minutes: a reply
-  within 5 minutes reads the whole chat from cache; a later one rewrites
-  the tail once. PR 1 measures the gap between turns and moves the tail to
-  1 hour if most replies come later.
+- **Between turns** the conversation tail stays on 5 minutes. Anthropic
+  counts them from the start of the request that last wrote or read the
+  entry, so the time an answer took is part of them. A reply that starts
+  inside that window reads the whole chat from cache; a later one rewrites
+  the tail once. PR 1 measures the gap from the start of a turn's last
+  request to the start of the next turn, and moves the tail to 1 hour if
+  most replies come later.
 - **Measured** as each step's total cache reads and writes, which the
   step report records (§10.2). A step's total includes the reads of its
   own server-tool rounds, so it shows reuse but doesn't prove it alone.
@@ -471,8 +519,7 @@ messages, and a change anywhere invalidates everything after it.
 | Chat          | A session a person opens and talks in; stays open until they delete it                                   |
 | Task          | A session code opens with instructions, input and an answer shape; ends with the answer                  |
 | Caller        | Who the session works for: a person, a routine run or an extension run                                   |
-| Turn          | One `stream()` call: from a message (or a resume) to the agent's reply                                   |
-| Slice         | One job's share of a long task's turn; it hands off after about 10 minutes (§9.3)                        |
+| Turn          | One `stream()` call: from a message to the agent's reply                                                 |
 | Step          | One model call inside a turn, and the tool calls it asks for                                             |
 | Agent runtime | The code that runs turns: the `agent` function hosted, the `agent` container self-hosted (D6)            |
 | Turn token    | The credential the agent uses for Retainer: bound to one turn of one session, never more than the caller |
@@ -510,9 +557,9 @@ run at Anthropic.
   container overrides both.
 - **`packages/server/src/agent-sessions`** (Admin layer, next to
   `routines`): the session API, the chat read endpoints over its own
-  `@mastra/pg` instance (reads only), limits, approvals of record, step
-  reports and the retention sweep. With `packages/agent` the only code that
-  loads Mastra; a lint rule keeps it so.
+  `@mastra/pg` instance (reads only), limits, step reports and the
+  retention sweep. With `packages/agent` the only code that loads Mastra;
+  a lint rule keeps it so.
 - **`packages/server/src/agent-runtime`** (Foundation layer, next to
   `routine-runtime`): minting and checking stream and turn tokens, the turn
   lease (§6.3), and the erasure of stored session content that chat
@@ -533,18 +580,17 @@ model.
 
 Ours, in Drizzle's schema like every other table:
 
-| Table             | Holds                                                                                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent_sessions`  | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3) and system blocks (§3.5), the last date sent (§3.5), limits and use (a task's steps across slices, §10.1), created, last active |
-| `agent_turns`     | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches and fetches, error code, durations, the Mastra run IDs the claim issued (§5.2). IDs and counts only                                 |
-| `agent_approvals` | One row per approval request: session, turn, Mastra run, tool call ID, a hash of the arguments, status, who answered, when and what, and when dispatch used it (§6.4)                                                                       |
+| Table            | Holds                                                                                                                                                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent_sessions` | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3) and system blocks (§3.5), the last date sent (§3.5), limits and use, created, last active       |
+| `agent_turns`    | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches and fetches, error code, durations, the Mastra run IDs the claim issued (§5.2). IDs and counts only |
 
 Mastra's, in the `mastra` schema, created by `@mastra/pg`:
 
 | Table                                                                                    | Holds                                                                                   |
 | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `mastra_threads`, `mastra_messages`, `mastra_resources` and the memory domain's others   | The history: the person's messages, the agent's text, reasoning, tool calls and results |
-| `mastra_workflow_snapshot` and the workflows domain's run tables (runs, entries, owners) | A paused turn waiting for an approval or a resume, and its run's state                  |
+| `mastra_workflow_snapshot` and the workflows domain's run tables (runs, entries, owners) | A run's state. Later, a turn paused for an approval (§6.4)                              |
 
 A Mastra thread is a session: the thread ID and the `resourceId` are both
 the session ID, for chats and tasks alike, so every Mastra row belongs to
@@ -556,6 +602,9 @@ only the agent runtime writes them, through Mastra's store (§5.2);
 `agent-runtime`'s erasure deletes from them (§5.4). Only the
 `memory` and `workflows` domains exist; the others (traces, scores,
 knowledge and the rest) are disabled, so their tables are never created.
+Without approvals (D9) nothing pauses a turn: PR 1 checks whether Mastra's
+loop still writes the `workflows` domain, and leaves that domain out until
+approvals come if it doesn't.
 
 ### 5.2 The store
 
@@ -644,11 +693,10 @@ logs codes and metadata only.
   the 7-day retention and the hard workspace purge run the same code. It
   deletes by real keys across every table in the `mastra` schema (threads,
   messages, resources, workflow snapshots, workflow runs, run entries, run
-  owners), not with `deleteThread` alone, which leaves the workflow rows,
-  and clears `agent_approvals`' arguments. It runs through the `security
-  definer` function of §5.2: the one place Retainer's own code writes
-  Mastra's tables. A test lists every table in the `mastra` schema from
-  `pg_tables` and fails if the erasure misses one.
+  owners), not with `deleteThread` alone, which leaves the workflow rows.
+  It runs through the `security definer` function of §5.2: the one place
+  Retainer's own code writes Mastra's tables. A test lists every table in
+  the `mastra` schema from `pg_tables` and fails if the erasure misses one.
 - **Orphans are swept.** A turn that was mid-step when its chat was deleted
   may still save that step after the erasure. The daily retention sweep
   also deletes Mastra rows whose thread is no longer a session, or whose
@@ -656,15 +704,16 @@ logs codes and metadata only.
   most a day.
 - **The hard purge.** Mastra's tables have no workspace column, so the
   purge's cascade can't reach them. The purge erases them in the same
-  transaction that deletes the workspace, in this order: take the privacy
-  lock exclusively; lock the workspace row (`for update`) and recheck that
-  it is still due and its extension cleanup is done; run the erasure while
-  the session rows that map threads and runs to the workspace still exist;
-  delete the workspace. If the delete affects no row, the transaction rolls
-  back, erasure included. A restore updates the same row, so it and the
-  purge serialize in either order: a restore that wins leaves the chats
-  intact, and a purge that wins leaves nothing to restore. Until the purge,
-  a deleted workspace keeps its chats.
+  transaction that deletes the workspace: it runs the erasure while the
+  session rows that map threads and runs to the workspace still exist,
+  then today's delete, whose own condition checks that the workspace is
+  still due and its extension cleanup is done. If the delete affects no
+  row, the transaction rolls back, erasure included. A restore updates the
+  same row, so it and the purge serialize in either order: a restore that
+  wins leaves the chats intact, and a purge that wins leaves nothing to
+  restore. No lock is added (D9): the privacy lock orders writes against
+  `forget`, which doesn't reach agent sessions. Until the purge, a deleted
+  workspace keeps its chats.
 - **No other copy.** Mastra's tracing is off and its logger carries no
   content (§5.3), and the agent's calls don't pass through the model
   proxy, so nothing captures them.
@@ -686,9 +735,9 @@ logs codes and metadata only.
   one, when Anthropic refuses the request as too long (HTTP 400,
   `prompt is too long`) or too large (HTTP 413), or stops the response at
   the context window (§3.4). A task ends the same way.
-- **Later: compaction.** Set aside for now. Server-side compaction would
-  let a chat run past the context, once Mastra is shown to store and
-  replay `compaction` blocks.
+- **No compaction (D9).** The 1M-token context is enough. If that ever
+  changes, server-side compaction would need Mastra to store and replay
+  `compaction` blocks.
 
 ## 6. The chat
 
@@ -713,7 +762,7 @@ POST /v1/agent/runtime/sessions/:id/claim          claim a turn → turn token, 
 POST /v1/agent/runtime/sessions/:id/tools/:name    one Retainer or extension tool call (§8.1)
 POST /v1/agent/runtime/sessions/:id/report         report one step's usage → continue or stop (§10.2)
 GET  /v1/agent/runtime/sessions/:id/turn           the turn's state, to notice a cancel (§6.5)
-POST /v1/agent/runtime/sessions/:id/close          close the turn with its counts, and any pending approval (§6.4)
+POST /v1/agent/runtime/sessions/:id/close          close the turn with its counts
 ```
 
 These are the only routes that accept a turn token. Every other route
@@ -723,31 +772,28 @@ as deleting a record or a decision route.
 On the agent runtime (stream token):
 
 ```
-POST /chats/:id/stream    one turn: a new message, or an approval answer → SSE
+POST /chats/:id/stream    one turn: a new message → SSE
 ```
 
-The request body is one of two shapes, checked strictly:
+The request body has one shape, checked strictly:
 
 ```
 { "message": { "parts": [{ "type": "text", "text": "…" }] } }
-{ "approvalId": "…", "approve": false, "reason": "…" }
 ```
 
 Anything else is refused with `400`: no history, no message IDs, no
 `runId`, `resumeData`, `trigger` or options, and no regenerate. History
 comes from Mastra's store, and the agent runtime assigns the message's
-ID. The answer is
-the AI SDK UI message stream over server-sent events. The web client sends
-these shapes through `useChat`'s request hook (PR 3).
+ID. The answer is the AI SDK UI message stream over server-sent events.
+The web client sends this shape through `useChat`'s request hook (PR 3).
 
 ### 6.2 A turn
 
-1. The client sends a message, or an approval answer, to
-   `/chats/:id/stream` with the stream token.
+1. The client sends a message to `/chats/:id/stream` with the stream
+   token.
 2. The agent runtime checks the body (§6.1) and claims the turn: it sends
    the stream token with its runtime credential and gets a turn token, the
-   run ID and any date part (§3.5, §6.3, §7.3). A message while an
-   approval is pending is refused (§6.4). The runtime then saves the
+   run ID and any date part (§3.5, §6.3, §7.3). The runtime then saves the
    person's message to Mastra's store, with its own ID and any date part,
    before any model request; on the session's first turn it creates the
    thread first, since the store refuses a message for a missing thread.
@@ -757,8 +803,8 @@ these shapes through `useChat`'s request hook (PR 3).
    the person sends it again. Mastra is given the same message with that
    ID, and its later save finds it already stored.
 3. It builds every Mastra parameter itself: the thread and resource from the
-   session; `runId` and `resumeData` from the API's approval record; the
-   limits, `requireToolApproval`, the instructions and `providerOptions`.
+   session; the `runId` from the claim; the limits, the instructions and
+   `providerOptions`.
    Nothing from the request body is spread into them: `handleChatStream`
    merges its remaining parameters over the defaults, so a client field
    would override the server's. It calls `handleChatStream` with a pinned
@@ -779,10 +825,10 @@ these shapes through `useChat`'s request hook (PR 3).
 
 A chat runs at most one turn at a time. A claim is a lease: the turn gets a
 new **claim generation** and a **deadline**: the claim time plus 14
-minutes, for a chat turn and a task slice alike (a slice hands off earlier,
-§9.3). It is never later than the invocation's remaining time less 30
-seconds for its final writes, or than a task's own expiry, so a claim made
-late in an invocation gets a shorter turn.
+minutes, for a chat turn and a task's job alike (§9.3). It is never later
+than the invocation's remaining time less 30 seconds for its final writes,
+or than a task's own expiry, so a claim made late in an invocation gets a
+shorter turn.
 
 - A claim succeeds when no turn is running, or when the running one is past
   its deadline plus the grace; that one is closed as `timed_out` first, so
@@ -804,80 +850,45 @@ late in an invocation gets a shorter turn.
   timed out) is closed by the API. The old runtime's own close changes
   nothing but recording that it has stopped, which ends `turn_stopping`.
 - **Finishing after the deadline.** For 60 seconds past its deadline, a
-  turn token may still close its own turn and hand a slice off (§9.3), for
-  that exact claim only, and only if no newer claim exists. It makes no
-  tool or model call, and the runtime may still save its last step to
-  Mastra's store, until the deadline plus the grace (§5.2).
+  turn token may still close its own turn, for that exact claim only, and
+  only if no newer claim exists. It makes no tool or model call, and the
+  runtime may still save its last step to Mastra's store, until the
+  deadline plus the grace (§5.2).
 - **Late step reports always count.** A step report is the one exception
   to the generation check: one from an older claim, even after a newer
   claim, is accepted with that claim's turn token, deduplicated by step
-  ID, counted against the logical task and the day, and answered `stop`.
-  It never touches the newer claim. A stale close, handoff or tool call is
-  still refused. A turn whose runtime
-  never finishes is closed as `timed_out` by the next claim or the sweep.
-- Task slices use the same lease.
+  ID, counted against the session and the day, and answered `stop`.
+  It never touches the newer claim. A stale close or tool call is still
+  refused. A turn whose runtime never finishes is closed as `timed_out` by
+  the next claim or the sweep.
+- A task's job uses the same lease.
 
 Tests send two messages at once and kill an invocation mid-turn (`CLAUDE.md`,
 rules described as serialized). Steering a running turn comes later (§6.8).
 
-### 6.4 Approvals
+### 6.4 Later: approvals
 
-Some tools need a person's yes before they run (§8.2). Mastra's built-in
-flow pauses the turn; Retainer keeps the record and checks it:
+Nothing in v1 needs a person's yes before it runs (D9). The only tools
+that would are extension `write` and `send` tools, and a session doesn't
+get those yet (§8.1, §8.2). Reads, the web and Retainer's own writes run
+without asking.
 
-- The tool has `requireApproval: true`, or the turn's
-  `requireToolApproval` function says so.
-- Mastra pauses, saves a snapshot to its store, and emits an approval
-  request with the tool and its arguments. The turn ends there, and its
-  close (§6.1) carries the request: the API stores it in
-  `agent_approvals`, bound to the session, turn, Mastra run, tool call ID
-  and a hash of the arguments. The runtime ends the stream only after the
-  close; an answer that comes before it gets `409 turn_running`, and the
-  client retries.
-- **A runtime that dies before the close** leaves a tool call with no
-  result and no record. Mastra leaves such a call out of later requests by
-  default (`filterIncompleteToolCalls`), so the chat goes on, and the
-  person asks again if they still want it.
-- The client answers with `{ approvalId, approve, reason? }` (§6.1). It
-  never sends a run ID, a tool call ID or resume data: the agent runtime
-  looks them up in the record and builds Mastra's `resumeData` itself, in
-  whichever function instance receives the answer. PR 1 checks
-  `handleChatStream`'s approval path at the pinned UI message version
-  (only its newer versions read approval parts); if it can't resume from
-  server-built data, the agent runtime calls `resumeStream` directly.
-- **One claim decides.** The answer is part of the turn's claim, so a
-  decision, the 24-hour expiry and a repeated click are serialized: the
-  first wins, the others get `409`.
-- **Dispatch checks the record.** An extension `write` or `send` call runs
-  only against a stored approval for that session, run, tool call ID and
-  argument hash, and uses it up. A forged answer or a changed argument finds
-  nothing to use. Using the approval and recording the extension job,
-  deduplicated by tool call ID, are one transaction: there is never a used
-  approval without its job, or a job without its approval. One approval
-  makes one job. The job is delivered at least once with the tool call ID
-  as its key, as every tool job is, and the tool must honour that key
-  (`extensions-tools.md`).
-- **A decision survives a crash.** A decided approval whose tool result
-  isn't in the history yet keeps the chat closed to new messages. The API
-  queues a recovery job (§13) under a new claim, which records the result
-  before the chat opens: the job's result if a job was recorded; otherwise
-  the dispatch (approved) or the declined result; and if neither can be
-  done, a terminal error result. A message sent meanwhile gets `409
-  approval_pending`.
-- **Limits never block a decision.** The claim for an approval answer, a
-  recovery job or an expiry job is never refused for limits (§10.2). If a
-  limit is spent, the claim answers `stop`: the turn records the tool
-  result (the recorded job's result, the dispatch of an approved call,
-  which is no model request, or the declined result) and ends as
-  `limit_reached` before any model request. So the chat reopens.
-- **A new message while an approval is pending** is refused with
-  `409 approval_pending`. The web client can offer "Decline and send",
-  which sends the decline and then the message. At a spent limit the
-  decline is still recorded, and the message gets `limit_reached`.
-- **Every ending leaves a tool result.** Approved, declined, or expired
-  after 24 hours (as declined), the tool's result is in the history before
-  the next message is accepted, so no tool call is left without one. Who
-  answered, when and what are on the record.
+When those tools come, the plan is Mastra's built-in flow
+(`requireApproval`, which pauses the turn and saves a snapshot), with
+Retainer keeping the record:
+
+- The API stores each request, bound to the session, the run, the tool
+  call ID and a hash of the arguments. The client answers with the
+  record's ID and a yes or no, never with a run ID or resume data.
+- Dispatch runs an extension `write` or `send` call only against a stored
+  approval, and uses it up in the transaction that records the job. One
+  approval makes one job.
+- A decision survives a crash, and every ending (approved, declined,
+  expired) leaves the tool's result in the history.
+
+That design was written out in full, with its recovery and expiry jobs,
+in this spec's earlier text (main at `b7ac06e`). It returns with the
+tools.
 
 ### 6.5 Disconnects and cancel
 
@@ -927,9 +938,9 @@ can still report its usage, which counts, and the answer is `stop`
 ### 6.7 The terminal client
 
 `retainer agent chat` in `packages/cli` opens a chat and renders the stream
-in the terminal: reasoning dimmed, tool calls and results as short lines,
-approvals as a yes or no prompt. It exists so the backend can be used and
-tested before the web app has a chat screen.
+in the terminal: reasoning dimmed, tool calls and results as short lines.
+It exists so the backend can be used and tested before the web app has a
+chat screen.
 
 The CLI login only reads (`cli.md` §3: records stay with MCP), so a chat
 from the CLI is **read-only by default**: the agent can search, read
@@ -1038,9 +1049,8 @@ of the agent's.
   session, turn, claim generation, caller and the access it was minted
   with. It expires at the turn's deadline (§6.3), but for a 60-second grace
   to finish (§6.3). The agent runtime gets it at claim by presenting, with
-  the runtime credential, the stream token or an API-owned job: a task
-  slice, or a chat's approval recovery or expiry, bound to its pending
-  decision and the generation it replaces. Only the runtime routes of
+  the runtime credential, the stream token or an API-owned job (a task's
+  job, PR 2). Only the runtime routes of
   §6.1 accept it (default deny), and the API checks every call against the
   token and the caller's current access, so removing the person, ending an
   elevation, cancelling the run or deleting the workspace stops the
@@ -1051,11 +1061,12 @@ of the agent's.
   routine version and the mode (§9.2), since a waiting run holds no token
   the API would admit.
 - **No model token for the agent.** It calls Anthropic with the key
-  itself (D6). `workspace_agent` is only an `ai_usage` kind (§10.3).
+  itself (D6). `agent` is only an `ai_usage` kind (§10.3).
 - **Never persisted.** The turn token travels in the `RequestContext`.
   Mastra snapshots serializable context entries and puts them in spans, so
   the token is held in a non-serializable wrapper, and the runtime puts no
-  credential in anything Mastra saves. A resumed turn gets a fresh token.
+  credential in anything Mastra saves. A task job delivered again gets a
+  fresh token.
 - **The `mastra` role's password** (D8) and the Anthropic key (D6) live in
   the runtime's environment, never in a token, a `RequestContext` or
   Mastra's store.
@@ -1064,13 +1075,13 @@ of the agent's.
 
 ### 8.1 The tool groups
 
-| Group            | Tools                                                                                                          | Runs where                         | Chat                                          | Task                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------- | ---------------------- |
-| `retainer.read`  | `search`, `query_records`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content` | Agent runtime, through the API     | Yes                                           | If listed              |
-| `retainer.write` | `upsert_record`, `log_event`, `remember`                                                                       | Same                               | Yes                                           | If listed              |
-| `web.search`     | Anthropic's `web_search_20260209`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes                                           | If listed              |
-| `web.fetch`      | Anthropic's `web_fetch_20260209`, as an AI SDK provider tool                                                   | At Anthropic                       | Yes                                           | If listed              |
-| `tools.<name>`   | Extension tools, by their declared effect (`extensions-tools.md`)                                              | Through Retainer, as their own job | `read` yes; `write` and `send` after approval | `read` only, if listed |
+| Group            | Tools                                                                                                          | Runs where                         | Chat        | Task                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------- |
+| `retainer.read`  | `search`, `query_records`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content` | Agent runtime, through the API     | Yes         | If listed              |
+| `retainer.write` | `upsert_record`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
+| `web.search`     | Anthropic's `web_search_20260209`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
+| `web.fetch`      | Anthropic's `web_fetch_20260209`, as an AI SDK provider tool                                                   | At Anthropic                       | Yes         | If listed              |
+| `tools.<name>`   | Extension tools declared `read` (`extensions-tools.md`)                                                        | Through Retainer, as their own job | `read` only | `read` only, if listed |
 
 - **Retainer's tools match the MCP tools** in name and behaviour, so the
   guides apply as for any agent. Each is a `createTool` that calls the
@@ -1079,23 +1090,26 @@ of the agent's.
   the tools in the session's pinned list only, under the caller's current
   access. The turn token reaches no other route. A crashed step is sampled
   again and a Retainer write may repeat (§8.4).
-- **A chat's extension tools** are those installed in the workspace that the
-  person's role allows when the chat is created (§8.3).
+- **A chat's extension tools** are the `read` tools installed in the
+  workspace that the person's role allows when the chat is created (§8.3).
 - **Web fetch at Anthropic, not from the agent runtime.** Mastra's own
   `webFetchTool` fetches from the process that runs the agent; Anthropic's
   runs at Anthropic and can only open URLs already in the conversation. PR 1
   checks that Anthropic's tool passes through Mastra as a provider tool.
-- **Not in this spec:** Anthropic-side MCP servers (`mcp_servers`), code
-  execution, files, and a person's own connected accounts such as Gmail
-  (the member agent: Mastra's `MCPClient` behind the person's consent).
+- **Not in this spec:** extension `write` and `send` tools (D9, §6.4),
+  Anthropic-side MCP servers (`mcp_servers`), code execution, files, and a
+  person's own connected accounts such as Gmail (the member agent:
+  Mastra's `MCPClient` behind the person's consent).
 
 ### 8.2 What needs approval
+
+Nothing a session can do in v1 (D9):
 
 | Action                             | Chat                                                             | Task                    |
 | ---------------------------------- | ---------------------------------------------------------------- | ----------------------- |
 | Reads, web                         | No approval                                                      | No approval             |
 | Retainer writes                    | No approval: agent rank, history and the review inbox cover them | No approval             |
-| Extension `write` and `send` tools | Approval, every call                                             | Not available yet (§11) |
+| Extension `write` and `send` tools | Not available yet (§6.4)                                         | Not available yet (§11) |
 
 ### 8.3 A session's tools are fixed
 
@@ -1124,7 +1138,7 @@ Mastra saves each step after it ends (`savePerStep`), and the person's
 message is saved before the first model request (§6.2). What happens after
 a crash depends on the session:
 
-- **A task slice** that dies mid-step is resumed by the next slice from the
+- **A task job** that dies mid-step is delivered again and resumes from the
   last saved step, which samples the step again (§9.3). Its tool calls may
   differ and may repeat.
 - **A chat turn** isn't retried. The next claim or the sweep closes it as
@@ -1139,12 +1153,9 @@ What may repeat:
   and `about` links. A resampled `remember`, an upsert with no identity
   value, or an event without an external ID may be written twice (D5). No
   per-call result table, no checkpoint before dispatch.
-- **Extension writes and sends need a new approval.** They run only against
-  a one-use approval, and using it and recording the job are one
-  transaction keyed by the tool call ID (§6.4). A resampled step has new
-  tool call IDs, so it asks for approval again rather than reusing the old
-  one. One approval makes one job; the job itself is delivered at least
-  once with its key, and the tool must honour the key (§6.4).
+- **Extension tools can't send twice.** A session's extension tools are
+  `read` only in v1 (D9), so a repeated call repeats a lookup and nothing
+  else.
 
 ## 9. Tasks (PR 2)
 
@@ -1233,14 +1244,15 @@ Rules for waiting runs:
   into the next run after it, as they do behind a running one (`routines.md`
   §6.1, coalescing).
 - A run expires 24 hours after it starts (`routines.md` §4.6) and then ends
-  as `expired`. A task's deadline is the earlier of 24 hours and the
-  parent's expiry less a margin, so no answer arrives for a run that has
-  already gone.
+  as `expired`. A task expires at its parent's expiry less a margin, time
+  in the queue included, so no answer arrives for a run that has already
+  gone. Once its job starts, a task has at most 14 minutes (§9.3).
 - A waiting run uses no function and no lease; it is a row.
 - **Erasure and cancellation reach waiting runs.** `forget` ends waiting
   runs as `erased` and deletes their pending answers, as it does for
-  other routine runs (today's `eraseRoutineContent` covers running,
-  queued and held runs, not waiting ones). It leaves their tasks alone
+  other routine runs (today's `eraseRoutineContent` ends running runs,
+  and queued or held ones that hold a trigger snapshot or results; it
+  knows no waiting state yet). It leaves their tasks alone
   (§5.4): a task's answer then finds no waiting run and is dropped.
   Cancelling a run cancels its task.
 
@@ -1259,39 +1271,31 @@ cancels its task. The extension SDK hides the plumbing: `start` and an
 
 ### 9.3 Running a task
 
-- A task's turn is a job. The agent runtime runs Mastra's `stream()` with
-  the task's instructions, input, tools, `structuredOutput`, limits and
-  `savePerStep: true`, and reads the full stream to its end, raw stop
+- **A task is one job (D9).** The agent runtime runs Mastra's `stream()`
+  with the task's instructions, input, tools, `structuredOutput`, limits
+  and `savePerStep: true`, and reads the full stream to its end, raw stop
   reasons included (§3.4), before it takes the answer.
-- **Long tasks.** A job claims a slice with the same lease as a chat turn
-  (§6.3): a hard deadline 14 minutes after the claim, inside the
-  function's 15. Mastra's `onIterationComplete` runs only after a step
-  completes, so it can't stop a step in flight. Instead the slice has a
-  **handoff point** about 10 minutes in: no new step starts after it, and
-  the step in flight, which may run until the hard deadline, finishes
-  first. Then one transaction closes the slice under its claim, with its
-  last step saved (§8.4), and queues the next slice's job; a duplicate
-  delivery of that job, or a late handoff or close from the old slice,
-  finds a stale claim and does nothing. A late step report from the old
-  slice still counts, against the task and the day (§10.2).
-- **Counts carry across slices.** The task's steps and tool calls are
-  counted by the API across its slices (§10.1). Each slice's `maxSteps` is
-  the task's remaining steps, from the claim.
-- **A slice cut at its deadline** ends as `slice_interrupted`, not as an
-  ordinary failure. Its handoff runs in the 60-second grace (§6.3); if it
-  never comes, the sweep closes the slice as `timed_out` and queues the
-  next one, which resumes the same way. The next slice resumes from the
-  last saved step and samples the cut step again (D5, §8.4).
-- **Mastra's durable agents** do this checkpointing themselves, on the
-  `workflows` store the runtime already uses (§5.2). They are in beta and
-  their multi-process mode wants a PubSub that redelivers. PR 2 tries them
-  in in-process mode first and falls back to the continuation above if they
-  don't hold up.
+- **At most 14 minutes.** The job claims the task's turn with the same
+  lease as a chat turn (§6.3). A task still running at its deadline ends
+  as `timed_out`, and `ai.agent` throws that code. A lookup or an
+  enrichment takes a few minutes; a task that needs longer waits for a
+  real case.
+- **A job that dies is delivered again.** The queue delivers at least
+  once. The next delivery claims the turn once the dead claim has run out
+  (§6.3), resumes from the last saved step and samples the cut step again
+  (D5, §8.4), with the task's remaining steps from its claim (§10.1). The
+  queue's retry limit bounds the attempts; past it the task ends as
+  `timed_out`. A duplicate delivery while the turn runs gets
+  `409 turn_running` and does nothing.
+- **Later: tasks longer than one job.** Either a task cut into jobs that
+  hand off, or Mastra's durable agents (beta), which checkpoint on the
+  `workflows` store. Neither is in v1.
 - An answer that fails the schema gets one repair turn; a second failure
   ends the task as `invalid_output`. A refused task ends as `refused`, with
   no repair turn (D1). The stop reason is read first (§3.4): an answer
   cut by `max_tokens` or the context window ends the task as `incomplete`
-  or `context_limit_reached`, with no repair turn.
+  or `context_limit_reached`, with no repair turn. A model that is still
+  unavailable after the retries ends it as `model_unavailable` (§10.2).
 
 ### 9.4 Grants and review
 
@@ -1315,19 +1319,19 @@ They start generous on purpose: a routine or a chat that hits a wall in its
 first weeks is worse than a few expensive turns. They get tightened from
 real usage.
 
-| Limit                              | Chat (per turn)      | Task (per task)                                          | Built on                                                                     |
-| ---------------------------------- | -------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Steps                              | 50                   | 100                                                      | `maxSteps`; a task's counted by the API across slices                        |
-| Output per step                    | 32,000 tokens        | 32,000 tokens                                            | `maxOutputTokens`                                                            |
-| Tool calls                         | 200                  | 500                                                      | `hooks.beforeToolCall`; a task's counted by the tools endpoint across slices |
-| Web searches                       | 30                   | 100                                                      | Counted from each step's usage (§10.2)                                       |
-| Web fetches                        | 30                   | 100                                                      | Counted from each step's usage (§10.2)                                       |
-| Searches or fetches in one request | 10 each              | 10 each                                                  | The web tools' constant `max_uses`                                           |
-| Request size                       | The 1M-token context | Same                                                     | Anthropic's refusal or context stop ends the turn (§5.5)                     |
-| Time                               | 14 minutes           | 24 hours, in slices that hand off after about 10 minutes | The turn's deadline (§6.3), §9.3                                             |
-| Tasks per routine run              | n/a                  | 10                                                       | The session API                                                              |
-| Agent steps per person per day     | 2,000                | n/a                                                      | Checked at claim, counted from step reports (§10.2)                          |
-| Agent steps per workspace per day  | 20,000               | 20,000                                                   | Checked at claim, counted from step reports (§10.2)                          |
+| Limit                              | Chat (per turn)      | Task (per task) | Built on                                                 |
+| ---------------------------------- | -------------------- | --------------- | -------------------------------------------------------- |
+| Steps                              | 50                   | 100             | `maxSteps`                                               |
+| Output per step                    | 32,000 tokens        | 32,000 tokens   | `maxOutputTokens`                                        |
+| Tool calls                         | 200                  | 500             | `hooks.beforeToolCall`                                   |
+| Web searches                       | 30                   | 100             | Counted from each step's usage (§10.2)                   |
+| Web fetches                        | 30                   | 100             | Counted from each step's usage (§10.2)                   |
+| Searches or fetches in one request | 10 each              | 10 each         | The web tools' constant `max_uses`                       |
+| Request size                       | The 1M-token context | Same            | Anthropic's refusal or context stop ends the turn (§5.5) |
+| Time                               | 14 minutes           | 14 minutes      | The turn's deadline (§6.3)                               |
+| Tasks per routine run              | n/a                  | 10              | The session API                                          |
+| Agent steps per person per day     | 2,000                | n/a             | Checked at claim, counted from step reports (§10.2)      |
+| Agent steps per workspace per day  | 20,000               | 20,000          | Checked at claim, counted from step reports (§10.2)      |
 
 **Web searches and fetches.** `max_uses` can't follow the turn's remaining
 allowance, because changing it changes the tool definitions (§8.3). So it
@@ -1336,23 +1340,16 @@ sets no default cap for web fetch, so the agent's web tools always set it
 (§8.3).
 
 - **Counted after each step.** Each step's report adds the
-  `server_tool_use` counts from its usage to the turn's totals (the
-  task's, across its slices). If they are missing, the step counts as the
-  full 10 of each web tool it carried; a task without `web.fetch` is never
-  counted for fetches.
+  `server_tool_use` counts from its usage to the turn's totals. If they
+  are missing, the step counts as the full 10 of each web tool it carried;
+  a task without `web.fetch` is never counted for fetches.
 - **The bound.** `prepareStep` waits for the last report's answer before
   the next request (§10.2), so a turn can pass a cap by at most one step's
   allowance (10).
 
-**A task's steps and tool calls** are counted by the API, across its
-slices, so a task cut into slices still stops at its totals:
-
-- **Steps.** Each step report counts one step of the task. The report
-  answers `stop` at the task's step total, and each slice's `maxSteps` is
-  the remaining count from its claim (§9.3).
-- **Tool calls.** The tools endpoint (§6.1) counts the task's tool calls
-  atomically, parallel calls included. Past the total it returns a
-  terminal error result, and the turn ends as `limit_reached`.
+**A task job delivered again** after a crash (§9.3) gets the task's
+remaining steps and web allowance from its claim, since step reports are
+counted per session. Its tool-call cap starts over (accepted).
 
 A task's caller may pass lower limits. Self-hosted operators set the daily
 numbers with environment variables. On the hosted service the Anthropic
@@ -1369,10 +1366,7 @@ Anthropic workspace's monthly spend limit stays the hard backstop.
 
 - **At claim** (§6.3), the API checks the person's and the workspace's day
   and the turn's or task's totals, and refuses the turn as `limit_reached`
-  if one is already spent. An approval answer, a recovery job and an
-  expiry job are never refused for limits; their claim answers `stop`
-  instead, so the turn records the tool result and sends no model request
-  (§6.4).
+  if one is already spent.
 - **After each step**, Mastra's `onStepFinish` sends the step's usage to
   `…/report` with the turn token and a step ID. One transaction adds the
   counts (§10.1), writes `ai_usage` and answers `continue` or `stop`; a
@@ -1391,18 +1385,24 @@ Anthropic workspace's monthly spend limit stays the hard backstop.
   the full web allowance (§10.1) is charged only when a finished step's
   counts are missing. A step that failed (`onStepFinish` with an error and
   empty usage) isn't reported.
-- **Retries.** The Agent sets `maxRetries: 0`, so the AI SDK retries
-  nothing unseen. A request that fails ends the turn with an error, and
-  the person's next message continues from the saved steps.
+- **Retries (D9).** The Agent sets `maxRetries: 2`, the AI SDK's default.
+  The SDK sends a request again only when it got no response: a 429, a
+  5xx such as Anthropic's 529, or a connection error. Anthropic bills
+  none of those, so a retry changes no count. PR 1 checks, in the bundled
+  SDK, that a response that has started to stream is never sent again. A
+  request that still fails ends the turn as `model_unavailable`, and a
+  task with that code (§9.3); a person's next message continues from the
+  saved steps. Any other failed request ends the turn with an error.
 - **Not counted** (accepted): a request that fails or is aborted before
   its step ends. A report for a step that ended before a cancel, the
   deadline or a newer claim still counts (§6.3).
 - **If the report can't be made**, the runtime retries it briefly; if it
   still fails, the turn ends rather than start another step uncounted.
-- **The turn's lease.** The claim also takes a hosted writer lease, once
-  for the whole turn, bound to the `agent` function's build and the claim
-  generation. It carries no `effect`, and it expires at its `until`: the
-  turn's deadline plus the grace, within `acquire_writer`'s cap. The
+- **The turn's lease.** The claim also takes a hosted writer lease
+  (`acquire_writer`), once for the whole turn, for the `agent` function's
+  build, and records the lease ID on the claim. It names no external
+  effect. Its `remaining_ms` runs to the turn's deadline plus the grace:
+  900 seconds at most, inside `acquire_writer`'s 910-second cap. The
   runtime's close releases it.
 
 Turns running at the same time can each pass the person's or workspace's
@@ -1411,11 +1411,15 @@ day by at most one step. This replaces the routine-style reservation
 
 ### 10.3 Usage
 
-`ai_usage` rows from the agent have `kind: 'workspace_agent'` and carry the
-session and its caller: the person, or the routine and run, or the
-installation and job. An extension's own model token already writes
-`kind: 'agent'` there. A routine's or an extension's cost includes its
-tasks. Web search and fetch counts are in the stored `usage` object already.
+`ai_usage` rows from the agent have `kind: 'agent'`, the value
+`extensions-model-calls.md` §3.4 reserved for this agent: the column
+already allows it, and nothing writes it today. They carry the session and
+its caller: the person, or the routine and run, or the installation and
+job. The extension model token's own `agent` kind
+(`extension-runtime/tokens.ts`), which nothing mints, is removed: the
+agent holds no model token (D6). A routine's or an extension's cost
+includes its tasks. Web search and fetch counts are in the stored `usage`
+object already.
 
 ## 11. Hidden instructions
 
@@ -1424,14 +1428,15 @@ reads text an outsider wrote (a web page, an email) and acts. Together those
 are how data leaks: hidden instructions in a page steer the agent into
 sending workspace data out.
 
-- **In the chat, a person approves every outward action** (§8.2). They see
-  the tool and its arguments before it runs, and the call runs only against
-  that recorded approval (§6.4).
-- **In a task, there are no outward actions yet.** Extension `write` and
-  `send` tools stay with the caller's code, which acts on the answer.
-  Allowing them needs approvals for routines (a run suspends until an admin
-  answers), which suspend and resume makes possible, after the study
-  `routines.md` §10 leaves for later.
+- **There are no outward actions in v1** (D9), in a chat or a task. A
+  session gets no extension `write` or `send` tool, so hidden instructions
+  have nothing to send with but a web search (below).
+- **In a chat, they will need a person's approval** (§6.4): the person
+  sees the tool and its arguments before it runs.
+- **In a task, they stay with the caller's code**, which acts on the
+  answer. Allowing them needs approvals for routines (a run suspends until
+  an admin answers), which suspend and resume makes possible, after the
+  study `routines.md` §10 leaves for later.
 - **Retainer writes stay inside the workspace**, at agent rank.
 - **Web search is still a channel.** A query can carry workspace data out.
   The review says so (§9.4).
@@ -1446,7 +1451,9 @@ today. The agent doesn't use it: it calls Anthropic directly, with the
 request shape set in its own code. That code holds what a proxy list
 would have checked: the one model, no `fallbacks` (D1), no
 `context_management` (§3.5), and the web tools' constant `max_uses`
-(§10.1). Its beta flags are the ones Mastra's bundled AI SDK sends.
+(§10.1). Its beta flags are the ones Mastra's bundled AI SDK sends, and
+`thinking-binding-controls-2026-08-01` for the history check's drop
+setting (§3.4).
 
 ## 13. Hosted and self-hosted
 
@@ -1458,11 +1465,10 @@ would have checked: the one model, no `fallbacks` (D1), no
   security group that allows Postgres to the database and nothing else
   inside the VPC. It holds the `retainer_mastra` password, the Anthropic
   key and the runtime credential, and no other database credential. The
-  launcher starts it for API-owned jobs (task slices, approval recoveries
-  and expiries) with its native Lambda payload, authenticated with the
-  launcher's credential; this ships in PR 1, for approval recovery. Its
-  deadline is bounded by the invocation's remaining time (§6.3).
-  Infrastructure is in `retainer-cloud`.
+  launcher starts it for task jobs with its native Lambda payload,
+  authenticated with the launcher's credential; this ships in PR 2, with
+  tasks. Its deadline is bounded by the invocation's remaining time
+  (§6.3). Infrastructure is in `retainer-cloud`.
 - **Streaming from inside the VPC.** AWS notes a limit on response
   streaming for functions in a VPC. PR 1 proves, on the hosted stack, that
   the public function URL delivers separate SSE chunks before the turn
@@ -1480,22 +1486,22 @@ would have checked: the one model, no `fallbacks` (D1), no
   calls Anthropic directly. The server forwards
   `/v1/agent/chats/:id/stream` (stream token) to it without buffering, so
   the web app keeps one origin, and keeps the upstream turn running when
-  the client detaches; the worker hands it API-owned jobs (task slices,
-  approval recoveries and expiries). Both prove themselves to each other
-  with the runtime credential. `RETAINER_ROLE=all` doesn't run agent
-  turns.
+  the client detaches; the worker hands it task jobs (PR 2). Both prove
+  themselves to each other with the runtime credential.
+  `RETAINER_ROLE=all` doesn't run agent turns.
 
 ## 14. Delivery
 
-| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Agent core and chat backend** | The `agent` function and its entry (D6): Mastra's model string with thinking, effort and the two cache breakpoints, stop reasons, step reports from `onStepFinish` and their answer; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease and `turn_stopping`, the runtime routes, the shared erasure for chat delete, retention and the workspace purge, and the orphan sweep); the `retainer_mastra` login role, the erasure function and the migration step; the API's read-only `@mastra/pg` for the chat read endpoints; `packages/agent` with `@mastra/pg` as the `mastra` role (D8), the person's message saved before the first request, pinned tools and system blocks, Retainer's tools, web tools, approvals of record and their recovery, with the internal job entry on both hosts, and Mastra's logger set; the chat endpoints and stream; limits counted from step reports; the hosted `agent` function in the VPC (`retainer-cloud`), and the self-hosted `agent` container on the database network; `retainer agent chat` and the `cli.md` changes |
-| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs and the cause chain included), the runs page's "needs attention" and "agent answer unused"; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver with slice handoff and task-wide step and tool-call counts, with durable agents tried first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **3. Web chat screen**             | The chat UI on `useChat`, "Decline and send", the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| PR                                 | What ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Agent core and chat backend** | The `agent` function and its entry (D6): Mastra's model string with thinking, the history check's drop setting, effort and the two cache breakpoints, retries, stop reasons, step reports from `onStepFinish` and their answer; `ai_usage` session columns; `agent-sessions` and `agent-runtime` (stream and turn tokens, the turn lease and `turn_stopping`, the runtime routes, the shared erasure for chat delete, retention and the workspace purge, and the orphan sweep); the `retainer_mastra` login role, the erasure function and the migration step; the API's read-only `@mastra/pg` for the chat read endpoints; `packages/agent` with `@mastra/pg` as the `mastra` role (D8), the person's message saved before the first request, pinned tools and system blocks, Retainer's tools, web tools, `read` extension tools, and Mastra's logger set; the chat endpoints and stream; limits counted from step reports; the hosted `agent` function in the VPC (`retainer-cloud`), and the self-hosted `agent` container on the database network; `retainer agent chat` and the `cli.md` changes |
+| **2. Tasks**                       | `retainer.ai.agent` with atomic suspend and completion, task grants (tool jobs and the cause chain included), the runs page's "needs attention" and "agent answer unused"; `agentClient` with staged tasks and `onAgentResult`; manifest grants and review notices; the task driver, one job per task, with the internal job entry on both hosts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **3. Web chat screen**             | The chat UI on `useChat`, the avatar's modes, the trace on the routine run page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-Then: approvals for routines, extension `write` and `send` tools in tasks,
-the member agent with a person's connections, compaction (§5.5),
-joining a running turn's stream again, and steering a running turn (§6.8).
+Then: approvals in the chat with extension `write` and `send` tools
+(§6.4), approvals for routines and those tools in tasks, tasks longer than
+one job (§9.3), the member agent with a person's connections, joining a
+running turn's stream again, and steering a running turn (§6.8).
 
 ## 15. Tests
 
@@ -1505,9 +1511,6 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 
 **The store**
 
-- The store, as `retainer_mastra`, passes a conformance suite against
-  Mastra's `memory` and `workflows` domain contracts on real Postgres, run
-  on each Mastra upgrade.
 - The `retainer_mastra` role can't read or write any table in `public`, is
   a member of no other role, and reaches the `mastra` schema; the grants
   are checked after `init()`. The runtime and the API's read store start
@@ -1516,6 +1519,12 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
   `mastra` role's, on both hosts.
 - History round-trips across fresh instances, thinking blocks and their
   signatures included: a 40-step chat and a long all-text chat load whole.
+- The thinking check: these tests run with the check on (the request sets
+  `prefix_mismatch_behavior`), so an account Anthropic doesn't enforce
+  can't pass them untested. A request whose earlier message was changed,
+  sent with `"drop_block"`, succeeds, and the chat goes on. Where the
+  bundled provider can't send the field, the `400` ends the turn as
+  `history_rejected`.
 - A fake upstream that answers HTTP 400 `prompt is too long` or HTTP 413,
   or a stream that stops with `model_context_window_exceeded`: the turn,
   and a task, end as `context_limit_reached` (or `incomplete`, where the
@@ -1540,7 +1549,7 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 **Tokens and access**
 
 - The stream token is refused by every runtime route: a client holding it
-  can't report usage or call an extension `send` tool.
+  can't report usage or call a tool.
 - A claim without the runtime credential is refused.
 - A turn token can't reach another session, call a tool the caller can't,
   write at a higher rank, or read another person's `me`.
@@ -1549,12 +1558,14 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - A stream request with history, message IDs, `runId`, `resumeData`,
   options or a regenerate is refused with `400`.
 - With a writable turn token: deleting a record, a decision route and any
-  other REST route are refused; an approved write tool through the tool
-  endpoint works.
-- An extension's model token of kind `agent` reaches no agent route; a
+  other REST route are refused; a write tool through the tool endpoint
+  works.
+- An extension's or a routine's model token reaches no agent route; a
   stream token or turn token is refused by the model proxy.
+- A session's tool list has no extension `write` or `send` tool, and the
+  tool endpoint refuses one by name.
 
-**Turns and approvals**
+**Turns**
 
 - **Concurrent:** two messages to one chat.
 - An invocation dies mid-turn: a new claim succeeds after the deadline
@@ -1576,36 +1587,16 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - A cancel, then an immediate new message: it gets `409 turn_stopping`.
   After the old runtime closes, or its deadline plus the grace, the new
   turn runs, and the history has no interleaved steps.
-- A runtime killed after an approval's snapshot and before its close: the
-  person's next message gets a normal turn, and the request sent to
-  Anthropic has no result-less tool call.
-- An approval answer sent before the turn's close gets `409 turn_running`;
-  sent after it, it resumes the turn.
 - A poll that times out, and one that finds the turn cancelled: the first
   changes nothing, the second aborts the request. A `turn_cancelled` from a
   tool call ends the turn; Mastra doesn't continue past it.
 - A claim made late in an invocation gets a shorter deadline. A cut exactly at
-  the deadline still hands off or closes within the grace; a finalizer that
-  never comes leaves a `timed_out` the next claim or the sweep resolves.
-- **Concurrent:** an approval's decision, its expiry and a repeated click;
-  one wins.
-- A new message while an approval is pending gets `409 approval_pending`.
-  After an approval, a decline and an expiry, the history has the tool's
-  result.
-- A forged approval, or one with changed arguments, dispatches nothing; an
-  approval is used once.
-- An approval answered in a different function instance resumes the turn.
-- With the day spent: an approval decision, a recovery job and an expiry
-  each put the tool result in the history and reopen the chat, and send no
-  model request. "Decline and send" records the decline and refuses the
-  message with `limit_reached`.
-- **Concurrent:** a recovery job's claim racing a new message's claim: the
-  recovery wins or the message gets `409 approval_pending`; the result is
-  always in the history before a new message is accepted.
-- A crash right after a decision, and a crash while dispatching: the chat
-  stays closed to new messages until a recovery job records the result
-  (the job's, the decline, or a terminal error), with no client connected,
-  on both hosts; an approval is never used without its job.
+  the deadline still closes within the grace; a finalizer that never comes
+  leaves a `timed_out` the next claim or the sweep resolves.
+- A fake upstream that answers 529 twice and then streams: the turn
+  finishes and the step counts once. One that keeps answering 529, or
+  429: the turn ends as `model_unavailable`, and a task with that code. A
+  stream that fails after it started is not sent again.
 - A CLI chat writes only while its login is elevated in that workspace; a
   window that ends mid-turn refuses the next write; the chat agent is
   refused on every decision route; its actor is `retainer-agent:<person>`.
@@ -1615,11 +1606,9 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 
 **Writes**
 
-- A task slice that dies mid-step: the next slice resumes from the last
+- A task job that dies mid-step: its next delivery resumes from the last
   saved step and samples again.
-- An approved extension job whose worker dies is delivered again with the
-  same key, and never makes a second job.
-- **Concurrent:** two retry workers on one session: one wins the claim.
+- **Concurrent:** two deliveries of one task's job: one wins the claim.
 
 **Limits**
 
@@ -1632,14 +1621,14 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - Step usage maps to the right columns: 40 uncached, 500 read and 20
   written in (`inputTokens` 560) are stored as 40, 500 and 20; zero web
   counts stay zero; a failed step's callback reports nothing.
-- Search and fetch counts add up across steps and slices; the report
+- Search and fetch counts add up across steps; the report
   answers `stop` at the cap. A report with missing counts counts the full
   allowance; a report that can't be made ends the turn.
 - A search-only task with a low fetch cap and missing usage is never
   stopped on fetches.
 - A step report that arrives just after a cancel or the deadline, and one
   sent after a newer claim replaced its turn, counts once, against the
-  task and the day, answers `stop`, and leaves the newer claim alone.
+  session and the day, answers `stop`, and leaves the newer claim alone.
 - The turn's lease: after a hard death, a deploy proceeds once the lease's
   `until` passes, with no operator step.
 - The real provider, driven through Mastra with every tool group, with and
@@ -1687,12 +1676,11 @@ serialized, atomic or idempotent (`CLAUDE.md`). Among them:
 - A task works under its own grant while the parent waits, extension
   `read` tool jobs included; an ordinary routine tool job for a waiting run
   is still refused.
-- A slice whose step is cut at the deadline ends as `slice_interrupted` and
-  the next slice resumes from the last saved step; a duplicate delivery of
-  the next slice's job, and a late handoff or close from the old slice,
-  change nothing. A late step report from the old slice counts once.
-- A task cut into three slices stops at its step total. Parallel tool calls
-  at the tool-call cap: none past it runs.
+- A task still running at its deadline ends as `timed_out`, and
+  `ai.agent` throws that code. A job delivered again after a crash gets
+  the task's remaining steps, and a late step report from the dead
+  delivery counts once.
+- Parallel tool calls at the tool-call cap: none past it runs.
 - A task that writes the record its run read for its `input`: the run ends
   as `diverged` and is flagged on the runs page, and no new run starts.
 - A resumed run that returns before the answered effect succeeds; its
@@ -1726,12 +1714,16 @@ or "PR 2 checks":
 - that the VPC-attached function URL streams, or the fallback (§13);
 - which `mastra` tables Mastra's agent writes, and the columns that map
   each row to its session, for the erasure and the sweep (§5.4);
-- `handleChatStream`'s approval path at the pinned version (§6.4);
+- that the bundled provider can send the history check's drop setting and
+  its beta (§3.4), and that it never resends a response that has started
+  to stream (§10.2);
+- whether Mastra's loop writes the `workflows` domain without approvals
+  (§5.1);
 - the cache read on each step against the previous step's input, the
   misses after long steps, and the gap between a chat's turns, which
   decides the tail's TTL (§3.5);
-- which structured output Mastra's `structuredOutput` sends (§3.4), and
-  whether durable agents hold up (§9.3), both in PR 2.
+- which structured output Mastra's `structuredOutput` sends (§3.4), in
+  PR 2.
 
 Answered 2026-11-25:
 
@@ -1753,8 +1745,8 @@ Answered 2026-11-25:
 - Order: the chat backend first, then tasks, then the web chat screen (§14).
 - Refusal fallbacks: none for agent requests (D1, §3.4).
 - Long chats: no check before sending; Anthropic's refusal, or its stop at
-  the context window, ends the turn as `context_limit_reached`; compaction
-  set aside (D2, §5.5).
+  the context window, ends the turn as `context_limit_reached`; no
+  compaction, since the 1M-token context is enough (D2, D9, §5.5).
 - Caching: static system blocks pinned per session, a 1-hour breakpoint
   after them and automatic caching for the conversation (§3.5).
 - Self-hosted turns: in their own container, with only the `mastra` role
@@ -1762,8 +1754,9 @@ Answered 2026-11-25:
 - Reads in routines that use the agent: live; a `diverged` run is
   accepted and flagged, and code takes its input from the trigger snapshot
   to avoid it (D4, relaxed, §9.2).
-- A crashed step: a task slice samples it again, a chat continues with the
-  next message; a Retainer write may repeat (D5, relaxed, §8.4).
+- A crashed step: a task job delivered again samples it again, a chat
+  continues with the next message; a Retainer write may repeat (D5,
+  relaxed, §8.4).
 - Where the agent runs: its own `agent` function hosted and the `agent`
   container self-hosted, calling Anthropic directly with the key in its
   process; the model proxy is untouched (D6, revised 2026-11-26, §2.1,
@@ -1772,3 +1765,8 @@ Answered 2026-11-25:
 - Redis: none, hosted or self-hosted. A hosted Redis service would be an
   extra subprocessor; resumable streams and Mastra's steering wait (§6.5,
   §6.8).
+- A lean v1 (D9, decided 2026-11-26): no approvals and no extension
+  `write` or `send` tools yet (§6.4); a task is one job of at most 14
+  minutes (§9.3); transient model errors are retried (§10.2); a thinking
+  block that fails Anthropic's history check is dropped (§3.4); the design
+  stays fixed on Anthropic and Sonnet 5.5.
