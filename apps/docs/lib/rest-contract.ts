@@ -383,7 +383,7 @@ endpoint({
   request: {
     example: { about: [simpleId] },
   },
-  response: { schema: { allOf: [ref('Record'), object({ added: ref('AddedLinks') })] } },
+  response: { schema: { allOf: [ref('EventRead'), object({ added: ref('AddedLinks') })] } },
 });
 endpoint({
   tag: 'Facts',
@@ -704,7 +704,7 @@ for (const { suffix, operationId, summary } of [
     summary,
     access: 'write',
     description: 'The caller must act as a user.',
-    response: { schema: ref('Record') },
+    response: { schema: ref('EventRead') },
   });
 }
 endpoint({

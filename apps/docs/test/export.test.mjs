@@ -143,6 +143,20 @@ test('event reads and schema history expose their concrete response shapes', asy
   );
   const schemas = contract.components.schemas;
   assert.ok(schemas.EventRead.required.includes('event'));
+  const eventLink = contract.paths['/v1/events/{id}/links'].post;
+  const linkSchema = eventLink.responses['200'].content['application/json'].schema;
+  assert.deepEqual(linkSchema.allOf[0], { $ref: '#/components/schemas/EventRead' });
+  assert.ok(linkSchema.allOf[1].required.includes('added'));
+  for (const path of [
+    '/v1/events/{id}/participants/{participantId}',
+    '/v1/events/{id}/about/{recordId}',
+  ]) {
+    const unlink = contract.paths[path].delete;
+    assert.equal(
+      unlink.responses['200'].content['application/json'].schema.$ref,
+      '#/components/schemas/EventRead',
+    );
+  }
   assert.equal(
     schemas.SchemaChange.properties.operations.items.$ref,
     '#/components/schemas/SchemaDiffOperation',
