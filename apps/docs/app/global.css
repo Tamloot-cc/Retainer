@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@import "fumadocs-openapi/css/preset.css";
+
+@theme {
+  --color-fd-background: #fff;
+  --color-fd-card: #f8faf8;
+  --color-fd-primary: #1f5e3a;
+  --color-fd-primary-foreground: #fff;
+  --color-fd-ring: #1f5e3a;
+}
+
+.dark {
+  --color-fd-primary: #d4fa38;
+  --color-fd-primary-foreground: #111b21;
+  --color-fd-ring: #d4fa38;
+}

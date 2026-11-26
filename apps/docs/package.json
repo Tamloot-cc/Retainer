@@ -1,0 +1,46 @@
+{
+  "name": "@retainer/docs",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "serve out",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --test lib/*.test.ts",
+    "build:server": "RETAINER_DOCS_RUNTIME=server next build",
+    "start:server": "RETAINER_DOCS_RUNTIME=server next start",
+    "test:export": "node --test test/export.test.mjs",
+    "test:mcp": "node --test test/mcp.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "fumadocs-core": "16.19.7",
+    "fumadocs-mdx": "15.6.4",
+    "fumadocs-openapi": "12.6.7",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.19.7",
+    "next": "16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "unist-util-visit": "5.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/mdast": "^4.0.4",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "^8.5.32",
+    "serve": "^14.2.7",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,42 @@
+---
+title: REST API quickstart
+description: Verify a workspace API key and use the generated Retainer REST reference.
+---
+
+## Make your first request
+
+Use a workspace API key. For hosted Retainer, create one in **Settings → Agents**. For a self-hosted instance, see [workspace keys](../self-hosting.md#workspaces-and-api-keys). Store the key in `RETAINER_API_KEY` before running the request.
+
+<Tabs items={['Hosted', 'Local Compose']}>
+
+<Tab value="Hosted">
+
+```sh
+curl https://retainer.tamloot.cc/v1/me \
+  -H "Authorization: Bearer ${RETAINER_API_KEY}"
+```
+
+</Tab>
+
+<Tab value="Local Compose">
+
+```sh
+curl http://localhost:8787/v1/me \
+  -H "Authorization: Bearer ${RETAINER_API_KEY}"
+```
+
+</Tab>
+
+</Tabs>
+
+Check the **workspace**, **actor**, and **scopes** in the response. Then read the workspace schema before building queries or sending field values. Retainer accepts the API field names from that schema.
+
+<Cards>
+  <Card title="Read the caller identity" href="/docs/api/workspace/get-caller/" />
+  <Card title="Read the workspace schema" href="/docs/api/schema/get-schema/" />
+  <Card title="Authentication, errors, and pagination" href="/docs/api/rest-api/" />
+  <Card title="Use the TypeScript SDK" href="/docs/sdk/" />
+</Cards>
+
+[Download the OpenAPI contract](/openapi.json) for the workspace data, schema,
+memory, review, and file operations in this reference.

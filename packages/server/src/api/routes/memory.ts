@@ -1,9 +1,14 @@
-import { bindingWriteStampSchema } from '@retainer/extension';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { missingScope, requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { idParam, readBody, recordParam, zodError } from '../../http/request.js';
+import {
+  deleteBindingsInput,
+  idParam,
+  readBody,
+  recordParam,
+  zodError,
+} from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { addLinksInputSchema } from '../../memory/event-links.js';
 import { logEventInputSchema } from '../../memory/events.js';
@@ -81,9 +86,7 @@ export function memoryRoutes(app: Hono<AppEnv>, sql: Sql) {
   );
 
   app.delete('/events/:id', requireScope('write'), async (c) => {
-    const { bindings } = c.req.header('content-type')
-      ? await readBody(c, z.strictObject({ bindings: bindingWriteStampSchema.optional() }))
-      : {};
+    const { bindings } = c.req.header('content-type') ? await readBody(c, deleteBindingsInput) : {};
     return c.json(await retractEventFor(sql, c.get('caller'), idParam(c), bindings));
   });
 

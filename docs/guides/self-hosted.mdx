@@ -1,0 +1,53 @@
+---
+title: Self-hosted quickstart
+description: Run Retainer with Docker Compose and verify your first workspace.
+---
+
+<Steps>
+
+<Step>
+
+### Start Retainer
+
+Install Docker with Compose and run:
+
+```sh
+git clone https://github.com/Tamloot-cc/Retainer.git
+cd Retainer
+docker compose -f docker/compose.yml up --build -d
+curl http://localhost:8787/health
+```
+
+A healthy instance reports `status: "ok"` and `database: "ok"`. The Compose stack starts Postgres alongside Retainer.
+
+</Step>
+
+<Step>
+
+### Create keys for people and agents
+
+On first boot, Retainer creates a `default` workspace and prints its initial admin key once in the server logs. Treat the log output and the key as credentials. Create separate keys for reviewers and agents so Retainer can attribute their writes:
+
+```sh
+docker compose -f docker/compose.yml exec retainer retainer-ops key create \
+  --workspace default --name "Dana (web)" --actor user:dana --scopes read,write,admin
+
+docker compose -f docker/compose.yml exec retainer retainer-ops key create \
+  --workspace default --name "Inbox agent" --actor agent:inbox --scopes read,write
+```
+
+Sign in to [the local app](http://localhost:8787/app/) with the reviewer key. Add `schema:write` to an agent key when that agent should propose schema changes or apply templates.
+
+</Step>
+
+<Step>
+
+### Verify the agent connection
+
+Give your MCP client `http://localhost:8787/mcp` and the agent key as its bearer credential. Ask the client to call `describe_schema` and confirm it sees the intended workspace.
+
+</Step>
+
+</Steps>
+
+See [self-hosting configuration](../self-hosting.md) for public origins, TLS, accounts mode, and optional services. See [upgrades and backups](./upgrades-and-backups.md) before operating a shared instance.

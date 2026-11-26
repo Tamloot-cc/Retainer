@@ -1,0 +1,21 @@
+{
+  "title": "Guides",
+  "root": true,
+  "pages": [
+    "index",
+    "---Get started---",
+    "hosted",
+    "self-hosted",
+    "concepts",
+    "review-and-access",
+    "---Operate Retainer---",
+    "../self-hosting",
+    "upgrades-and-backups",
+    "../cli",
+    "---Build integrations---",
+    "../sdk",
+    "../standalone-apps",
+    "../files",
+    "../extensions-execution"
+  ]
+}

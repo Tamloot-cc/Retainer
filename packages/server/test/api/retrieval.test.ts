@@ -24,8 +24,8 @@ beforeAll(async () => {
   otherKey = other.keys.agent;
 });
 
-/** A word no other test uses, so tests sharing the workspace do not see each other's rows. */
-const word = () => `w${randomBytes(4).toString('hex')}`;
+/** Long tokens keep unrelated labels below the trigram fallback's similarity threshold. */
+const word = () => `w${randomBytes(16).toString('hex')}`;
 
 const create = async (object: string, values: Record<string, unknown>, key = keys.agent) => {
   const res = await t.request(`/v1/objects/${object}/records`, { key, body: { values } });
