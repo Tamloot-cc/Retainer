@@ -193,6 +193,68 @@ describe('a chat turn', () => {
     expect(r3!.cache_control).toEqual({ type: 'ephemeral' });
   });
 
+  it('loads a 40-step turn and a long all-text chat whole on the next turn', async () => {
+    const sessionId = crypto.randomUUID();
+    for (let i = 0; i < 40; i++) {
+      anthropic.enqueue({
+        blocks: [
+          thinking(100 + i),
+          { type: 'tool_use', id: `toolu_${i}`, name: 'search', input: { query: `q${i}` } },
+        ],
+        stopReason: 'tool_use',
+      });
+    }
+    anthropic.enqueue(answerStep('Done after forty.', 200));
+    await turn(sessionId, 'Search forty times');
+    for (let i = 0; i < 12; i++) {
+      anthropic.enqueue(answerStep(`Answer ${i}.`, 300 + i));
+      await turn(sessionId, `Question ${i}`);
+    }
+    anthropic.reset();
+    anthropic.enqueue(answerStep('Last.', 999));
+    await turn(sessionId, 'Last question');
+    const messages = JSON.stringify(anthropic.requests[0]!.body.messages);
+    for (let i = 0; i < 40; i++) expect(messages).toContain(`"id":"toolu_${i}"`);
+    expect(messages).toContain('"signature":"sig-100"');
+    for (let i = 0; i < 12; i++) expect(messages).toContain(`Question ${i}`);
+  }, 60_000);
+
+  it('appends the date part to a later turn, leaving earlier bytes unchanged', async () => {
+    const sessionId = crypto.randomUUID();
+    anthropic.enqueue(answerStep('First.', 1));
+    await turn(sessionId, 'Monday question');
+    api.addedParts = ['Today is Tuesday, 2026-11-27.'];
+    anthropic.enqueue(answerStep('Second.', 2));
+    await turn(sessionId, 'Tuesday question');
+    const [first, second] = anthropic.requests.map((r) => r.body.messages as unknown[]);
+    expect(JSON.stringify(second!.slice(0, first!.length))).toBe(JSON.stringify(first));
+    const last = second!.at(-1) as { content: Array<{ text?: string }> };
+    expect(last.content.map((c) => c.text)).toEqual([
+      'Tuesday question',
+      'Today is Tuesday, 2026-11-27.',
+    ]);
+  });
+
+  it('saves the thread and the message before the first model response', async () => {
+    const sessionId = crypto.randomUUID();
+    anthropic.enqueue({ ...answerStep(), delayMs: 1_500 });
+    const claim = await client.claim(sessionId, { streamToken: 'stream-token' });
+    const running = await runTurn(
+      { api: client, mastraUrl: db.mastraUrl },
+      { claim, text: 'Saved first' },
+    );
+    const handle = createMastraStore({ connectionString: db.mastraUrl });
+    try {
+      const stored = await listSessionMessages(handle, sessionId);
+      expect(stored.map((m) => m.role)).toEqual(['user']);
+      expect(JSON.stringify(stored)).toContain('Saved first');
+    } finally {
+      await handle.close();
+    }
+    await new Response(running.stream).text();
+    await running.done;
+  });
+
   it.each([
     ['max_tokens', 'incomplete'],
     ['model_context_window_exceeded', 'context_limit_reached'],

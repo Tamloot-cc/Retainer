@@ -90,3 +90,17 @@ describe('the Mastra store', () => {
     ]);
   });
 });
+
+describe('the store fence', () => {
+  it('opens no connection after the fence', async () => {
+    const fenced = createMastraStore({ connectionString: db.mastraUrl, fence: Date.now() - 1 });
+    try {
+      const memory = await fenced.store.getStore('memory');
+      await expect(memory!.getThreadById({ threadId: crypto.randomUUID() })).rejects.toThrow(
+        /past its fence/,
+      );
+    } finally {
+      await fenced.close();
+    }
+  });
+});
