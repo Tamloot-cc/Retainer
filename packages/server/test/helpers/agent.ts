@@ -15,10 +15,6 @@ export const MASTRA_KEYS: Record<string, { session?: string[]; run?: string[] }>
   mastra_resources: { session: ['id'] },
   mastra_observational_memory: { session: ['threadId', 'resourceId'] },
   mastra_memory_run_fences: { run: ['runId'] },
-  mastra_workflow_snapshot: { session: ['resourceId'], run: ['run_id'] },
-  mastra_workflow_runs: { session: ['resourceId', 'threadId'], run: ['run_id'] },
-  mastra_workflow_run_entries: { run: ['run_id'] },
-  mastra_workflow_run_owners: { run: ['runId'] },
 };
 
 /** Writes a chat's history through Mastra's own store: a thread and one message. */
@@ -80,26 +76,6 @@ export async function seedMastra(owner: Sql, sessionId: string, runId: string) {
   );
   await owner.unsafe(
     `insert into mastra.mastra_memory_run_fences ("runId", generation, "ownerId") values ($1, 1, 'x')`,
-    [r],
-  );
-  await owner.unsafe(
-    `insert into mastra.mastra_workflow_snapshot (workflow_name, run_id, "resourceId", snapshot, "createdAt", "updatedAt")
-       values ('agentic-loop', $1, $2, '{}', now(), now())`,
-    [r, s],
-  );
-  await owner.unsafe(
-    `insert into mastra.mastra_workflow_runs (workflow_name, run_id, "resourceId", "threadId", status, header,
-       "lastSeq", "startStateSeq", "stateShared", "stateSeq", "statePatchCount", "statePatchBytes",
-       "runToken", "createdAt", "updatedAt")
-     values ('agentic-loop', $1, $2, $2, 'running', '{}', 0, 0, false, 0, 0, 0, 'x', now(), now())`,
-    [r, s],
-  );
-  await owner.unsafe(
-    `insert into mastra.mastra_workflow_run_entries (workflow_name, run_id, seq, kind) values ('agentic-loop', $1, 1, 'x')`,
-    [r],
-  );
-  await owner.unsafe(
-    `insert into mastra.mastra_workflow_run_owners ("runId", generation, "ownerId", "updatedAt") values ($1, 1, 'x', 0)`,
     [r],
   );
 }

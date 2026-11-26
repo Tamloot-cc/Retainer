@@ -6,10 +6,12 @@ import { RUNTIME_ROLE } from '../../src/db/client.js';
 import { inWorkspace } from '../../src/db/tx.js';
 import { purgeDeletedWorkspaces, restoreWorkspace } from '../../src/workspaces/deletion.js';
 import { createWorkspace } from '../../src/workspaces/workspaces.js';
-import { mastraRows, seedMastra, total } from '../helpers/agent.js';
+import { MASTRA_KEYS, mastraRows, seedMastra, total } from '../helpers/agent.js';
 import { useTestDatabase } from '../helpers/db.js';
 
 const db = useTestDatabase();
+/** A seeded session has one row in each Mastra table. */
+const EVERY_TABLE = Object.keys(MASTRA_KEYS).length;
 
 /** A session with one turn and a row in every Mastra table, written as the owner. */
 async function session(
@@ -185,7 +187,7 @@ describe('the workspace purge', () => {
       } else {
         expect(purged).toMatchObject({ purged: 0 });
         expect(row?.deletion_scheduled_at).toBeNull();
-        expect(await rowsOf(chat)).toBe(9);
+        expect(await rowsOf(chat)).toBe(EVERY_TABLE);
         const [sessionRow] = await db.owner`select 1 from agent_sessions where id = ${chat.id}`;
         expect(sessionRow).toBeDefined();
       }
@@ -214,8 +216,8 @@ describe('maintenance', () => {
     }
     expect(await rowsOf(expired)).toBe(0);
     expect(await db.owner`select 1 from agent_sessions where id = ${expired.id}`).toHaveLength(0);
-    expect(await rowsOf(liveTask)).toBe(9);
-    expect(await rowsOf(oldChat)).toBe(9);
+    expect(await rowsOf(liveTask)).toBe(EVERY_TABLE);
+    expect(await rowsOf(oldChat)).toBe(EVERY_TABLE);
     const [turn] = await db.owner<{ status: string }[]>`
       select status from agent_turns where session_id = ${dead.id}`;
     expect(turn?.status).toBe('timed_out');
@@ -236,6 +238,6 @@ describe('maintenance', () => {
       await app.end();
     }
     expect(await rowsOf(orphan)).toBe(0);
-    expect(await rowsOf(kept)).toBe(9);
+    expect(await rowsOf(kept)).toBe(EVERY_TABLE);
   });
 });

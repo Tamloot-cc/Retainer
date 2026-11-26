@@ -102,8 +102,8 @@ try {
   `);
   assert.equal(answers.health, 200);
   assert.equal(answers.bad, 400);
-  // 401 once the API has the runtime routes; 404 against an API without them.
-  assert.ok([401, 404].includes(answers.refused), `claim answered ${answers.refused}`);
+  // The API's claim route refuses a stream token it never minted.
+  assert.equal(answers.refused, 401, `claim answered ${answers.refused}`);
   assert.notEqual(answers.code, 'agent_unavailable', 'the agent reached the API');
 
   // Its logs carry no credential.

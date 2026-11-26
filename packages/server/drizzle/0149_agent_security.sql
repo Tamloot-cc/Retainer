@@ -91,15 +91,6 @@ BEGIN
   GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
   DELETE FROM mastra.mastra_memory_run_fences WHERE "runId" = ANY(runs);
   GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
-  DELETE FROM mastra.mastra_workflow_snapshot WHERE run_id = ANY(runs) OR "resourceId" = ANY(ids);
-  GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
-  DELETE FROM mastra.mastra_workflow_runs
-  WHERE run_id = ANY(runs) OR "threadId" = ANY(ids) OR "resourceId" = ANY(ids);
-  GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
-  DELETE FROM mastra.mastra_workflow_run_entries WHERE run_id = ANY(runs);
-  GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
-  DELETE FROM mastra.mastra_workflow_run_owners WHERE "runId" = ANY(runs);
-  GET DIAGNOSTICS n = ROW_COUNT; erased := erased + n;
   RETURN erased;
 END
 $$;
@@ -134,18 +125,6 @@ BEGIN
     WHERE s.id::text = x."resourceId" OR s.id::text = x."threadId");
   GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
   DELETE FROM mastra.mastra_memory_run_fences x
-  WHERE NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.run_id::text = x."runId");
-  GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
-  DELETE FROM mastra.mastra_workflow_snapshot x
-  WHERE NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.run_id::text = x.run_id);
-  GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
-  DELETE FROM mastra.mastra_workflow_runs x
-  WHERE NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.run_id::text = x.run_id);
-  GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
-  DELETE FROM mastra.mastra_workflow_run_entries x
-  WHERE NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.run_id::text = x.run_id);
-  GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
-  DELETE FROM mastra.mastra_workflow_run_owners x
   WHERE NOT EXISTS (SELECT 1 FROM public.agent_turns t WHERE t.run_id::text = x."runId");
   GET DIAGNOSTICS n = ROW_COUNT; swept := swept + n;
   RETURN swept;

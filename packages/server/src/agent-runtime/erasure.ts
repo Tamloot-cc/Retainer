@@ -5,8 +5,8 @@ import type { Tx } from '../db/tx.js';
  * The one erasure of stored agent content (agent spec §5.4): chat delete,
  * the 7-day task retention and the hard workspace purge all run it. It
  * deletes the sessions' rows from every table in the `mastra` schema by
- * their real keys (threads, messages, resources, observational memory,
- * workflow snapshots, runs, run entries, run owners and run fences), through
+ * their real keys (threads, messages, resources, observational memory and
+ * run fences), through
  * `retainer_erase_agent_content`: a `security definer` function, the one
  * place Retainer's own code writes Mastra's tables. It imports no Mastra.
  *
