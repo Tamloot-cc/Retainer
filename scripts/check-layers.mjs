@@ -89,6 +89,8 @@ const MASTRA_SERVER_FILES = [
   'packages/server/src/lambda/agent.ts',
   'packages/server/src/migrate.ts',
   'packages/server/src/db/migrate.ts',
+  // Runs Mastra's init as the migration role, after the SQL migrations.
+  'packages/server/src/agent-runtime/store-migration.ts',
 ];
 const MASTRA_PACKAGES = ['agent'];
 const loadsMastra = (specifier) => /^(@mastra\/|@retainer\/agent(\/|$))/.test(specifier);
