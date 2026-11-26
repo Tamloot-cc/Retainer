@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { EVENT_QUERY_COLUMNS } from '@retainer/shared';
 import { z } from 'zod';
 import { fileErasureStatusInput } from '../../src/api/routes/files.js';
-import { createRecordInput } from '../../src/api/routes/records.js';
+import { createRecordInput, mergeSuggestionInput } from '../../src/api/routes/records.js';
 import { commentInputSchema } from '../../src/comments/service.js';
 import { fileIntentSchema } from '../../src/files/service.js';
 import { upsertRecordInput, upsertRecordsInput } from '../../src/http/record-upserts.js';
@@ -22,6 +22,7 @@ import {
 import { searchInputSchema } from '../../src/retrieval/search.js';
 import { schemaChangeRequestSchema } from '../../src/schema-engine/service.js';
 import { createViewSchema, updateViewSchema } from '../../src/views/service.js';
+import { buildResponseSchemas } from './openapi-responses.js';
 
 function jsonSchema(validator: z.ZodType) {
   const { $schema: _, ...schema } = z.toJSONSchema(validator, { io: 'input' });
@@ -55,6 +56,7 @@ const batchRecordInput = upsertRecordInput.extend({ match: uniqueMatch }).meta({
 });
 
 export const requestValidators = {
+  'accept-merge': mergeSuggestionInput,
   'aggregate-records': aggregateInputSchema,
   'create-comment': commentInputSchema,
   'create-file-intent': fileIntentSchema,
@@ -87,8 +89,8 @@ export const requestValidators = {
   }),
 } satisfies Record<string, z.ZodType>;
 
-export const requestSchemasFile = new URL(
-  '../../../../apps/docs/lib/request-schemas.json',
+export const apiSchemasFile = new URL(
+  '../../../../apps/docs/lib/api-schemas.json',
   import.meta.url,
 );
 
@@ -101,6 +103,10 @@ export function buildRequestSchemas() {
   );
 }
 
+export function buildApiSchemas() {
+  return { requests: buildRequestSchemas(), responses: buildResponseSchemas() };
+}
+
 if (import.meta.main) {
-  writeFileSync(requestSchemasFile, `${JSON.stringify(buildRequestSchemas(), null, 2)}\n`);
+  writeFileSync(apiSchemasFile, `${JSON.stringify(buildApiSchemas(), null, 2)}\n`);
 }

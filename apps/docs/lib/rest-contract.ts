@@ -6,17 +6,16 @@ import type {
   ParameterObject,
   ResponseObject,
 } from 'fumadocs-openapi';
-import requestSchemas from './request-schemas.json' with { type: 'json' };
+import apiSchemas from './api-schemas.json' with { type: 'json' };
 
 type Schema = OpenAPIV3_2.SchemaObject | OpenAPIV3_2.ReferenceObject;
 // The JSON import widens schema keywords such as "object" to string.
-const requestSchemasByOperation = requestSchemas as unknown as Partial<Record<string, Schema>>;
+const requestSchemasByOperation = apiSchemas.requests as unknown as Partial<Record<string, Schema>>;
 
 const text = { type: 'string' } as const;
 const id = { type: 'string', format: 'uuid' } as const;
 const timestamp = { type: 'string', format: 'date-time' } as const;
 const integer = { type: 'integer' } as const;
-const number = { type: 'number' } as const;
 const boolean = { type: 'boolean' } as const;
 const choice = (...values: string[]) => ({ type: 'string' as const, enum: values });
 const array = (items: Schema, limits: { minItems?: number; maxItems?: number } = {}): Schema => ({
@@ -48,47 +47,12 @@ const stringLength = (minLength: number, maxLength: number) =>
     maxLength,
   }) satisfies Schema;
 const nullString: Schema = { type: ['string', 'null'] };
-const nullId: Schema = { type: ['string', 'null'], format: 'uuid' };
 const nullable = (schema: Schema): Schema => ({ anyOf: [schema, { type: 'null' }] });
 const paged = (name: string, item: Schema) =>
   object({ [name]: array(item), nextCursor: nullString });
 const attachment = choice('participant', 'about', 'field');
-const factStatus = choice('current', 'retracted', 'superseded', 'ended');
-const recordFields: Schema = {
-  type: 'object',
-  additionalProperties: true,
-  description: 'Keys are API field names from the workspace schema.',
-};
-const sort = array(object({ field: text, direction: choice('asc', 'desc') }, ['field']));
-const recordPage = (record: Schema) =>
-  object(
-    {
-      records: array(record),
-      nextCursor: nullString,
-      relationReferences: map(ref('RecordReference')),
-    },
-    ['records', 'nextCursor'],
-  );
 const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
-  Workspace: object({ id, name: text, slug: text }),
-  Actor: object(
-    { id: text, type: choice('user', 'agent', 'integration', 'system'), name: text, via: text },
-    ['id', 'type'],
-  ),
-  Session: object(
-    {
-      workspace: ref('Workspace'),
-      actor: ref('Actor'),
-      scopes: array(choice('read', 'write', 'schema:write', 'admin')),
-      person: boolean,
-      routinesAvailable: boolean,
-      agentAvailable: boolean,
-    },
-    ['workspace', 'actor', 'scopes', 'person'],
-  ),
-  Error: object({
-    error: object({ code: text, message: text, details: map() }, ['code', 'message']),
-  }),
+  ...(apiSchemas.responses as unknown as Record<string, Schema>),
   Health: object(
     {
       status: choice('ok', 'error'),
@@ -98,227 +62,7 @@ const schemas: NonNullable<NonNullable<Document['components']>['schemas']> = {
     },
     ['status', 'version', 'database'],
   ),
-  Record: object(
-    {
-      id,
-      object: text,
-      label: nullString,
-      fields: recordFields,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      createdBy: ref('Actor'),
-      updatedBy: ref('Actor'),
-      provenance: map(),
-      relationReferences: map(ref('RecordReference')),
-      counts: object({ comments: integer, facts: integer, linked: integer, claims: integer }),
-      event: ref('EventDetails'),
-    },
-    ['id', 'object', 'label', 'fields', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'],
-  ),
-  RecordReference: object({ id, object: text, label: nullString }),
-  RecordPage: recordPage(ref('Record')),
-  WriteResult: object({
-    id,
-    created: boolean,
-    fields: map(choice('applied', 'pending_review', 'superseded')),
-    record: ref('Record'),
-  }),
-  EventPage: recordPage(ref('EventRecord')),
-  EventRecord: {
-    allOf: [ref('Record'), object({ type: text, event: ref('EventDetails') })],
-  },
   Deleted: object({ id, deleted: { type: 'boolean', const: true } }),
-  EventDetails: object(
-    {
-      occurredAt: timestamp,
-      channel: nullString,
-      externalId: nullString,
-      title: nullString,
-      summary: nullString,
-      participants: ref('Participants'),
-      about: array(id),
-      content: {
-        type: 'boolean',
-        const: true,
-        description: 'Full text is available at GET /v1/events/{id}/content.',
-      },
-      source: object({
-        sourceItemId: id,
-        revisionId: id,
-        current: boolean,
-        previousEventId: nullId,
-      }),
-    },
-    ['occurredAt', 'channel', 'externalId', 'title', 'summary', 'participants', 'about'],
-  ),
-  Participants: object({
-    matched: array(object({ id, handle: nullString, role: nullString, recordId: id })),
-    unmatched: array(
-      object({ id, handle: nullString, role: nullString, reason: text, candidates: array(id) }, [
-        'id',
-        'handle',
-        'role',
-        'reason',
-      ]),
-    ),
-  }),
-  AddedLinks: object({ participants: ref('Participants'), about: array(id) }),
-  LoggedEvent: object(
-    {
-      id,
-      type: text,
-      created: boolean,
-      participants: ref('Participants'),
-      about: array(id),
-      added: ref('AddedLinks'),
-    },
-    ['id', 'type', 'created', 'participants', 'about'],
-  ),
-  SchemaDescription: object({
-    workspace: {
-      allOf: [
-        ref('Workspace'),
-        object({
-          schemaVersion: integer,
-          initialized: boolean,
-          templates: array(object({ name: text, version: integer, appliedAt: timestamp })),
-        }),
-      ],
-    },
-    objects: array(
-      object(
-        {
-          nameSingular: text,
-          namePlural: text,
-          labelSingular: text,
-          labelPlural: text,
-          description: nullString,
-          labelField: nullString,
-          class: choice('entity', 'event'),
-          owner: text,
-          isProtected: boolean,
-          fields: array(map()),
-          eventColumns: array(text),
-        },
-        [
-          'nameSingular',
-          'namePlural',
-          'labelSingular',
-          'labelPlural',
-          'description',
-          'labelField',
-          'class',
-          'owner',
-          'isProtected',
-          'fields',
-        ],
-      ),
-    ),
-    valueFormats: map(text),
-    builtIns: array(map()),
-  }),
-  Fact: object(
-    {
-      id,
-      record: id,
-      profile: choice('workspace', 'me'),
-      content: text,
-      kind: choice('stated', 'inferred'),
-      validFrom: timestamp,
-      validTo: nullString,
-      status: factStatus,
-      writtenBy: ref('Actor'),
-      sources: array(
-        object({ event: nullString, quote: nullString, internal: boolean }, ['event', 'quote']),
-      ),
-    },
-    ['id', 'content', 'kind', 'validFrom', 'validTo', 'writtenBy', 'sources'],
-  ),
-  HistoricalFact: { allOf: [ref('Fact'), object({ status: factStatus })] },
-  Comment: object({
-    id,
-    record: id,
-    body: text,
-    author: ref('Actor'),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    editedAt: nullString,
-  }),
-  SavedView: object({
-    id,
-    object: text,
-    name: text,
-    kind: choice('table', 'board', 'calendar'),
-    visibility: choice('private', 'workspace'),
-    position: number,
-    filter: { type: ['object', 'null'], additionalProperties: true },
-    sort: nullable(sort),
-    columns: { type: ['object', 'null'], additionalProperties: true },
-    groupBy: nullString,
-    groupAggregate: nullable(object({ field: text, op: text })),
-    hiddenGroups: array(nullString),
-    dateField: nullString,
-    createdBy: ref('Actor'),
-    updatedBy: ref('Actor'),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    issues: array(text),
-  }),
-  Assertion: object(
-    {
-      id,
-      recordId: id,
-      object: text,
-      recordLabel: nullString,
-      field: text,
-      value: {},
-      currentValue: {},
-      status: choice('active', 'superseded', 'pending_review', 'rejected', 'retracted'),
-      reason: nullString,
-      actor: ref('Actor'),
-      confidence: { type: 'number' },
-      sourceRecordId: nullString,
-      isInitial: boolean,
-      observedAt: timestamp,
-      createdAt: timestamp,
-      source: nullable(object({ id, type: text, title: nullString, occurredAt: timestamp })),
-      conflictingRecord: nullable(ref('RecordReference')),
-      relationReferences: map(ref('RecordReference')),
-      reviewedBy: nullable(ref('Actor')),
-      reviewedAt: nullString,
-    },
-    [
-      'id',
-      'recordId',
-      'object',
-      'recordLabel',
-      'field',
-      'value',
-      'currentValue',
-      'status',
-      'reason',
-      'actor',
-      'confidence',
-      'sourceRecordId',
-      'isInitial',
-      'observedAt',
-      'createdAt',
-      'source',
-      'conflictingRecord',
-      'reviewedBy',
-      'reviewedAt',
-    ],
-  ),
-  FileMetadata: object(
-    {
-      name: text,
-      mediaType: text,
-      bytes: integer,
-      sha256: text,
-    },
-    ['name', 'mediaType', 'bytes', 'sha256'],
-  ),
-  FileTransfer: object({ url: text, headers: map(text), expiresAt: timestamp }),
 };
 
 const paths: NonNullable<Document['paths']> = {};
@@ -924,15 +668,7 @@ endpoint({
   access: 'write',
   description: 'The caller must act as a user. The ID in the URL identifies the survivor.',
   parameters: [idempotency],
-  response: {
-    schema: object({
-      id,
-      mergedId: id,
-      merged: boolean,
-      recomputedRecordIds: array(id),
-      record: ref('Record'),
-    }),
-  },
+  response: { schema: ref('MergeResult') },
 });
 endpoint({
   tag: 'Records',
@@ -1315,6 +1051,17 @@ for (const decision of ['accept', 'reject'] as const) {
     },
   });
 }
+endpoint({
+  tag: 'Review',
+  method: 'post',
+  path: '/v1/review/merges/{id}/merge',
+  operationId: 'accept-merge',
+  summary: 'Accept a merge suggestion',
+  access: 'write',
+  description: 'The caller must act as a user. Set keep to the record ID that should survive.',
+  request: { example: { keep: simpleId } },
+  response: { schema: ref('MergeResult') },
+});
 endpoint({
   tag: 'Review',
   method: 'post',

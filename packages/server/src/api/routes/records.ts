@@ -44,6 +44,7 @@ export const createRecordInput = z.strictObject({
   source: sourceSchema.optional(),
   bindings: bindingWriteStampSchema.optional(),
 });
+export const mergeSuggestionInput = z.strictObject({ keep: z.uuid() });
 
 export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.post('/objects/:object/records', requireScope('write'), async (c) => {
@@ -141,7 +142,7 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   );
 
   app.post('/review/merges/:id/merge', requireScope('write'), async (c) => {
-    const { keep } = await readBody(c, z.strictObject({ keep: z.uuid() }));
+    const { keep } = await readBody(c, mergeSuggestionInput);
     return c.json(await mergeSuggestion(sql, c.get('caller'), idParam(c), keep));
   });
 

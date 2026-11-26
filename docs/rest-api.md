@@ -196,7 +196,8 @@ The [generated API reference](api/index.mdx) has request and response schemas an
 | `GET /v1/review`                                    | `read`           | Pending values, merge suggestions, unresolved participants           |
 | `GET /v1/assertions/:id`                            | `read`           | One assertion with its review state                                  |
 | `POST /v1/assertions/:id/accept` · `/reject`        | `write`, user    | Decide a pending value                                               |
-| `POST /v1/review/merges/:id/dismiss`                | `write`, user    | Dismiss a merge suggestion                                           |
+| `POST /v1/review/merges/:id/merge`                   | `write`, user    | Accept a merge suggestion and choose the surviving record            |
+| `POST /v1/review/merges/:id/dismiss`                 | `write`, user    | Dismiss a merge suggestion                                           |
 
 "user" means the key's actor must be a `user`; agents get 403 even with the
 scope. Request and response shapes are exported as TypeScript types from

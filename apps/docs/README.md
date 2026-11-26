@@ -17,21 +17,21 @@ the site to `out/` and `pnpm start` to preview that output.
   `docs/`, list it as `../name` in a section's `meta.json`; that list is the only place
   the app learns which pages exist.
 - The REST reference reads the contract in [rest-contract.ts](lib/rest-contract.ts).
-  The build exports `/openapi.json`. The request schemas are generated from the
-  server's validators and checked by Retainer CI. Keep response schemas aligned
-  with the server handlers and `packages/shared/src/api.ts`.
+  The build exports `/openapi.json`. Request schemas come from the server's
+  validators. Common response schemas are checked against the public API types
+  before generation. Retainer CI verifies the generated snapshot and examples.
 - Fumadocs builds `/llms.txt`, `/llms-full.txt`, and individual Markdown files
   under `/llms.mdx/`. The **Copy Markdown** and **Open** actions use those files.
 
-## Update the API request schemas
+## Update the API schemas
 
-After changing a documented validator, regenerate the snapshot from the repository
-root after installing and building the main workspace. Commit the snapshot with
-the validator change.
+After changing a documented validator or common response schema, regenerate the
+snapshot from the repository root after installing and building the main
+workspace. Commit the snapshot with the schema change.
 
 ```sh
-pnpm --filter @retainer/server exec tsx test/api/openapi-requests.ts
-pnpm exec biome format --write apps/docs/lib/request-schemas.json
+pnpm --filter @retainer/server exec tsx test/api/openapi-schemas.ts
+pnpm exec biome format --write apps/docs/lib/api-schemas.json
 ```
 
 ## Publishing

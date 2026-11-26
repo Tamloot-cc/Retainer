@@ -1,58 +1,11 @@
 import { readFileSync } from 'node:fs';
-import type { EventDetails, PresentedFact, SavedView } from '@retainer/shared';
 import { expect, test } from 'vitest';
-import { buildRequestSchemas, requestSchemasFile, requestValidators } from './openapi-requests.js';
-
-type Fields<T> = Record<keyof T, true>;
-const responseFields = {
-  EventDetails: {
-    about: true,
-    channel: true,
-    content: true,
-    externalId: true,
-    occurredAt: true,
-    participants: true,
-    source: true,
-    summary: true,
-    title: true,
-  },
-  Fact: {
-    content: true,
-    id: true,
-    kind: true,
-    profile: true,
-    record: true,
-    sources: true,
-    status: true,
-    validFrom: true,
-    validTo: true,
-    writtenBy: true,
-  },
-  SavedView: {
-    columns: true,
-    createdAt: true,
-    createdBy: true,
-    dateField: true,
-    filter: true,
-    groupAggregate: true,
-    groupBy: true,
-    hiddenGroups: true,
-    id: true,
-    issues: true,
-    kind: true,
-    name: true,
-    object: true,
-    position: true,
-    sort: true,
-    updatedAt: true,
-    updatedBy: true,
-    visibility: true,
-  },
-} satisfies {
-  EventDetails: Fields<EventDetails>;
-  Fact: Fields<PresentedFact>;
-  SavedView: Fields<SavedView>;
-};
+import {
+  apiSchemasFile,
+  buildApiSchemas,
+  buildRequestSchemas,
+  requestValidators,
+} from './openapi-schemas.js';
 
 type PublicContract = {
   paths: Record<
@@ -70,11 +23,11 @@ type PublicContract = {
 
 const contractUrl = new URL('../../../../apps/docs/lib/rest-contract.ts', import.meta.url).href;
 
-test('the docs request schema snapshot matches the server validators', () => {
+test('the docs schema snapshot matches the server contracts', () => {
   expect(
-    JSON.parse(readFileSync(requestSchemasFile, 'utf8')),
-    'Regenerate the request schema snapshot using the command in apps/docs/README.md.',
-  ).toEqual(buildRequestSchemas());
+    JSON.parse(readFileSync(apiSchemasFile, 'utf8')),
+    'Regenerate the API schema snapshot using the command in apps/docs/README.md.',
+  ).toEqual(buildApiSchemas());
 });
 
 test('the reference uses the generated request schemas and sends valid examples', async () => {
@@ -98,14 +51,9 @@ test('the reference uses the generated request schemas and sends valid examples'
   }
 });
 
-test('event details, facts and saved views document the public response fields', async () => {
+test('saved views accept fractional positions in the public response schema', async () => {
   const { contract } = (await import(/* @vite-ignore */ contractUrl)) as {
     contract: PublicContract;
   };
-  for (const [name, fields] of Object.entries(responseFields)) {
-    expect(Object.keys(contract.components.schemas[name]?.properties ?? {}).sort(), name).toEqual(
-      Object.keys(fields).sort(),
-    );
-  }
   expect(contract.components.schemas.SavedView?.properties.position).toEqual({ type: 'number' });
 });
