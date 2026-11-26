@@ -1,13 +1,17 @@
-import { type PinnedTool, RETAINER_TOOL_NAMES, WEB_MAX_USES } from '@retainer/agent';
+import {
+  type PinnedTool,
+  RETAINER_TOOL_NAMES,
+  TOOL_NAME,
+  type ToolAnswer,
+  WEB_MAX_USES,
+} from '@retainer/agent';
 import type { Caller } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import type { RuntimeCatalog } from '../extension-runtime/availability.js';
 import { installedTools } from '../extensions/tools.js';
 
 /** A Retainer tool's result for the model: its output, or an error result that says why. */
-export type RetainerToolResult =
-  | { ok: true; output: unknown }
-  | { ok: false; error: { code: string; message: string } };
+export type RetainerToolResult = ToolAnswer;
 
 /**
  * Retainer's own tools, as the MCP server defines and runs them (agent spec
@@ -25,7 +29,7 @@ export interface RetainerToolHost {
 /** A pinned extension tool's name for the model, and what it calls. */
 export type ExtensionToolRef = { registrationId: string; tool: string };
 
-/** Anthropic's tool names: `^[a-zA-Z0-9_-]{1,64}$`. Extension tools get a prefix so they never collide. */
+/** Extension tools get a prefix so they never collide with Retainer's. */
 const EXTENSION_PREFIX = 'ext_';
 export const extensionToolName = (tool: string) => `${EXTENSION_PREFIX}${tool}`;
 
@@ -60,7 +64,7 @@ export async function pinnedTools(
     const installed = (await installedTools(tx, catalog))
       .filter((tool) => tool.effect === 'read' && tool.status !== 'conflict')
       .map((tool) => ({ tool, name: extensionToolName(tool.name) }))
-      .filter(({ name }) => /^[a-zA-Z0-9_-]{1,64}$/.test(name))
+      .filter(({ name }) => TOOL_NAME.test(name))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const { tool, name } of installed) {
       tools.push({

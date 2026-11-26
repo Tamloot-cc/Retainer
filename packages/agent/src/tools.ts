@@ -35,7 +35,8 @@ export type PinnedTool =
   | { kind: 'web_search'; name: 'web_search'; maxUses: number }
   | { kind: 'web_fetch'; name: 'web_fetch'; maxUses: number };
 
-const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+/** Anthropic's tool names. */
+export const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /** Checks a pinned list from the API before it is turned into tools. */
 export function parsePinnedTools(value: unknown): PinnedTool[] {

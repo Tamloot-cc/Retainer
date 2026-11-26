@@ -329,6 +329,7 @@ export class AgentSessions {
       const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH);
       if (!session.title && title)
         await tx`update agent_sessions set title = ${title} where id = ${sessionId} and title = ''`;
+      const { maxSteps, maxOutputTokens, maxToolCalls, webMaxUses } = sessionLimits(session);
       return {
         turnToken: claimed.token,
         turnId: claimed.turn.id,
@@ -343,12 +344,7 @@ export class AgentSessions {
           tools: session.tools,
         },
         addedParts,
-        limits: {
-          maxSteps: session.limits.maxSteps ?? CHAT_LIMITS.maxSteps,
-          maxOutputTokens: session.limits.maxOutputTokens ?? CHAT_LIMITS.maxOutputTokens,
-          maxToolCalls: session.limits.maxToolCalls ?? CHAT_LIMITS.maxToolCalls,
-          webMaxUses: session.limits.webMaxUses ?? CHAT_LIMITS.webMaxUses,
-        },
+        limits: { maxSteps, maxOutputTokens, maxToolCalls, webMaxUses },
       };
     });
   }
@@ -547,7 +543,8 @@ export class AgentSessions {
       if (!session) throw notFound('session');
       const carries = (kind: string) =>
         (session.tools as { kind: string }[]).some((tool) => tool.kind === kind);
-      const allowance = session.limits.webMaxUses ?? CHAT_LIMITS.webMaxUses;
+      const limits = sessionLimits(session);
+      const allowance = limits.webMaxUses;
       // Missing counts charge the whole allowance of a web tool the session carries.
       const searches = input.webSearches ?? (carries('web_search') ? allowance : 0);
       const fetches = input.webFetches ?? (carries('web_fetch') ? allowance : 0);
@@ -588,7 +585,6 @@ export class AgentSessions {
           action: 'stop' as const,
           reason: turn.status === 'cancelled' ? ('cancelled' as const) : ('stale' as const),
         };
-      const limits = { ...CHAT_LIMITS, ...session.limits };
       const over =
         totals.steps >= limits.maxSteps ||
         totals.tool_calls >= limits.maxToolCalls ||
@@ -614,6 +610,11 @@ export class AgentSessions {
       durationMs: input.durationMs,
     });
   }
+}
+
+/** A session's limits: the chat defaults, lowered where the session says so (§10.1). */
+function sessionLimits(session: Pick<SessionRow, 'limits'>) {
+  return { ...CHAT_LIMITS, ...session.limits };
 }
 
 function toolError(code: string, message: string): RetainerToolResult {
