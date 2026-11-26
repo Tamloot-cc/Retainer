@@ -156,6 +156,7 @@ function Layout() {
           <Shell
             workspace={session.workspace.name}
             routinesAvailable={session.routinesAvailable === true}
+            agentAvailable={session.agentAvailable === true}
             user={{
               name: session.actor.name || session.actor.id,
               detail: accountState
@@ -280,6 +281,24 @@ const routinesRoute = createRoute({
   },
 });
 
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/chat',
+  component: function ChatLayout() {
+    const { session } = useAuth();
+    return session.agentAvailable ? (
+      <Outlet />
+    ) : (
+      <Page title="Chat is unavailable">
+        <p className="text-sm text-muted-foreground">
+          This server doesn’t run the workspace agent.
+        </p>
+        <Link to="/">Go home</Link>
+      </Page>
+    );
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
@@ -390,6 +409,18 @@ const routeTree = rootRoute.addChildren([
       getParentRoute: () => routinesRoute,
       path: '$id/runs/$run',
       component: lazyRouteComponent(() => import('./routes/routines/run.js'), 'RoutineRunPage'),
+    }),
+  ]),
+  chatRoute.addChildren([
+    createRoute({
+      getParentRoute: () => chatRoute,
+      path: '/',
+      component: lazyRouteComponent(() => import('./routes/agent/chat.js'), 'ChatsPage'),
+    }),
+    createRoute({
+      getParentRoute: () => chatRoute,
+      path: '$id',
+      component: lazyRouteComponent(() => import('./routes/agent/chat.js'), 'ChatPage'),
     }),
   ]),
   createRoute({

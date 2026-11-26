@@ -66,11 +66,20 @@ async function presentSession(sql: Sql, caller: Caller, waitForSchema = true): P
     };
   });
 }
+/** Which optional parts this deployment runs, for the web app to show or hide. */
+type Availability = { routinesAvailable?: boolean; agentAvailable?: boolean };
+function withAvailability<T extends object>(session: T, available: Availability) {
+  return {
+    ...session,
+    ...(available.routinesAvailable ? { routinesAvailable: true as const } : {}),
+    ...(available.agentAvailable ? { agentAvailable: true as const } : {}),
+  };
+}
 export function sessionRoutes(
   app: Hono<AppEnv>,
   sql: Sql,
   publicOrigin?: string,
-  routinesAvailable = false,
+  available: Availability = {},
 ) {
   app.post('/auth/session', async (c) => {
     requireWebHeader(c, publicOrigin);
@@ -87,7 +96,7 @@ export function sessionRoutes(
       maxAge: 30 * 24 * 60 * 60,
     });
     c.header('Cache-Control', 'no-store');
-    return c.json(routinesAvailable ? { ...result, routinesAvailable: true } : result);
+    return c.json(withAvailability(result, available));
   });
   app.delete('/auth/session', (c) => {
     requireWebHeader(c, publicOrigin);
@@ -99,12 +108,12 @@ export function sessionRoutes(
 export function meRoute(
   app: Hono<AppEnv>,
   sql: Sql,
-  options: { routinesAvailable: boolean; restricted: boolean },
+  options: Availability & { restricted: boolean },
 ) {
   app.get('/me', async (c) => {
     // Restricted admission already refuses machine callers. The remaining
     // session metadata read can proceed while a workspace schema lock is held.
     const session = await presentSession(sql, c.get('caller'), !options.restricted);
-    return c.json(options.routinesAvailable ? { ...session, routinesAvailable: true } : session);
+    return c.json(withAvailability(session, options));
   });
 }

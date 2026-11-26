@@ -26,6 +26,8 @@ export type Session = {
   person: boolean;
   /** Present when this deployment can execute Routines. */
   routinesAvailable?: true;
+  /** Present when this deployment runs the workspace agent's chat (agent spec §6). */
+  agentAvailable?: true;
 };
 export type FieldView = Omit<FieldDefinition, 'description' | 'settings'> & {
   description: string | null;

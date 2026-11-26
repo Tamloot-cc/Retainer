@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { test as base, expect } from '@playwright/test';
+import { createAgentApp } from '@retainer/agent/runtime';
 import { ENRICHMENT, ENRICHMENT_BINDINGS } from '@retainer/runner/enrichment-contract';
 import { tamlootManifest } from '@retainer/runner/tamloot-contract';
 import { generateKeyPair } from 'jose';
 import postgres from 'postgres';
+import { FakeAnthropic } from '../../agent/test/fake-anthropic.js';
 import { createApp } from '../src/api/app.js';
 import { createApiKey } from '../src/auth/keys.js';
 import { createSql, RUNTIME_ROLE } from '../src/db/client.js';
@@ -263,14 +265,19 @@ export const browserOAuthManifest = manifestFixture({
     },
   ],
 });
+const AGENT_RUNTIME_SECRET = 'browser-agent-runtime-secret-0123456789abcdef';
 /** Where the fixture's provider sends members to approve; tests route it. */
 export const BROWSER_OAUTH_AUTHORIZE = 'https://provider.test/oauth/start';
 export const test = base.extend<
   {
     routineFixture: boolean;
+    /** Runs the agent runtime beside the server, answering from a fake Anthropic API. */
+    agentFixture: boolean;
     workspaceTemplate: 'starter' | 'sales';
     retainer: {
       url: string;
+      /** The fake model behind the agent (`agentFixture`): queue its answers. */
+      anthropic: FakeAnthropic | undefined;
       keys: { user: string; writer: string; agent: string; reader: string; other: string };
       restrictReads: (active: boolean) => void;
       request: (path: string, body?: unknown, key?: string, method?: string) => Promise<any>;
@@ -305,6 +312,7 @@ export const test = base.extend<
   }
 >({
   routineFixture: [false, { option: true }],
+  agentFixture: [false, { option: true }],
   workspaceTemplate: ['starter', { option: true }],
   extensionFixture: [false, { option: true, scope: 'worker' }],
   standaloneFixture: [false, { option: true, scope: 'worker' }],
@@ -321,6 +329,7 @@ export const test = base.extend<
       browserName: _browserName,
       extensionFixture,
       routineFixture,
+      agentFixture,
       workspaceTemplate,
       standaloneFixture,
       fileStorage: withFiles,
@@ -479,8 +488,37 @@ export const test = base.extend<
     if (!address || typeof address === 'string') throw new Error('No listening address');
     const url = `http://127.0.0.1:${address.port}`;
     fileOrigins.push(url);
+    // The agent runtime as self-hosted (agent spec §13): the server forwards each
+    // stream to it, and it calls back the server's runtime routes.
+    const anthropic = agentFixture ? await new FakeAnthropic().start() : undefined;
+    let agentServer: ReturnType<typeof serve> | undefined;
+    let agentUrl: string | undefined;
+    if (anthropic) {
+      process.env.ANTHROPIC_BASE_URL = anthropic.url;
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      const agentApp = createAgentApp({
+        apiOrigin: url,
+        runtimeSecret: AGENT_RUNTIME_SECRET,
+        mastraUrl: dbUrl.toString(),
+        pollIntervalMs: 500,
+      });
+      agentServer = serve({ fetch: agentApp.fetch, port: 0, hostname: '127.0.0.1' });
+      await new Promise<void>((r) => agentServer?.once('listening', () => r()));
+      const agentAddress = agentServer.address();
+      if (!agentAddress || typeof agentAddress === 'string') throw new Error('No agent address');
+      agentUrl = `http://127.0.0.1:${agentAddress.port}`;
+    }
     const app = createApp({
       sql,
+      ...(agentUrl
+        ? {
+            agent: {
+              runtimeSecret: AGENT_RUNTIME_SECRET,
+              upstream: agentUrl,
+              readStoreUrl: dbUrl.toString(),
+            },
+          }
+        : {}),
       ...(routineFixture && runTokens ? { routines: { available: true }, runTokens } : {}),
       ...(oauthMemberFixture && catalog
         ? {
@@ -840,6 +878,7 @@ export const test = base.extend<
     try {
       await use({
         url,
+        anthropic,
         keys: { user, writer, agent, reader, other: otherKey },
         request,
         restrictReads,
@@ -855,6 +894,11 @@ export const test = base.extend<
         },
       });
     } finally {
+      if (agentServer) {
+        agentServer.closeAllConnections();
+        await new Promise<void>((r) => agentServer?.close(() => r()));
+      }
+      await anthropic?.stop();
       await new Promise<void>((resolve, reject) => {
         server.close((e) => (e ? reject(e) : resolve()));
         // Canceled browser requests can leave active sockets open after the

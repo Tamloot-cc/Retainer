@@ -184,7 +184,9 @@ export function createApp(deps: AppDeps) {
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
   const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
-  if (!deps.accountsSecret) sessionRoutes(app, deps.sql, publicOrigin, routinesAvailable);
+  const agentAvailable = agent !== undefined;
+  if (!deps.accountsSecret)
+    sessionRoutes(app, deps.sql, publicOrigin, { routinesAvailable, agentAvailable });
   const v1 = new Hono<AppEnv>();
   const workspaceLimit = deps.restricted
     ? admitRestrictedCredential(deps.restricted.rateLimit)
@@ -209,7 +211,11 @@ export function createApp(deps: AppDeps) {
   );
   v1.use('*', admitCliRoutes());
   v1.use('*', limit);
-  meRoute(v1, deps.sql, { routinesAvailable, restricted: deps.restricted !== undefined });
+  meRoute(v1, deps.sql, {
+    routinesAvailable,
+    agentAvailable,
+    restricted: deps.restricted !== undefined,
+  });
   webReadRoutes(v1, deps.sql);
   schemaRoutes(v1, deps.sql);
   templateRoutes(v1, deps.sql);

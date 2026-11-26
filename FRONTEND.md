@@ -13,8 +13,8 @@ Retainer is used by agents through REST and MCP. The web app is for the
 people those agents work for. It does the jobs only a person can do and lets
 them see what the agents remembered and why. It is not a CRM front end and
 has no dashboards. Email comes in through extensions (Gmail), not the web
-app. An agent chat is planned, with the Retainer mark as the assistant's
-avatar ([assistant avatar spec](docs/specs/assistant-avatar.md)).
+app. People can chat with the workspace agent (5.10), whose avatar is the
+Retainer mark ([assistant avatar spec](docs/specs/assistant-avatar.md)).
 
 ---
 
@@ -392,7 +392,8 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
 
 ### 5.3a Shell
 
-- A left sidebar: workspace, Find anything (⌘K), Review inbox with its
+- A left sidebar: workspace, Chat (when the agent runs, 5.10), Find
+  anything (⌘K), Review inbox with its
   pending count, then two labeled groups. **Records** lists the entity
   objects (standard ones first, each with its icon). **Activity** starts
   with each event type. **Home** (5.3c) sits above both groups. Event types
@@ -764,6 +765,42 @@ they map, such as each status. A suggestion shows its reason only while the
 choice still matches it. The review step and the Destinations tab show the
 same cards as text, with labels rather than API names.
 
+### 5.10 Chat — `/app/chat`
+
+A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
+§6). Shown only when the server runs the agent: `GET /v1/me` says
+`agentAvailable`, and the sidebar link and routes are absent otherwise
+("Chat is unavailable"). Code: `routes/agent/`.
+
+- **List** (`/app/chat`): a line on what the agent does, a message box that
+  starts a new chat with its first message, and the person's chats, newest
+  first, with "Answering…" on one whose turn is still running. Chats are
+  private to their person.
+- **Chat** (`/app/chat/:id`): the saved messages (`GET /v1/agent/chats/:id`),
+  then each new turn streamed with AI SDK `useChat`. Every turn takes a fresh
+  stream token (`POST …/token`) and posts exactly one text part to its
+  `streamUrl` with that token and no cookie (spec §6.1); the runtime refuses
+  anything else.
+- **Messages.** The person's on the right. The agent's show, in order, its
+  reasoning folded under "Thought about it", each tool call as one plain line
+  ("Searched for “Acme”", "Saved a record"; a failure says why) that opens to
+  the call's input and result, the answer as Markdown, and web sources. A
+  turn that didn't complete says how in plain words; a chat too long to go on
+  offers a new one instead of the message box.
+- **The mark.** The agent's last message carries the mark, and its mood
+  follows the stream (avatar spec §7): listening while the person types,
+  thinking before it acts, reading for read tools and web search, saving for
+  writes, working while the answer streams, done when the turn ends, error
+  when it fails. A status line beside the message box says the same in words.
+- **Stop** cancels the turn on the server (`POST …/cancel`) and stops reading
+  the stream. **Delete** asks first, then erases the chat; what the agent
+  saved to the workspace stays.
+- **A turn still running** from an earlier visit (a reload, another tab) shows
+  what was saved so far and "Still working on your last message…", checks back
+  until it ends, and can be stopped. Joining its live stream is later (spec
+  §6.5).
+- Refusals are in plain words: another turn running or stopping, today's
+  limit, the agent unavailable.
 
 ### Not in v1
 

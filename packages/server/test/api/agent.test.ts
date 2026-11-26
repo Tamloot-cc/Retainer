@@ -38,6 +38,14 @@ beforeAll(async () => {
 
 const runtimeBase = (id: string) => `/v1/agent/runtime/sessions/${id}`;
 
+it('tells the web app the agent runs only when it is set up', async () => {
+  const me = await t.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(me.body.agentAvailable).toBe(true);
+  const without = startTestApp(db);
+  const plain = await without.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(plain.body.agentAvailable).toBeUndefined();
+});
+
 async function newChat(key = keys.writer) {
   const created = await t.request<{ id: string }>('/v1/agent/chats', { key, method: 'POST' });
   expect(created.status).toBe(201);

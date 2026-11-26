@@ -11,8 +11,6 @@ import { Link } from '@tanstack/react-router';
 import { FileText, History, Maximize2, Pencil } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { FieldPicker, pickerFor } from '../../fields/common.js';
 import { primaryCopyValue } from '../../fields/copy-value.js';
@@ -23,6 +21,7 @@ import {
   Button,
   CopyButton,
   Dialog,
+  Markdown,
   Muted,
   Notice,
   ObjectLink,
@@ -383,31 +382,7 @@ export function FieldProperty({
         {markdown &&
         typeof record.fields[field.name] === 'string' &&
         record.fields[field.name] !== '' ? (
-          <div
-            dir="auto"
-            className="whitespace-normal [&_p]:my-2 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:ps-6 [&_ol]:ps-6 [&_a]:underline [&_pre]:overflow-auto [&_pre]:text-left"
-            style={{ textAlign: 'start' }}
-          >
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                p: ({ node: _, ...props }) => <p {...props} dir="auto" />,
-                li: ({ node: _, ...props }) => <li {...props} dir="auto" />,
-                h1: ({ node: _, ...props }) => <h1 {...props} dir="auto" />,
-                h2: ({ node: _, ...props }) => <h2 {...props} dir="auto" />,
-                h3: ({ node: _, ...props }) => <h3 {...props} dir="auto" />,
-                h4: ({ node: _, ...props }) => <h4 {...props} dir="auto" />,
-                h5: ({ node: _, ...props }) => <h5 {...props} dir="auto" />,
-                h6: ({ node: _, ...props }) => <h6 {...props} dir="auto" />,
-                blockquote: ({ node: _, ...props }) => <blockquote {...props} dir="auto" />,
-                th: ({ node: _, ...props }) => <th {...props} dir="auto" />,
-                td: ({ node: _, ...props }) => <td {...props} dir="auto" />,
-                pre: ({ node: _, ...props }) => <pre {...props} dir="ltr" />,
-              }}
-            >
-              {record.fields[field.name] as string}
-            </Markdown>
-          </div>
+          <Markdown>{record.fields[field.name] as string}</Markdown>
         ) : (
           <Display
             field={field}
