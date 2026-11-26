@@ -493,6 +493,9 @@ messages, and a change anywhere invalidates everything after it.
     schedules use (`routines.md` §7), or UTC when none is set.
     These server-added parts carry a marker, so the chat read endpoint
     (§6.1) and the stream show only what the person wrote.
+    The chat's context and a date count as told only once a turn that
+    carried them reports a step, which comes after its message is saved;
+    a turn that died before then hands them to the next one.
   - **History only grows** (§3.4). Nothing is injected into a request and
     removed from the next. A change mid-chat (an elevation, a removed
     extension) shows up as a tool's error result (§8.3).

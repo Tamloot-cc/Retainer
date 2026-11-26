@@ -345,7 +345,13 @@ export class AgentSessions {
         ...(input.notAfter ? { notAfter: new Date(input.notAfter) } : {}),
         ...(input.build ? { build: input.build } : {}),
       });
-      const addedParts = await this.addedParts(tx, session, caller, claimed.turn.generation === 1);
+      // The context counts as delivered once a step of a turn has been
+      // reported: the runtime saves the message before its first model
+      // request, so a turn that died before that gets it again (§3.5).
+      const [delivered] = await tx<{ steps: number }[]>`
+        select coalesce(sum(steps), 0)::int as steps from agent_turns where session_id = ${sessionId}`;
+      const first = (delivered?.steps ?? 0) === 0;
+      const addedParts = await this.addedParts(tx, session, caller, first);
       const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH);
       if (!session.title && title)
         await tx`update agent_sessions set title = ${title} where id = ${sessionId} and title = ''`;
@@ -359,7 +365,7 @@ export class AgentSessions {
         session: {
           id: session.id,
           kind: session.kind,
-          firstTurn: claimed.turn.generation === 1,
+          firstTurn: first,
           systemBlocks: session.system_blocks,
           tools: session.tools,
         },
@@ -369,13 +375,16 @@ export class AgentSessions {
     });
   }
 
-  /** The per-chat context on the first turn, or "Today is …" on a later date (§3.5). */
+  /**
+   * The per-chat context until a turn has delivered it, or "Today is …" on a
+   * later date (§3.5). The date is recorded as told only when the turn
+   * reports its first step (`report`), for the same reason.
+   */
   private async addedParts(tx: Tx, session: SessionRow, caller: Caller, first: boolean) {
     const [workspace] = await tx<{ name: string; settings: WorkspaceSettings }[]>`
       select name, settings from workspaces where id = ${session.workspace_id}`;
     const date = workspaceDate(new Date(), workspace?.settings.timeZone);
     if (!first && session.last_date === date.day) return [];
-    await tx`update agent_sessions set last_date = ${date.day} where id = ${session.id}`;
     if (!first) return [datePart(date)];
     const schema = await getSchema(tx, session.workspace_id);
     const names = (ids: string[]) =>
@@ -592,6 +601,14 @@ export class AgentSessions {
             cache_write_tokens = cache_write_tokens + ${input.usage.cacheWrite}
           where id = ${turn.id} returning *`;
         if (updated) totals = updated;
+        // The turn's first counted step: its message, with any server-added
+        // parts, was saved and sent, so the date it carried has been told.
+        if (updated?.steps === 1) {
+          const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
+            select settings from workspaces where id = ${turn.workspace_id}`;
+          const day = workspaceDate(turn.claimed_at, workspace?.settings.timeZone).day;
+          await tx`update agent_sessions set last_date = ${day} where id = ${session.id}`;
+        }
         const subjects = session.kind === 'chat' ? ['workspace', session.owner] : ['workspace'];
         for (const subject of subjects)
           await tx`

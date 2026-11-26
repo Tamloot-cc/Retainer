@@ -274,6 +274,7 @@ describe('claims', () => {
       maxToolCalls: 200,
       webMaxUses: 10,
     });
+    await report(id, first.turnToken, 'first-step');
     await close(id, first.turnToken);
     const second = await claimed(id);
     expect(second.session.firstTurn).toBe(false);
@@ -287,11 +288,28 @@ describe('claims', () => {
       'Who is Dana Levi at Acme, and what did we promise her last week?'.slice(0, 80),
     );
     await close(id, second.turnToken);
-    // A new day adds "Today is …" once.
+    // A new day adds "Today is …" until a turn has reported a step with it.
     await db.owner`update agent_sessions set last_date = '2000-01-01' where id = ${id}`;
     const third = await claimed(id);
     expect(third.addedParts).toHaveLength(1);
     expect(third.addedParts[0]).toMatch(/^Today is /);
+    await close(id, third.turnToken, 'failed');
+    const fourth = await claimed(id);
+    expect(fourth.addedParts).toHaveLength(1);
+    await report(id, fourth.turnToken, 'fourth-step');
+    await close(id, fourth.turnToken);
+    expect((await claimed(id)).addedParts).toEqual([]);
+  });
+
+  it('gives the chat context again when the first turn died before saving its message', async () => {
+    const id = await newChat();
+    const first = await claimed(id);
+    expect(first.addedParts[0]).toMatch(/Workspace: Acme Sales\./);
+    // The runtime died after the claim, before any step: nothing was reported.
+    await close(id, first.turnToken, 'failed');
+    const retry = await claimed(id);
+    expect(retry.session.firstTurn).toBe(true);
+    expect(retry.addedParts[0]).toMatch(/Workspace: Acme Sales\./);
   });
 
   it('runs one turn per chat when two messages arrive at once (concurrent)', async () => {
