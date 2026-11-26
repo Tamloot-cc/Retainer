@@ -1456,6 +1456,15 @@ agent holds no model token (D6). A routine's or an extension's cost
 includes its tasks. Web search counts are in the stored `usage`
 object already.
 
+The step report also carries the cache writes' split by lifetime, from
+`providerMetadata.anthropic.usage.cache_creation`: the system prompt's
+entry is written for 1 hour and the conversation's for 5 minutes (§3.5),
+and the two are priced differently. The `usage` object stores it as the
+model proxy does (`cache_creation.ephemeral_5m_input_tokens` and
+`ephemeral_1h_input_tokens`), so reporting prices agent steps like any
+other call. A step without the split keeps its cache-write total but
+can't be priced.
+
 ## 11. Hidden instructions
 
 A model call with no tools can only answer. An agent reads private data,

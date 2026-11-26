@@ -45,6 +45,8 @@ export type Claim = {
 export type StepReport = {
   stepId: string;
   usage: { input: number; cacheRead: number; cacheWrite: number; output: number };
+  /** The cache writes' split by lifetime, as Anthropic names it, which prices them; null when it sent none. */
+  cacheCreation: { ephemeral_5m_input_tokens: number; ephemeral_1h_input_tokens: number } | null;
   webSearches: number | null;
   toolCalls: number;
   finishReason: string;

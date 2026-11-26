@@ -157,6 +157,10 @@ const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const reportBody = z.strictObject({
   stepId: z.string().min(1).max(200),
   usage: z.strictObject({ input: count, cacheRead: count, cacheWrite: count, output: count }),
+  cacheCreation: z
+    .strictObject({ ephemeral_5m_input_tokens: count, ephemeral_1h_input_tokens: count })
+    .nullable()
+    .optional(),
   webSearches: count.nullable(),
   toolCalls: count,
   finishReason: z.string().max(100).optional(),
@@ -806,6 +810,8 @@ export class AgentSessions {
         values (${turn.workspace_id}, 'agent', 1, ${input.model ?? AGENT_MODEL}, ${input.usage.input},
           ${input.usage.output}, ${input.usage.cacheRead}, ${input.usage.cacheWrite},
           ${tx.json({
+            // Stored as the model proxy stores it, which prices the cache writes (§10.3).
+            ...(input.cacheCreation ? { cache_creation: input.cacheCreation } : {}),
             server_tool_use: { web_search_requests: searches },
             tool_calls: input.toolCalls,
             ...(input.finishReason ? { finish_reason: input.finishReason } : {}),

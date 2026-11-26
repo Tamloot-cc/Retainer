@@ -483,6 +483,26 @@ describe('a chat turn', () => {
     expect(report).toMatchObject({ webSearches: null });
   });
 
+  it("reports the cache writes' split Anthropic sends, and null without one", async () => {
+    anthropic.enqueue(
+      {
+        ...answerStep(),
+        usage: {
+          cache_creation_input_tokens: 30,
+          cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 20 },
+        },
+      },
+      { ...answerStep(), usage: { cache_creation_input_tokens: 30 } },
+    );
+    await turn(crypto.randomUUID(), 'First');
+    await turn(crypto.randomUUID(), 'Second');
+    const reports = api.ofPath('/report').map((c) => c.body as Record<string, unknown>);
+    expect(reports.map((r) => r.cacheCreation)).toEqual([
+      { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 20 },
+      null,
+    ]);
+  });
+
   it('uses the web counts Anthropic sends, zeros included', async () => {
     anthropic.enqueue({
       ...answerStep(),
