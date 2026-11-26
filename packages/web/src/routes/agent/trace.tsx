@@ -1,4 +1,9 @@
-import type { RoutineRunAgentTask } from '@retainer/shared';
+import {
+  AGENT_TASK_ERROR_CODES,
+  type AgentTaskErrorCode,
+  type RoutineRunAgentTask,
+  type RoutineRunCall,
+} from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api, useWorkspace } from '../../api/client.js';
 import { Badge, Loading, Muted, Notice, Section, type Tone } from '../../ui/index.js';
@@ -18,26 +23,34 @@ const STATE: Record<RoutineRunAgentTask['state'], { label: string; tone: Tone }>
 const ERASED =
   'Its messages are no longer kept: an agent task’s messages are erased 7 days after it ends.';
 
+/** An `ai.agent` call as the run recorded it. */
+type AgentCall = Pick<RoutineRunCall, 'position' | 'state' | 'code'>;
+
 /**
  * What the agent did for a routine run's `ai.agent` calls (agent spec §5.3):
- * each task's saved messages, read-only, in the chat's own layout. `positions`
- * are the run's agent calls, so a task retention has erased still gets a line.
+ * each task's saved messages, read-only, in the chat's own layout. `calls` are
+ * the run's agent calls, so one whose task retention erased, or that was
+ * refused before it got a task, still gets a line.
  */
 export function AgentTrace({
   routineId,
   runId,
-  positions,
+  calls,
+  runFinished,
 }: {
   routineId: string;
   runId: string;
-  positions: number[];
+  calls: AgentCall[];
+  /** The run has ended: it starts no more agent calls. */
+  runFinished: boolean;
 }) {
   const { session } = useWorkspace();
   const tasks = useQuery({
     queryKey: [...routinesKey(session.workspace.id), 'run', routineId, runId, 'agent-tasks'],
     queryFn: ({ signal }) => api.routineRunAgentTasks(routineId, runId, signal),
+    // Checks back while a task works, and while the run may still start another one.
     refetchInterval: (query) =>
-      query.state.data?.tasks.some((task) => !task.finishedAt) ? 3000 : false,
+      !runFinished || query.state.data?.tasks.some((task) => !task.finishedAt) ? 3000 : false,
   });
   return (
     <Section title="What the agent did">
@@ -50,11 +63,11 @@ export function AgentTrace({
       ) : !tasks.data ? (
         <Loading>Loading what the agent did…</Loading>
       ) : (
-        positions.map((position) => (
+        calls.map((call) => (
           <AgentTask
-            key={position}
-            position={position}
-            task={tasks.data.tasks.find((t) => t.position === position)}
+            key={call.position}
+            call={call}
+            task={tasks.data.tasks.find((t) => t.position === call.position)}
           />
         ))
       )}
@@ -62,7 +75,18 @@ export function AgentTrace({
   );
 }
 
-function AgentTask({ position, task }: { position: number; task?: RoutineRunAgentTask }) {
+/** Why a call that never got a task has none, in plain words. */
+function noTaskText(call: AgentCall) {
+  // A task's own failure codes mean it had a task, since erased; any other code is
+  // the runtime refusing the call before it made one.
+  if (call.state === 'failed' && !AGENT_TASK_ERROR_CODES.includes(call.code as AgentTaskErrorCode))
+    return `The routine’s call to the agent was refused${call.code ? `: ${call.code.replaceAll('_', ' ')}` : ''}. No task was started.`;
+  if (call.state === 'started') return 'The agent hasn’t started on it yet.';
+  return ERASED;
+}
+
+function AgentTask({ call, task }: { call: AgentCall; task?: RoutineRunAgentTask }) {
+  const position = call.position;
   const state = task ? STATE[task.state] : undefined;
   return (
     <article
@@ -75,7 +99,7 @@ function AgentTask({ position, task }: { position: number; task?: RoutineRunAgen
         {task?.code ? <Muted small>{task.code.replaceAll('_', ' ')}</Muted> : null}
       </header>
       {!task ? (
-        <Muted small>{ERASED}</Muted>
+        <Muted small>{noTaskText(call)}</Muted>
       ) : task.messages.length === 0 ? (
         <Muted small>{task.finishedAt ? ERASED : 'The agent hasn’t started on it yet.'}</Muted>
       ) : (

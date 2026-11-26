@@ -17,7 +17,12 @@ let workspaceId: string;
 
 beforeAll(async () => {
   t = startTestApp(db, {
-    agent: { runtimeSecret: RUNTIME_SECRET, readStoreUrl: db.url, personDailySteps: 2000 },
+    agent: {
+      runtimeSecret: RUNTIME_SECRET,
+      readStoreUrl: db.url,
+      upstream: 'http://agent.invalid',
+      personDailySteps: 2000,
+    },
   });
   const sales = await t.setupWorkspace(
     { name: 'Acme Sales', template: 'sales' },
@@ -44,6 +49,10 @@ it('tells the web app the agent runs only when it is set up', async () => {
   const without = startTestApp(db);
   const plain = await without.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
   expect(plain.body.agentAvailable).toBeUndefined();
+  // A runtime secret alone: no store to read chats from and nowhere to stream to.
+  const partial = startTestApp(db, { agent: { runtimeSecret: RUNTIME_SECRET } });
+  const half = await partial.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
+  expect(half.body.agentAvailable).toBeUndefined();
 });
 
 async function newChat(key = keys.writer) {
@@ -381,6 +390,12 @@ describe('cancel', () => {
     expect((await runtime(id, turn.turnToken, '/turn')).body).toMatchObject({
       status: 'cancelled',
     });
+    // A reloaded chat learns how its last turn ended: not in the saved messages.
+    const read = () =>
+      t.request<{ running: boolean; lastTurnStatus: string | null }>(`/v1/agent/chats/${id}`, {
+        key: keys.writer,
+      });
+    expect((await read()).body).toMatchObject({ running: false, lastTurnStatus: 'cancelled' });
     const tool = await runtime(id, turn.turnToken, '/tools/describe_schema', {
       toolCallId: 'x',
       input: {},
@@ -398,6 +413,7 @@ describe('cancel', () => {
     // The old runtime's close only records that it stopped.
     expect((await close(id, turn.turnToken)).body).toEqual({ status: 'cancelled' });
     const next = await claimed(id);
+    expect((await read()).body).toMatchObject({ running: true, lastTurnStatus: 'running' });
     // The old turn's late report again counts once, and leaves the new turn alone.
     expect((await report(id, turn.turnToken, 'after-cancel')).body).toMatchObject({
       action: 'stop',

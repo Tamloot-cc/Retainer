@@ -65,11 +65,14 @@ const saved = [
   },
 ];
 
-function chat(over: { running?: boolean; messages?: unknown[] } = {}) {
+function chat(
+  over: { running?: boolean; messages?: unknown[]; lastTurnStatus?: string | null } = {},
+) {
   return vi.spyOn(api, 'agentChat').mockResolvedValue({
     id: 'chat-1',
     title: 'Who is Dana?',
     running: over.running ?? false,
+    lastTurnStatus: over.lastTurnStatus ?? 'completed',
     messages: (over.messages ?? saved) as never,
   });
 }
@@ -198,6 +201,78 @@ describe('ChatPage', () => {
     expect(await screen.findByText(/too long to continue/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Start a new chat' })).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+  });
+
+  it('shows how the last turn ended after a reload, which the saved messages do not carry', async () => {
+    router.params = { id: 'chat-1' };
+    chat({ lastTurnStatus: 'context_limit_reached' });
+    show(<ChatPage />);
+    expect(await screen.findByText(/too long to continue/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Start a new chat' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
+  });
+
+  it('after Stop, shows the saved chat and that the turn was stopped', async () => {
+    router.params = { id: 'chat-1' };
+    const detail = vi
+      .spyOn(api, 'agentChat')
+      .mockResolvedValueOnce({
+        id: 'chat-1',
+        title: 'Who is Dana?',
+        running: false,
+        lastTurnStatus: null,
+        messages: [],
+      })
+      .mockResolvedValue({
+        id: 'chat-1',
+        title: 'Who is Dana?',
+        running: false,
+        lastTurnStatus: 'cancelled',
+        messages: saved.slice(0, 1) as never,
+      });
+    vi.spyOn(api, 'agentChatToken').mockResolvedValue({
+      token: 't',
+      expiresAt: '',
+      streamUrl: STREAM_URL,
+    });
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    vi.spyOn(api, 'cancelAgentChat').mockResolvedValue({ cancelled: true });
+    // A stream that never ends: only Stop ends the turn on this page.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: string, init?: RequestInit) =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ type: 'start', messageId: 'a2' })}\n\n`,
+                  ),
+                );
+                init?.signal?.addEventListener('abort', () =>
+                  controller.error(new DOMException('aborted', 'AbortError')),
+                );
+              },
+            }),
+            {
+              headers: {
+                'content-type': 'text/event-stream',
+                'x-vercel-ai-ui-message-stream': 'v1',
+              },
+            },
+          ),
+      ),
+    );
+    show(<ChatPage />);
+    await userEvent.type(
+      await screen.findByRole('textbox', { name: 'Message' }),
+      'Who is Dana?{Enter}',
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(await screen.findByText('Stopped.')).toBeTruthy();
+    expect(screen.getByText('Who is Dana?', { selector: 'div' })).toBeTruthy();
+    expect(detail.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('explains a refused message: another turn is still running', async () => {

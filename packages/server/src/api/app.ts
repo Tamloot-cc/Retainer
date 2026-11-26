@@ -184,7 +184,12 @@ export function createApp(deps: AppDeps) {
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
   const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
-  const agentAvailable = agent !== undefined;
+  // Chat works only with its read store and somewhere to stream to: the agent's own
+  // origin (hosted) or the container this server forwards to (self-hosted).
+  const agentAvailable =
+    agent !== undefined &&
+    !!deps.agent?.readStoreUrl &&
+    !!(deps.agent.origin || deps.agent.upstream);
   if (!deps.accountsSecret)
     sessionRoutes(app, deps.sql, publicOrigin, { routinesAvailable, agentAvailable });
   const v1 = new Hono<AppEnv>();

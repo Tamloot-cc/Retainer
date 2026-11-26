@@ -76,9 +76,7 @@ export function RoutineRunPage() {
   const waiting = pendingReviews(r);
   const output = r.output ?? {};
   const logs = Array.isArray(output.logs) ? (output.logs as unknown[]).map(String) : [];
-  const agentCalls = r.calls
-    .filter((call) => call.operation === 'ai.agent')
-    .map((call) => call.position);
+  const agentCalls = r.calls.filter((call) => call.operation === 'ai.agent');
   return (
     <Page
       {...crumb}
@@ -156,7 +154,12 @@ export function RoutineRunPage() {
         </Muted>
       </Section>
       {agentCalls.length ? (
-        <AgentTrace routineId={id} runId={runId} positions={agentCalls} />
+        <AgentTrace
+          routineId={id}
+          runId={runId}
+          calls={agentCalls}
+          runFinished={runFinished(r.status)}
+        />
       ) : null}
       {output.result !== undefined || logs.length ? (
         <Section title="What it returned">

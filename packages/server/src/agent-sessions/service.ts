@@ -274,12 +274,21 @@ export class AgentSessions {
     const owned = this.owner(caller);
     const chat = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const row = await this.session(tx, owned.owner, id);
-      const [turn] = await tx<{ running: boolean }[]>`
-        select exists(select 1 from agent_turns where session_id = ${id} and status = 'running') as running`;
-      return { row, running: turn?.running === true };
+      // The last turn's status: how it ended is not in the saved messages, since the
+      // runtime sends its ending after it closes the store, so a reload reads it here.
+      const [turn] = await tx<{ status: string }[]>`
+        select status from agent_turns where session_id = ${id}
+        order by claimed_at desc, generation desc limit 1`;
+      return { row, lastTurn: turn?.status ?? null };
     });
     const messages = await readChatMessages(this.readStore(), id);
-    return { id: chat.row.id, title: chat.row.title, running: chat.running, messages };
+    return {
+      id: chat.row.id,
+      title: chat.row.title,
+      running: chat.lastTurn === 'running',
+      lastTurnStatus: chat.lastTurn,
+      messages,
+    };
   }
 
   /** The API's read-only Mastra store (§5.2), opened on first use. */
