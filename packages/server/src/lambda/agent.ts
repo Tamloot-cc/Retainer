@@ -28,7 +28,8 @@ function createApp() {
     apiOrigin: config.apiOrigin,
     runtimeSecret: config.runtimeSecret,
     mastraUrl: config.mastraUrl,
-    allowedOrigins: config.allowedOrigins,
+    // No `allowedOrigins`: the function URL's CORS settings add the headers,
+    // and adding them here too sends them twice, which browsers refuse.
     ...(HOSTED_WRITER_BUILD ? { build: HOSTED_WRITER_BUILD } : {}),
     notAfter: (env) => {
       const remaining = (env as LambdaEnv | undefined)?.lambdaContext?.getRemainingTimeInMillis?.();
