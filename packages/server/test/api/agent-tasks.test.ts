@@ -410,7 +410,7 @@ describe('agent tasks from a routine', () => {
 
   it('gives a job delivered again the task’s remaining steps; a late report counts once', async () => {
     const s = await setup();
-    const { taskId } = await s.park();
+    const { taskId, runId } = await s.park();
     const first = await claimJob(s, taskId);
     expect(first.body.limits.maxSteps).toBe(100);
     for (const step of ['s1', 's2', 's3'])
@@ -427,6 +427,12 @@ describe('agent tasks from a routine', () => {
     expect(second.body.session.firstTurn).toBe(false);
     const late = await report(s, taskId, first.body.turnToken, 's3');
     expect(late.status).not.toBe(200);
+    // Each step carries the task's caller, which outlives the task's session (§10.3).
+    const callers = await db.owner<{ routine_run_id: string; routine_id: string; job_id: null }[]>`
+      select routine_run_id, routine_id, job_id from ai_usage where agent_session_id = ${taskId}`;
+    expect(callers).toHaveLength(3);
+    for (const caller of callers)
+      expect(caller).toEqual({ routine_run_id: runId, routine_id: s.routineId, job_id: null });
     const [{ steps } = { steps: 0 }] = await db.owner<{ steps: number }[]>`
       select coalesce(sum(steps), 0)::int as steps from agent_turns where session_id = ${taskId}`;
     expect(steps).toBe(3);

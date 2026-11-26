@@ -19,6 +19,8 @@ export type FakeUsage = {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  /** The 5-minute and 1-hour split of the cache writes, in `message_start`. */
+  cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
   server_tool_use?: { web_search_requests?: number };
 };
 
@@ -138,6 +140,7 @@ function sseEvents(answer: Extract<FakeAnswer, { blocks: FakeBlock[] }>): Array<
             output_tokens: 1,
             cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
             cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+            ...(usage.cache_creation ? { cache_creation: usage.cache_creation } : {}),
           },
         },
       },

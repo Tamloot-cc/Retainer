@@ -157,6 +157,10 @@ const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const reportBody = z.strictObject({
   stepId: z.string().min(1).max(200),
   usage: z.strictObject({ input: count, cacheRead: count, cacheWrite: count, output: count }),
+  cacheCreation: z
+    .strictObject({ ephemeral_5m_input_tokens: count, ephemeral_1h_input_tokens: count })
+    .nullable()
+    .optional(),
   webSearches: count.nullable(),
   toolCalls: count,
   finishReason: z.string().max(100).optional(),
@@ -799,18 +803,37 @@ export class AgentSessions {
         (tool) => tool.kind === 'web_search',
       );
       const searches = input.webSearches ?? (carriesSearch ? limits.webMaxUses : 0);
+      // A task's steps carry its caller (§10.3): the routine and run, or the
+      // installation and job. They outlive the task's session, which goes 7
+      // days after the task (§5.4).
+      const [caller] =
+        session.kind === 'task'
+          ? await tx<
+              {
+                routine_id: string | null;
+                routine_run_id: string | null;
+                extension_job_id: string | null;
+                installation_id: string | null;
+              }[]
+            >`select routine_id, routine_run_id, extension_job_id, installation_id
+              from agent_tasks where session_id = ${session.id}`
+          : [];
       const inserted = await tx`
         insert into ai_usage (workspace_id, kind, attempt, model, input_tokens, output_tokens,
           cache_read_tokens, cache_write_tokens, usage, partial, agent_session_id, agent_turn_id,
-          agent_step_id, user_id)
+          agent_step_id, user_id, routine_id, routine_run_id, job_id, installation_id)
         values (${turn.workspace_id}, 'agent', 1, ${input.model ?? AGENT_MODEL}, ${input.usage.input},
           ${input.usage.output}, ${input.usage.cacheRead}, ${input.usage.cacheWrite},
           ${tx.json({
+            // Stored as the model proxy stores it, which prices the cache writes (§10.3).
+            ...(input.cacheCreation ? { cache_creation: input.cacheCreation } : {}),
             server_tool_use: { web_search_requests: searches },
             tool_calls: input.toolCalls,
             ...(input.finishReason ? { finish_reason: input.finishReason } : {}),
             ...(input.rawFinishReason ? { raw_finish_reason: input.rawFinishReason } : {}),
-          })}, false, ${session.id}, ${turn.id}, ${input.stepId}, ${session.person_id})
+          })}, false, ${session.id}, ${turn.id}, ${input.stepId}, ${session.person_id},
+          ${caller?.routine_id ?? null}, ${caller?.routine_run_id ?? null},
+          ${caller?.extension_job_id ?? null}, ${caller?.installation_id ?? null})
         on conflict (agent_session_id, agent_step_id) where kind = 'agent' do nothing
         returning id`;
       let totals = turn;

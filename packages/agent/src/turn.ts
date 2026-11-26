@@ -187,7 +187,10 @@ export function stepReport(
   const cacheRead = usage.cachedInputTokens ?? 0;
   const cacheWrite = usage.cacheCreationInputTokens ?? 0;
   const anthropic = (step.providerMetadata?.anthropic ?? {}) as {
-    usage?: { server_tool_use?: { web_search_requests?: number } };
+    usage?: {
+      server_tool_use?: { web_search_requests?: number };
+      cache_creation?: { ephemeral_5m_input_tokens?: unknown; ephemeral_1h_input_tokens?: unknown };
+    };
   };
   const serverToolUse = anthropic.usage?.server_tool_use;
   // Mastra's step lists its tool calls as chunks: { payload: { toolName, providerExecuted } }.
@@ -213,6 +216,13 @@ export function stepReport(
     return serverCalls('web_search') === 0 ? 0 : null;
   };
   const clientToolCalls = calls.filter((call) => !call.providerExecuted).length;
+  // The 5-minute and 1-hour cache writes are priced differently (spec §10.3);
+  // both counts or neither.
+  const split = anthropic.usage?.cache_creation;
+  const tokens = (value: unknown) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const fiveMinutes = tokens(split?.ephemeral_5m_input_tokens);
+  const oneHour = tokens(split?.ephemeral_1h_input_tokens);
   return {
     stepId,
     usage: {
@@ -221,6 +231,10 @@ export function stepReport(
       cacheWrite,
       output: usage.outputTokens ?? 0,
     },
+    cacheCreation:
+      fiveMinutes !== null && oneHour !== null
+        ? { ephemeral_5m_input_tokens: fiveMinutes, ephemeral_1h_input_tokens: oneHour }
+        : null,
     webSearches: searches(),
     toolCalls: clientToolCalls,
     finishReason: step.finishReason ?? 'unknown',

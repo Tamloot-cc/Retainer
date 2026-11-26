@@ -1450,11 +1450,22 @@ day by at most one step. This replaces the routine-style reservation
 `extensions-model-calls.md` §3.4 reserved for this agent: the column
 already allows it, and nothing writes it today. They carry the session and
 its caller: the person, or the routine and run, or the installation and
-job. The extension model token's own `agent` kind
+job. A task's caller goes in the row's own `routine_id` and
+`routine_run_id`, or `installation_id` and `job_id`, so its usage stays
+attributed after the task's session is deleted 7 days on (§5.4). The extension model token's own `agent` kind
 (`extension-runtime/tokens.ts`), which nothing mints, is removed: the
 agent holds no model token (D6). A routine's or an extension's cost
 includes its tasks. Web search counts are in the stored `usage`
 object already.
+
+The step report also carries the cache writes' split by lifetime, from
+`providerMetadata.anthropic.usage.cache_creation`: the system prompt's
+entry is written for 1 hour and the conversation's for 5 minutes (§3.5),
+and the two are priced differently. The `usage` object stores it as the
+model proxy does (`cache_creation.ephemeral_5m_input_tokens` and
+`ephemeral_1h_input_tokens`), so reporting prices agent steps like any
+other call. A step without the split keeps its cache-write total but
+can't be priced.
 
 ## 11. Hidden instructions
 

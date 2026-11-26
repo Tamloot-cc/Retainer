@@ -563,10 +563,30 @@ describe('reports', () => {
     expect(usage[0]?.usage).toMatchObject({
       server_tool_use: { web_search_requests: 0 },
     });
+    // Without a split, the cache writes stay unpriced.
+    expect(usage[0]?.usage).not.toHaveProperty('cache_creation');
     const [row] = await db.owner<
       { steps: number }[]
     >`select steps from agent_turns where id = ${turn.turnId}`;
     expect(row?.steps).toBe(1);
+  });
+
+  it("stores the cache writes' split in the model proxy's shape", async () => {
+    const id = await newChat();
+    const turn = await claimed(id);
+    const res = await report(id, turn.turnToken, 'split', {
+      cacheCreation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 15 },
+    });
+    expect(res.status).toBe(200);
+    const [row] = await db.owner<{ usage: Record<string, unknown> }[]>`
+      select usage from ai_usage where agent_session_id = ${id}`;
+    expect(row?.usage).toMatchObject({
+      cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 15 },
+    });
+    const bad = await report(id, turn.turnToken, 'bad-split', {
+      cacheCreation: { ephemeral_5m_input_tokens: -1, ephemeral_1h_input_tokens: 0 },
+    });
+    expect(bad.status).toBe(400);
   });
 
   it('charges the full web allowance when counts are missing, and stops at the cap', async () => {
