@@ -674,6 +674,7 @@ describe('forget', () => {
 describe('reading a chat', () => {
   type Read = {
     running: boolean;
+    stopping: boolean;
     messages: {
       id: string;
       role: string;
@@ -718,7 +719,10 @@ describe('reading a chat', () => {
     const three = await claimed(id);
     await saveTurnMessages(db.url, id, { messageId: three.messageId, text: 'Third' });
     await t.request(`/v1/agent/chats/${id}/cancel`, { key: keys.writer, method: 'POST' });
+    // Cancelled, the runtime not yet stopped: it may still save a step.
+    expect(await read(id)).toMatchObject({ running: false, stopping: true });
     expect((await close(id, three.turnToken)).status).toBe(200);
+    expect(await read(id)).toMatchObject({ running: false, stopping: false });
 
     const four = await claimed(id);
     await saveTurnMessages(db.url, id, {

@@ -796,7 +796,10 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   writes, working while the answer streams, done when the turn ends, error
   when it fails. A status line beside the message box says the same in words.
 - **Stop** cancels the turn on the server (`POST …/cancel`) and stops reading
-  the stream; the saved chat then says "Stopped.". **Delete** asks first, then erases the chat; what the agent
+  the stream; the saved chat then says "Stopped.", and the page checks back
+  while the runtime is still stopping, so a step it saved late shows. A message
+  refused before the agent answered (another turn stopping, today's limit)
+  stays on screen with the refusal. **Delete** asks first, then erases the chat; what the agent
   saved to the workspace stays.
 - **A turn still running** from an earlier visit (a reload, another tab) shows
   what was saved so far and "Still working on your last message…", checks back

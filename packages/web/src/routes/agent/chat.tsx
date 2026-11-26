@@ -184,8 +184,10 @@ export function ChatPage() {
   const detail = useQuery({
     queryKey: key,
     queryFn: ({ signal }) => api.agentChat(id, signal),
-    // A turn still running from an earlier visit: check back until it ends (spec §6.5).
-    refetchInterval: (query) => (query.state.data?.running ? 2500 : false),
+    // A turn still running from an earlier visit, or one still stopping (a step it was
+    // on may yet be saved): check back until it ends (spec §6.5).
+    refetchInterval: (query) =>
+      query.state.data?.running || query.state.data?.stopping ? 2500 : false,
   });
   if (detail.error)
     return (
@@ -225,9 +227,13 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
       id: chat.id,
       messages: chat.messages as ChatMessage[],
       transport,
-      onFinish: () => {
+      onFinish: ({ isError, messages: shown }) => {
         setEnded(true);
-        turnSettled();
+        // Refused before the agent answered (another turn stopping, today's limit, the
+        // agent unavailable): no turn ran, so the saved copy has no trace of this
+        // message. Keep it on screen with the refusal rather than lose what was typed.
+        if (isError && shown.at(-1)?.role === 'user') void refresh();
+        else turnSettled();
       },
     });
   const busy = status === 'submitted' || status === 'streaming';

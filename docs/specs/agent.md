@@ -782,8 +782,11 @@ the runtime saves the person's message under and records it on the turn, so
 each ending goes after its own turn's messages (on the turn's last assistant
 message, or an assistant item of its own when the turn saved no answer). A
 turn that died before saving its message has nowhere to go and shows none; a
-running turn has no ending yet. The web chat therefore takes the server's
-copy whenever a turn ends, after Stop and on a reload (`FRONTEND.md` §5.10).
+running turn has no ending yet. A cancelled turn whose runtime hasn't
+stopped (within its grace, §6.5) reads `stopping: true`: the step it was on
+may still be saved, so a client reads the chat again until it is false. The
+web chat therefore takes the server's copy whenever a turn ends, after Stop
+and on a reload (`FRONTEND.md` §5.10).
 
 On the API, for the agent runtime only (a turn token, or the runtime
 credential to claim one, §7.3):

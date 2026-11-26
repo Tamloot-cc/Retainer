@@ -322,17 +322,42 @@ describe('ChatPage', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
   });
 
-  it('after Stop, shows the saved chat, which says the turn was stopped', async () => {
+  it('after Stop, shows the saved chat, and checks back until the runtime has stopped', async () => {
     router.params = { id: 'chat-1' };
-    const detail = vi
-      .spyOn(api, 'agentChat')
-      .mockResolvedValueOnce({ id: 'chat-1', title: 'Who is Dana?', running: false, messages: [] })
-      .mockResolvedValue({
+    let runtimeStopped = false;
+    let opened = false;
+    const detail = vi.spyOn(api, 'agentChat').mockImplementation(async () => {
+      if (!opened) {
+        opened = true;
+        return { id: 'chat-1', title: 'Who is Dana?', running: false, messages: [] };
+      }
+      // Cancelled; until the runtime stops, the step it was on isn't saved yet.
+      if (!runtimeStopped)
+        return {
+          id: 'chat-1',
+          title: 'Who is Dana?',
+          running: false,
+          stopping: true,
+          messages: [...saved.slice(0, 1), ended('cancelled')] as never,
+        };
+      return {
         id: 'chat-1',
         title: 'Who is Dana?',
         running: false,
-        messages: [...saved.slice(0, 1), ended('cancelled')] as never,
-      });
+        stopping: false,
+        messages: [
+          ...saved.slice(0, 1),
+          {
+            id: 'a2',
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'Dana is a buyer at Acme.' },
+              { type: 'data-turn-end', data: { status: 'cancelled', code: null } },
+            ],
+          },
+        ] as never,
+      };
+    });
     vi.spyOn(api, 'agentChatToken').mockResolvedValue({
       token: 't',
       expiresAt: '',
@@ -375,12 +400,17 @@ describe('ChatPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
     expect(await screen.findByText('Stopped.')).toBeTruthy();
     expect(screen.getByText('Who is Dana?', { selector: 'div' })).toBeTruthy();
-    expect(detail.mock.calls.length).toBeGreaterThan(1);
-  });
+    // The runtime saves its step and stops; only checking back can show it.
+    const calls = detail.mock.calls.length;
+    runtimeStopped = true;
+    expect(await screen.findByText('Dana is a buyer at Acme.', {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByText('Stopped.')).toBeTruthy();
+    expect(detail.mock.calls.length).toBeGreaterThan(calls);
+  }, 10_000);
 
   it('explains a refused message: another turn is still running', async () => {
     router.params = { id: 'chat-1' };
-    chat({ messages: [] });
+    const detail = chat({ messages: [] });
     vi.spyOn(api, 'agentChatToken').mockResolvedValue({
       token: 't',
       expiresAt: '',
@@ -393,6 +423,9 @@ describe('ChatPage', () => {
     show(<ChatPage />);
     await userEvent.type(await screen.findByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
     expect(await screen.findByText(/still answering your last message/)).toBeTruthy();
+    // No turn ran, so the saved copy doesn't have the message: it stays on screen.
+    await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Hi', { selector: 'div' })).toBeTruthy();
   });
 
   it('shows a turn still running from before, and stops it', async () => {

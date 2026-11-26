@@ -285,9 +285,17 @@ export class AgentSessions {
     const chat = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const row = await this.session(tx, owned.owner, id);
       const turns = await tx<
-        { status: string; message_id: string | null; error_code: string | null }[]
+        {
+          status: string;
+          message_id: string | null;
+          error_code: string | null;
+          stopping: boolean;
+        }[]
       >`
-        select status, message_id, error_code from agent_turns where session_id = ${id}
+        select status, message_id, error_code,
+          status <> 'running' and stopped_at is null
+            and deadline + make_interval(secs => ${GRACE_MS / 1000}) > clock_timestamp() as stopping
+        from agent_turns where session_id = ${id}
         order by claimed_at, generation`;
       return { row, turns };
     });
@@ -301,6 +309,8 @@ export class AgentSessions {
       id: chat.row.id,
       title: chat.row.title,
       running: chat.turns.at(-1)?.status === 'running',
+      // Cancelled, and the runtime may still save the step it was on (§6.5).
+      stopping: chat.turns.at(-1)?.stopping ?? false,
       messages: withTurnEndings(saved, endings),
     };
   }

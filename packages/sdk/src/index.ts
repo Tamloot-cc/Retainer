@@ -1446,6 +1446,11 @@ export type AgentChatDetail = {
   id: string;
   title: string | null;
   running: boolean;
+  /**
+   * The last turn was stopped and the runtime hasn't finished stopping: a step it
+   * was on may still be saved, so read the chat again shortly.
+   */
+  stopping?: boolean;
   /** Oldest first; each turn that didn't complete ends with a `data-turn-end` part. */
   messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown>> }>;
 };
