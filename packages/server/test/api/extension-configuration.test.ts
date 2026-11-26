@@ -1,5 +1,6 @@
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import type { ExtensionManifest } from '@retainer/extension';
+import { enrichmentManifest } from '@retainer/runner/enrichment-contract';
 import { granolaManifest } from '@retainer/runner/granola-contract';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -147,6 +148,43 @@ describe('operator runtime configuration and dedicated key-mode control', () => 
       }
     },
   );
+  it('activates the Exa release with record buttons in the Lambda runtime', async () => {
+    const { publicKey } = generateKeyPairSync('ed25519');
+    const manifest = enrichmentManifest({
+      packageDigest: 'a'.repeat(64),
+      handlerDigest: 'b'.repeat(64),
+      serverRange: '>=0.1.0 <0.2.0',
+    });
+    const entries = [{ manifest, actorCeiling: 'agent' as const, runtimeEnabled: true }];
+    const release = new ExtensionCatalog(entries).list()[0];
+    if (!release) throw new Error('release missing');
+    const prefix = 'arn:aws:lambda:eu-central-1:123456789012:function:retainer-ext-';
+    const executables = manifest.functions.map((fn) => ({
+      registrationId: manifest.universalId,
+      releaseDigest: release.digest,
+      functionId: fn.universalId,
+      handlerDigest: fn.handlerDigest,
+      packageDigest: manifest.packageDigest,
+      runtimeVersion: 'node24',
+      driverTarget: `${prefix}enrichment:42`,
+    }));
+    const services = await extensionServices(
+      loadConfig({
+        DATABASE_URL: db.url,
+        RETAINER_EXTENSION_DRIVER: 'lambda',
+        RETAINER_EXTENSION_LAMBDA_PREFIX: prefix,
+        RETAINER_EXTENSION_ISSUER: 'https://retainer.test',
+        RETAINER_EXTENSION_RUN_PUBLIC_KEY: JSON.stringify(publicKey.export({ format: 'jwk' })),
+        RETAINER_EXTENSION_CATALOG: JSON.stringify(entries),
+        RETAINER_EXTENSION_EXECUTABLES: JSON.stringify(executables),
+      }),
+    );
+    try {
+      expect(services.activationReady.has(release.digest)).toBe(true);
+    } finally {
+      await services.close();
+    }
+  });
   it('activates a member release whose connect and disconnect hooks run on Lambda', async () => {
     const { publicKey } = generateKeyPairSync('ed25519');
     const hook = (kind: 'connect' | 'disconnect') => ({
