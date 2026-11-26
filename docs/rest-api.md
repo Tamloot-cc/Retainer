@@ -150,51 +150,53 @@ identity of a deleted or erased event is a 409 `event_retracted`.
 
 ## Routes
 
-| Route                                             | Scope            | Purpose                                                              |
-| ------------------------------------------------- | ---------------- | -------------------------------------------------------------------- |
-| `GET /health`                                     | none             | Server version and database status (503 when the database is down)   |
-| `GET /v1/me`                                      | any              | The caller's workspace, actor and scopes                             |
-| `GET /v1/schema`                                  | `read`           | The workspace schema                                                 |
-| `POST /v1/schema/changes`                         | `schema:write`   | Request a schema change (applied, or proposed for approval)          |
-| `GET /v1/schema/changes` · `/:id`                 | `read`           | Change history, or one change                                        |
-| `POST /v1/schema/changes/:id/approve` · `/reject` | `admin`, user    | Decide a proposed change                                             |
-| `GET /v1/templates`                               | `read`           | Templates and what each adds                                         |
-| `POST /v1/templates/:name/apply`                  | `schema:write`   | Apply a template                                                     |
-| `POST /v1/objects/:object/records`                | `write`          | Create a record                                                      |
-| `POST /v1/objects/:object/upsert`                 | `write`          | Update or create a record found by `id` or `match`, with `ifMissing` |
-| `POST /v1/objects/:object/query`                  | `read`           | Filter, sort and page records of one object                          |
-| `POST /v1/objects/:object/aggregate`              | `read`           | Count, and per-field totals over, the records a filter matches       |
-| `GET` · `POST /v1/objects/:object/views`          | `read` · `write` | List the saved views the caller can see, or save one                 |
-| `GET` · `PATCH` · `DELETE /v1/views/:id`          | `read` · `write` | Read, change or delete a saved view                                  |
-| `GET /v1/records/:id`                             | `read`           | One record; `?include=provenance,relationReferences,counts`          |
-| `PATCH /v1/records/:id`                           | `write`          | Update fields; optional `source` and `expectedUpdatedAt`             |
-| `GET /v1/records/:id/delete-impact`               | `read`           | What a delete would take with it through cascades, counted by object |
-| `POST /v1/records/delete-impact`                  | `read`           | The same for `{ "ids": [...] }` (at most 200) deleted together       |
-| `DELETE /v1/records/:id`                          | `write`          | Soft-delete a record; for events, also retract what cites them       |
-| `GET /v1/records/:id/assertions`                  | `read`           | Per-field history; `?field=`                                         |
-| `GET /v1/records/:id/events`                      | `read`           | The record's event history, rollups included, with `via`; `?link=`   |
-| `GET` · `POST /v1/records/:id/facts`              | `read` · `write` | List facts, or `remember` one                                        |
-| `DELETE /v1/facts/:id`                            | `write`          | Retract a fact                                                       |
-| `GET` · `POST /v1/records/:id/comments`           | `read` · `write` | List comments, newest first, or add one; adding needs a `user` actor |
-| `PATCH` · `DELETE /v1/comments/:id`               | `write`          | Edit (author only), or delete (author, or a `user` with `admin`)     |
-| `GET /v1/records/:id/context`                     | `read`           | Context pack; `?tokenBudget=` (default 2000, at most 16000)          |
-| `GET /v1/records/:id/timeline`                    | `read`           | Events, field values and facts, newest first; filters, cursor        |
-| `POST /v1/records/:id/merge`                      | `write`, user    | Merge `recordId` into this record                                    |
-| `POST /v1/records/:id/forget`                     | `admin`, user    | Erase a person for a privacy request; not reversible                 |
-| `POST /v1/events`                                 | `write`          | Log an event; returns matched and unmatched participants             |
-| `POST /v1/events/query`                           | `read`           | Filter, sort and page events of every event type at once             |
-| `POST /v1/events/move`                            | `admin`, user    | Move events to another event type; `schema:write` for a dry run      |
-| `GET` · `DELETE /v1/events/:id`                   | `read` · `write` | Read an event, or delete it and retract what cites it                |
-| `POST /v1/events/:id/links`                       | `write`          | Add participants and `about` records; idempotent                     |
-| `DELETE /v1/events/:id/participants/:pid`         | `write`, user    | Remove one participant                                               |
-| `DELETE /v1/events/:id/about/:recordId`           | `write`, user    | Remove a record from the event's `about` list                        |
-| `GET /v1/events/:id/claims`                       | `read`           | Assertions and facts citing an event; `?own=false` omits its own     |
-| `GET /v1/events/:id/content`                      | `read`           | An event's full text, or its thread's, five parts a page (`?after=`) |
-| `POST /v1/search`                                 | `read`           | Keyword search across records, events and facts                      |
-| `GET /v1/review`                                  | `read`           | Pending values, merge suggestions, unresolved participants           |
-| `GET /v1/assertions/:id`                          | `read`           | One assertion with its review state                                  |
-| `POST /v1/assertions/:id/accept` · `/reject`      | `write`, user    | Decide a pending value                                               |
-| `POST /v1/review/merges/:id/dismiss`              | `write`, user    | Dismiss a merge suggestion                                           |
+The [generated API reference](api/index.mdx) has request and response schemas and code examples for these operations.
+
+| Route                                               | Scope            | Purpose                                                              |
+| --------------------------------------------------- | ---------------- | -------------------------------------------------------------------- |
+| `GET /health`                                       | none             | Server version and database status (503 when the database is down)   |
+| `GET /v1/me`                                        | any              | The caller's workspace, actor and scopes                             |
+| `GET /v1/schema`                                    | `read`           | The workspace schema                                                 |
+| `POST /v1/schema/changes`                           | `schema:write`   | Request a schema change (applied, or proposed for approval)          |
+| `GET /v1/schema/changes` · `/:id`                   | `read`           | Change history, or one change                                        |
+| `POST /v1/schema/changes/:id/approve` · `/reject`   | `admin`, user    | Decide a proposed change                                             |
+| `GET /v1/templates`                                 | `read`           | Templates and what each adds                                         |
+| `POST /v1/templates/:name/apply`                    | `schema:write`   | Apply a template                                                     |
+| `POST /v1/objects/:object/records`                  | `write`          | Create a record                                                      |
+| `POST /v1/objects/:object/upsert`                   | `write`          | Update or create a record found by `id` or `match`, with `ifMissing` |
+| `POST /v1/objects/:object/query`                    | `read`           | Filter, sort and page records of one object                          |
+| `POST /v1/objects/:object/aggregate`                | `read`           | Count, and per-field totals over, the records a filter matches       |
+| `GET` · `POST /v1/objects/:object/views`            | `read` · `write` | List the saved views the caller can see, or save one                 |
+| `GET` · `PATCH` · `DELETE /v1/views/:id`            | `read` · `write` | Read, change or delete a saved view                                  |
+| `GET /v1/records/:id`                               | `read`           | One record; `?include=provenance,relationReferences,counts`          |
+| `PATCH /v1/records/:id`                             | `write`          | Update fields; optional `source` and `expectedUpdatedAt`             |
+| `GET /v1/records/:id/delete-impact`                 | `read`           | What a delete would take with it through cascades, counted by object |
+| `POST /v1/records/delete-impact`                    | `read`           | The same for `{ "ids": [...] }` (at most 200) deleted together       |
+| `DELETE /v1/records/:id`                            | `write`          | Soft-delete a record; for events, also retract what cites them       |
+| `GET /v1/records/:id/assertions`                    | `read`           | Per-field history; `?field=`                                         |
+| `GET /v1/records/:id/events`                        | `read`           | The record's event history, rollups included, with `via`; `?link=`   |
+| `GET` · `POST /v1/records/:id/facts`                | `read` · `write` | List facts, or `remember` one                                        |
+| `DELETE /v1/facts/:id`                              | `write`          | Retract a fact                                                       |
+| `GET` · `POST /v1/records/:id/comments`             | `read` · `write` | List comments, newest first, or add one; adding needs a `user` actor |
+| `PATCH` · `DELETE /v1/comments/:id`                 | `write`          | Edit (author only), or delete (author, or a `user` with `admin`)     |
+| `GET /v1/records/:id/context`                       | `read`           | Context pack; `?tokenBudget=` (default 2000, at most 16000)          |
+| `GET /v1/records/:id/timeline`                      | `read`           | Events, field values and facts, newest first; filters, cursor        |
+| `POST /v1/records/:id/merge`                        | `write`, user    | Merge `recordId` into this record                                    |
+| `POST /v1/records/:id/forget`                       | `admin`, user    | Erase a person for a privacy request; not reversible                 |
+| `POST /v1/events`                                   | `write`          | Log an event; returns matched and unmatched participants             |
+| `POST /v1/events/query`                             | `read`           | Filter, sort and page events of every event type at once             |
+| `POST /v1/events/move`                              | `admin`, user    | Move events to another event type; `schema:write` for a dry run      |
+| `GET` · `DELETE /v1/events/:id`                     | `read` · `write` | Read an event, or delete it and retract what cites it                |
+| `POST /v1/events/:id/links`                         | `write`          | Add participants and `about` records; idempotent                     |
+| `DELETE /v1/events/:id/participants/:participantId` | `write`, user    | Remove one participant                                               |
+| `DELETE /v1/events/:id/about/:recordId`             | `write`, user    | Remove a record from the event's `about` list                        |
+| `GET /v1/events/:id/claims`                         | `read`           | Assertions and facts citing an event; `?own=false` omits its own     |
+| `GET /v1/events/:id/content`                        | `read`           | An event's full text, or its thread's, five parts a page (`?after=`) |
+| `POST /v1/search`                                   | `read`           | Keyword search across records, events and facts                      |
+| `GET /v1/review`                                    | `read`           | Pending values, merge suggestions, unresolved participants           |
+| `GET /v1/assertions/:id`                            | `read`           | One assertion with its review state                                  |
+| `POST /v1/assertions/:id/accept` · `/reject`        | `write`, user    | Decide a pending value                                               |
+| `POST /v1/review/merges/:id/dismiss`                | `write`, user    | Dismiss a merge suggestion                                           |
 
 "user" means the key's actor must be a `user`; agents get 403 even with the
 scope. Request and response shapes are exported as TypeScript types from

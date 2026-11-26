@@ -152,6 +152,17 @@ path of `packages/web/dist` in `.env`.
 | `pnpm retainer-ops <command>`        | Run the operator CLI against `DATABASE_URL`                              |
 | `pnpm release:check [tag]`       | Check versions and changelog before a release ([how](docs/releasing.md)) |
 
+## Preview the docs
+
+The Next.js and Fumadocs app lives in `apps/docs`. From that directory, run
+`pnpm install` and `pnpm dev`, then open [localhost:3000/docs](http://localhost:3000/docs/).
+Run `pnpm build` to export the static site to `apps/docs/out`, or `pnpm start`
+to preview that build locally.
+
+Fumadocs reads the guides directly from `docs/`. Add new guides to the
+`meta.json` for their section. The [docs app guide](apps/docs/README.md)
+covers Markdown exports, API reference maintenance, and the independent build.
+
 ## Packages
 
 | Package            | License  | Contents                                       |

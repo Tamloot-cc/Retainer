@@ -1,0 +1,4 @@
+# The docs build and its dependencies are independent of the Retainer release.
+packages: []
+allowBuilds:
+  esbuild: false

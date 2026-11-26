@@ -1,0 +1,20 @@
+---
+title: Records and provenance
+description: See how a customer conversation becomes shared, reviewable workspace memory.
+---
+
+Suppose Dana meets Acme and learns that its renewal needs legal review in December.
+
+1. **Find the record.** The agent reads the workspace schema and looks up Acme. A record holds the typed fields defined by its object, such as a company's name or a deal's stage.
+2. **Log the event.** The agent records the meeting as a conversation and links it to Acme. The event gives later writes a source.
+3. **Save the details.** The agent writes the renewal date to the appropriate field if it exists. It can also remember “Acme requires a legal review before renewal” as a fact, citing the meeting.
+4. **Review the evidence.** Open Acme in the web app to inspect the source of field values and see events and facts in its history. If an agent proposes overwriting a value a person set, a reviewer can decide whether to accept the proposed value.
+
+## Workspace access
+
+A workspace owns its schema and records. In accounts mode, workspace roles determine what a person can do. An MCP OAuth connection picks a workspace at consent. A workspace API key carries its own actor and scopes, so give each agent or integration a dedicated key. See [Review changes and manage access](./review-and-access.md) for the workspace controls.
+
+<Cards>
+  <Card title="Try the workflow through MCP" href="/docs/mcp/first-workflow/" />
+  <Card title="Manage accounts and keys when self-hosting" href="/docs/self-hosting/#accounts-mode" />
+</Cards>

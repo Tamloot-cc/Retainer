@@ -1,0 +1,13 @@
+{
+  "title": "MCP",
+  "root": true,
+  "pages": [
+    "index",
+    "first-workflow",
+    "connection-options",
+    "tool-reference",
+    "writing-guidance",
+    "../agents",
+    "docs-server"
+  ]
+}

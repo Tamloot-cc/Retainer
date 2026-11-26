@@ -1,0 +1,40 @@
+---
+title: Hosted quickstart
+description: Create a workspace, connect an agent, and verify where it can write.
+---
+
+<Steps>
+
+<Step>
+
+### Open your workspace
+
+Sign in to [hosted Retainer](https://retainer.tamloot.cc/app/). Create a workspace or open one you already have access to. If you're joining a team, select its workspace before copying the setup prompt.
+
+</Step>
+
+<Step>
+
+### Connect your agent
+
+Copy the workspace's setup prompt into Codex or Claude Code. You can also give your agent the URL below and ask it to connect.
+
+```text
+https://retainer.tamloot.cc/mcp
+```
+
+A browser window asks you to sign in and approve access. Choose the workspace you intend to use. See [Connect through MCP](../mcp/index.mdx) for client commands and other connection options.
+
+</Step>
+
+<Step>
+
+### Verify the workspace
+
+Ask the agent to call `describe_schema` and report the workspace name and ID. For a new workspace, it can guide you through a first schema. Review the schema it proposes before approving it.
+
+</Step>
+
+</Steps>
+
+Follow the [first MCP workflow](../mcp/first-workflow.md) to read back what your agent stores.

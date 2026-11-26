@@ -1,0 +1,45 @@
+---
+title: Connect through MCP
+description: Connect a Retainer workspace to Codex, Claude Code, or another MCP client.
+---
+
+For hosted Retainer, open your workspace and paste its setup prompt into your agent. You can also add the hosted MCP server manually.
+
+<Tabs items={['Codex', 'Claude Code']}>
+<Tab value="Codex">
+
+```sh
+codex mcp add retainer --url https://retainer.tamloot.cc/mcp
+```
+
+If Codex still needs authorization, run `codex mcp login retainer`.
+
+</Tab>
+<Tab value="Claude Code">
+
+```sh
+claude mcp add --transport http --scope user retainer https://retainer.tamloot.cc/mcp
+```
+
+If Claude Code needs authorization, use `/mcp` and choose **Retainer → Authenticate**.
+
+</Tab>
+</Tabs>
+
+Complete browser consent for the intended workspace. For self-hosting, use your own server's `/mcp` URL and see the [connection options](./connection-options.md) for API keys, OAuth, and stdio.
+
+## Confirm it works
+
+Ask the agent:
+
+```text
+Call Retainer's describe_schema tool. Tell me the workspace name and ID,
+whether its schema is initialized, and which objects I can query.
+```
+
+If it reports a different workspace, reconnect before writing. If the schema is empty, ask the agent to follow the `discover_schema` guide with you.
+
+<Cards>
+  <Card title="Read and write a first record" href="/docs/mcp/first-workflow/" />
+  <Card title="Browse tools" href="/docs/mcp/tool-reference/" />
+</Cards>
