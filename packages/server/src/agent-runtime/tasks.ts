@@ -153,16 +153,8 @@ export async function createTask(
     select session_id from agent_tasks where task_key = ${input.key}`;
   if (existing) return { sessionId: existing.session_id, created: false };
   const sessionId = randomUUID();
-  const limits = {
-    ...TASK_LIMITS,
-    ...(input.request.limits?.maxSteps ? { maxSteps: input.request.limits.maxSteps } : {}),
-    ...(input.request.limits?.maxToolCalls !== undefined
-      ? { maxToolCalls: input.request.limits.maxToolCalls }
-      : {}),
-    ...(input.request.limits?.webSearches !== undefined
-      ? { webSearches: input.request.limits.webSearches }
-      : {}),
-  };
+  // The request's limits are optional and never above the defaults (§9.1).
+  const limits = { ...TASK_LIMITS, ...input.request.limits };
   await tx`
     insert into agent_sessions (id, workspace_id, kind, owner, person_id, title, tools, extension_tools, system_blocks, limits)
     values (${sessionId}, ${workspaceId}, 'task', ${input.owner}, null,

@@ -373,9 +373,7 @@ export class AgentSessions {
       // The context counts as delivered once a step of a turn has been
       // reported: the runtime saves the message before its first model
       // request, so a turn that died before that gets it again (§3.5).
-      const [delivered] = await tx<{ steps: number }[]>`
-        select coalesce(sum(steps), 0)::int as steps from agent_turns where session_id = ${sessionId}`;
-      const first = (delivered?.steps ?? 0) === 0;
+      const first = (await sessionTotals(tx, sessionId)).steps === 0;
       const addedParts = await this.addedParts(tx, session, caller, first);
       const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH);
       if (!session.title && title)
@@ -433,11 +431,7 @@ export class AgentSessions {
       await agentCaller(tx, workspaceId, access);
       await this.checkDay(tx, session);
       const limits = sessionLimits(session);
-      const [used] = await tx<{ steps: number; tool_calls: number; web_searches: number }[]>`
-        select coalesce(sum(steps), 0)::int as steps, coalesce(sum(tool_calls), 0)::int as tool_calls,
-          coalesce(sum(web_searches), 0)::int as web_searches
-        from agent_turns where session_id = ${sessionId}`;
-      const steps = used?.steps ?? 0;
+      const { steps } = await sessionTotals(tx, sessionId);
       if (steps >= limits.maxSteps) {
         await completeTask(tx, sessionId, { status: 'failed', code: 'limit_reached' });
         throw new AppError(429, 'limit_reached', 'the task used all its steps');
@@ -744,13 +738,7 @@ export class AgentSessions {
         };
       // A task's limits are the whole task's: a job delivered again continues
       // the same session (§10.1).
-      if (session.kind === 'task') {
-        const [sum] = await tx<(typeof turn)[]>`
-          select coalesce(sum(steps), 0)::int as steps, coalesce(sum(tool_calls), 0)::int as tool_calls,
-            coalesce(sum(web_searches), 0)::int as web_searches
-          from agent_turns where session_id = ${session.id}`;
-        if (sum) totals = { ...totals, ...sum };
-      }
+      if (session.kind === 'task') totals = { ...totals, ...(await sessionTotals(tx, session.id)) };
       const over =
         totals.steps >= limits.maxSteps ||
         totals.tool_calls >= limits.maxToolCalls ||
@@ -822,6 +810,15 @@ export class AgentSessions {
 /** A session's limits: the chat defaults, lowered where the session says so (§10.1). */
 function sessionLimits(session: Pick<SessionRow, 'limits'>) {
   return { ...CHAT_LIMITS, ...session.limits };
+}
+
+/** What a session's turns have used so far, across every claim. */
+async function sessionTotals(tx: Tx, sessionId: string) {
+  const [sum] = await tx<{ steps: number; tool_calls: number; web_searches: number }[]>`
+    select coalesce(sum(steps), 0)::int as steps, coalesce(sum(tool_calls), 0)::int as tool_calls,
+      coalesce(sum(web_searches), 0)::int as web_searches
+    from agent_turns where session_id = ${sessionId}`;
+  return sum ?? { steps: 0, tool_calls: 0, web_searches: 0 };
 }
 
 /** A tool job's cause: a task's parent chain one hop on, or a chat's fresh one. */
