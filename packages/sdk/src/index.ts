@@ -64,6 +64,7 @@ import type {
   RoutinePreview,
   RoutineProblem,
   RoutineReport,
+  RoutineRunAgentTask,
   RoutineRunView,
   RoutineView,
   SavedView,
@@ -1369,6 +1370,14 @@ export class RetainerClient {
   routineRun(id: string, runId: string, signal?: AbortSignal) {
     return this.get<RoutineRunView>(
       `/v1/routines/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`,
+      {},
+      signal,
+    );
+  }
+  /** The agent tasks a run started, with their saved messages (agent spec §5.3). */
+  routineRunAgentTasks(id: string, runId: string, signal?: AbortSignal) {
+    return this.get<{ tasks: RoutineRunAgentTask[] }>(
+      `/v1/routines/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/agent-tasks`,
       {},
       signal,
     );

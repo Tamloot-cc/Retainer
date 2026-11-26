@@ -98,6 +98,12 @@ export function agentRuntimeRoutes(app: Hono<AppEnv>, agent: AgentSessions) {
  * client leaves, the upstream response is still read to its end, so the turn
  * runs to its end and is saved.
  */
+/** A UI message stream error event, for a stream the agent stopped sending mid-turn. */
+const LOST_UPSTREAM = `data: ${JSON.stringify({
+  type: 'error',
+  errorText: 'connection to the agent was lost',
+})}\n\n`;
+
 export function agentStreamForward(app: Hono<AppEnv>, upstream: string | undefined) {
   // Refused before it is buffered: this route is outside `/v1`'s authentication.
   app.post('/v1/agent/chats/:id/stream', limitBody(MAX_STREAM_BODY_BYTES), async (c) => {
@@ -141,10 +147,18 @@ export function agentStreamForward(app: Hono<AppEnv>, upstream: string | undefin
         clientGone = true;
       });
       for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await reader.read();
+        } catch {
+          // The agent's connection dropped mid-turn (a crash, a redeploy): end the
+          // client's stream with an error event it can show, instead of failing here.
+          if (!clientGone) await sink.write(LOST_UPSTREAM).catch(() => {});
+          break;
+        }
+        if (chunk.done) break;
         if (!clientGone)
-          await sink.write(value).catch(() => {
+          await sink.write(chunk.value).catch(() => {
             clientGone = true;
           });
       }

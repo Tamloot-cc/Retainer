@@ -6,7 +6,11 @@ import {
   RETAINER_WRITE_TOOL_NAMES,
   readChatMessages,
 } from '@retainer/agent';
-import { AGENT_TASK_ERROR_CODES, AGENT_TASK_LIMITS } from '@retainer/shared';
+import {
+  AGENT_TASK_ERROR_CODES,
+  AGENT_TASK_LIMITS,
+  type RoutineRunAgentTask,
+} from '@retainer/shared';
 import { z } from 'zod';
 import {
   type AgentAccess,
@@ -54,6 +58,7 @@ import type { ExtensionQueue } from '../extension-runtime/queue.js';
 import { installedTools } from '../extensions/tools.js';
 import { getSchema } from '../schema/compiled.js';
 import { chatContext, datePart, workspaceDate } from './context.js';
+import { TASK_RETENTION } from './maintenance.js';
 import {
   CHAT_LIMITS,
   type ExtensionToolRef,
@@ -277,6 +282,56 @@ export class AgentSessions {
     this.store ??= createMastraStore({ connectionString: this.config.readStoreUrl, max: 2 });
     const messages = await readChatMessages(this.store, id);
     return { id: chat.row.id, title: chat.row.title, running: chat.running, messages };
+  }
+
+  /**
+   * The agent tasks a routine run started, with their saved messages, for the
+   * run page (§5.3). The caller has already been allowed to see the run. A
+   * task erased by retention (§5.4) is gone from the list, and the page says so.
+   */
+  async runTasks(caller: Caller, runId: string): Promise<{ tasks: RoutineRunAgentTask[] }> {
+    const rows = await inWorkspace(
+      this.sql,
+      caller.workspaceId,
+      (tx) =>
+        tx<
+          {
+            session_id: string;
+            position: number;
+            state: RoutineRunAgentTask['state'];
+            code: string | null;
+            created_at: Date;
+            finished_at: Date | null;
+            kept_until: Date | null;
+          }[]
+        >`
+        select k.session_id, k.position, k.state, k.code, k.created_at, k.finished_at,
+          case when k.finished_at is not null
+            then s.last_active_at + ${TASK_RETENTION}::interval end as kept_until
+        from agent_tasks k join agent_sessions s on s.id = k.session_id
+        where k.routine_run_id = ${runId}
+        order by k.position`,
+    );
+    if (rows.length === 0) return { tasks: [] };
+    if (!this.config.readStoreUrl) throw unavailable();
+    this.store ??= createMastraStore({ connectionString: this.config.readStoreUrl, max: 2 });
+    const store = this.store;
+    const tasks = await Promise.all(
+      rows.map(async (row) => ({
+        sessionId: row.session_id,
+        position: row.position,
+        state: row.state,
+        code: row.code,
+        createdAt: row.created_at.toISOString(),
+        finishedAt: row.finished_at?.toISOString() ?? null,
+        keptUntil: row.kept_until?.toISOString() ?? null,
+        messages: (await readChatMessages(
+          store,
+          row.session_id,
+        )) as RoutineRunAgentTask['messages'],
+      })),
+    );
+    return { tasks };
   }
 
   /** A stream token: it can start a turn on this chat and nothing else (§7.3). */

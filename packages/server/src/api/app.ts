@@ -252,7 +252,7 @@ export function createApp(deps: AppDeps) {
     agentAvailable: !!agent && (deps.agent?.tasks ?? true),
   };
   if (routinesAvailable && deps.runTokens) {
-    routineRoutes(v1, new Routines(deps.sql, routineConfig));
+    routineRoutes(v1, new Routines(deps.sql, routineConfig), agent);
     routineRuntimeRoutes(
       v1,
       new RoutineRuntime(deps.sql, {

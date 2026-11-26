@@ -145,11 +145,14 @@ export function ChatMessages({
   messages,
   streaming = false,
   mood = 'idle',
+  mark = true,
 }: {
   messages: ChatMessage[];
   /** The last message is still arriving. */
   streaming?: boolean;
   mood?: LogoMood;
+  /** False for a saved trace: nothing is happening, so no mark moves. */
+  mark?: boolean;
 }) {
   return (
     <ol className="flex flex-col gap-5" aria-label="Messages">
@@ -169,7 +172,7 @@ export function ChatMessages({
         if (message.role !== 'assistant') return null;
         return (
           <li key={message.id} className="flex items-start gap-3" aria-label="The agent">
-            {last ? (
+            {last && mark ? (
               <LogoMark mood={mood} size={32} className="shrink-0" />
             ) : (
               <span aria-hidden className="w-8 shrink-0" />

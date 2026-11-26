@@ -801,6 +801,11 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   §6.5).
 - Refusals are in plain words: another turn running or stopping, today's
   limit, the agent unavailable.
+- **A routine run's agent tasks.** A run that used `ai.agent` shows "What the
+  agent did" on its run page: each task's saved messages, read-only, in the
+  chat's layout without the moving mark, with its state and how long the
+  messages are kept (`GET /v1/routines/:id/runs/:run/agent-tasks`, for anyone
+  who may see the run). After 7 days the page says they are no longer kept.
 
 ### Not in v1
 

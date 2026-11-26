@@ -17,6 +17,7 @@ import {
   Row,
   Section,
 } from '../../ui/index.js';
+import { AgentTrace } from '../agent/trace.js';
 import { QueryError, recordTitle, useRecordLabel } from '../state.js';
 import {
   callError,
@@ -75,6 +76,9 @@ export function RoutineRunPage() {
   const waiting = pendingReviews(r);
   const output = r.output ?? {};
   const logs = Array.isArray(output.logs) ? (output.logs as unknown[]).map(String) : [];
+  const agentCalls = r.calls
+    .filter((call) => call.operation === 'ai.agent')
+    .map((call) => call.position);
   return (
     <Page
       {...crumb}
@@ -151,6 +155,9 @@ export function RoutineRunPage() {
           Results are kept for 7 days after a run ends, so you can check what it did.
         </Muted>
       </Section>
+      {agentCalls.length ? (
+        <AgentTrace routineId={id} runId={runId} positions={agentCalls} />
+      ) : null}
       {output.result !== undefined || logs.length ? (
         <Section title="What it returned">
           {output.result === undefined || output.result === null ? (

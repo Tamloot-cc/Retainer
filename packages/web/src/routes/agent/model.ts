@@ -179,6 +179,9 @@ export function errorCode(error: unknown): string | undefined {
 
 /** Why a message couldn't be sent, in plain words. */
 export function sendErrorText(error: unknown) {
+  // The server's forward lost the agent mid-turn; the turn itself may still finish.
+  if (error instanceof Error && error.message === 'connection to the agent was lost')
+    return 'The connection to the agent was lost. Its answer may still finish: reload the page to see it.';
   switch (errorCode(error)) {
     case 'turn_running':
       return 'The agent is still answering your last message. Wait for it, or stop it.';

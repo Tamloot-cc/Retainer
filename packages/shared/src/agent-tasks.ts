@@ -231,3 +231,21 @@ export function answerProblem(schema: AgentOutputSchema, value: unknown, at = '$
     return `${at} should be one of ${schema.enum.map((option) => JSON.stringify(option)).join(', ')}`;
   return null;
 }
+
+/**
+ * One agent task a routine run started, for the run page's trace (agent spec
+ * §5.3): its state and its saved messages, as AI SDK UI messages. `messages`
+ * is empty once retention has erased them; `keptUntil` says when that happens
+ * for a task that has ended.
+ */
+export type RoutineRunAgentTask = {
+  sessionId: string;
+  /** The `ai.agent` effect's position in the run. */
+  position: number;
+  state: 'staged' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  code: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  keptUntil: string | null;
+  messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown>> }>;
+};

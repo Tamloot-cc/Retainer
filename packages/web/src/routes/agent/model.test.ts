@@ -122,6 +122,7 @@ describe('errors in plain words', () => {
     expect(sendErrorText(new Error('{"code":"turn_stopping"}'))).toMatch(/still stopping/);
     expect(sendErrorText(new Error('{"code":"limit_reached"}'))).toMatch(/today's limit/);
     expect(sendErrorText(new Error('Failed to fetch'))).toMatch(/couldn't be sent/);
+    expect(sendErrorText(new Error('connection to the agent was lost'))).toMatch(/reload the page/);
   });
   it('reads how a turn ended', () => {
     expect(turnEnd({ type: 'data-turn-end', data: { status: 'context_limit_reached' } })).toBe(

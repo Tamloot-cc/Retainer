@@ -1,6 +1,7 @@
 import { routineEffectRequestSchema } from '@retainer/shared';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import type { AgentSessions } from '../../agent-sessions/service.js';
 import { requireScope } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
 import { idParam, readBody } from '../../http/request.js';
@@ -23,7 +24,7 @@ const waitMs = (value: string | undefined) =>
   value === undefined ? 0 : Math.min(20000, Math.max(0, Number(value) * 1000 || 0));
 
 /** Routines for people and their agents (routines spec §5, §6). */
-export function routineRoutes(app: Hono<AppEnv>, routines: Routines) {
+export function routineRoutes(app: Hono<AppEnv>, routines: Routines, agent?: AgentSessions) {
   app.get('/routines/capabilities', requireScope('read'), async (c) =>
     c.json(await routines.capabilities(c.get('caller'))),
   );
@@ -86,6 +87,19 @@ export function routineRoutes(app: Hono<AppEnv>, routines: Routines) {
   app.get('/routines/:id/runs/:run', requireScope('read'), async (c) =>
     c.json(await routines.getRun(c.get('caller'), idParam(c), idParam(c, 'run'))),
   );
+  // The agent tasks the run started, with their saved messages (agent spec §5.3):
+  // for whoever may see the run, which getRun checks first.
+  app.get('/routines/:id/runs/:run/agent-tasks', requireScope('read'), async (c) => {
+    const caller = c.get('caller');
+    const run = await routines.getRun(caller, idParam(c), idParam(c, 'run'));
+    if (!agent)
+      throw new AppError(
+        503,
+        'agent_unavailable',
+        'the workspace agent is not set up on this server',
+      );
+    return c.json(await agent.runTasks(caller, run.id));
+  });
   app.post('/routines/:id/versions/:version/approve', requireScope('admin'), async (c) =>
     c.json(await routines.approve(c.get('caller'), idParam(c), idParam(c, 'version'))),
   );
