@@ -1,4 +1,4 @@
-import { runsHostedCode } from '@retainer/extension';
+import { type ExtensionManifest, runsHostedCode } from '@retainer/extension';
 import { ROUTINE_RUNNER_FUNCTION_ID, ROUTINE_RUNNER_REGISTRATION_ID } from '@retainer/shared';
 import { importJWK, importPKCS8, importSPKI } from 'jose';
 import { z } from 'zod';
@@ -26,6 +26,20 @@ import { LauncherDriver } from '../worker/launch-driver.js';
 import { RoutineExecutor, RoutineMaintenance } from '../worker/routines.js';
 
 import { LauncherVerifier } from '../worker/verifier-driver.js';
+
+type TriggerKind = ExtensionManifest['functions'][number]['trigger']['kind'];
+const workerTriggers = {
+  job: true,
+  configure: true,
+  install: true,
+  uninstall: true,
+  connect: true,
+  disconnect: true,
+  schedule: true,
+  change: true,
+  tool: true,
+  recordButton: true,
+} satisfies Record<Exclude<TriggerKind, 'route' | 'serverRoute'>, true>;
 
 /** The task dispatcher (agent spec §9.3), where a runtime takes task jobs. */
 export function agentTasks(config: Config, sql: Sql, discovery: Sql) {
@@ -156,20 +170,9 @@ export async function extensionServices(
               !release.manifest.webhooks?.some((hook) => hook.verifierFunctionId === fn.universalId)
             )
               throw new Error('verifier runtime is unavailable');
-          } else if (
-            ![
-              'job',
-              'configure',
-              'install',
-              'uninstall',
-              'connect',
-              'disconnect',
-              'schedule',
-              'change',
-              'tool',
-            ].includes(fn.trigger.kind)
-          )
+          } else if (!Object.hasOwn(workerTriggers, fn.trigger.kind)) {
             throw new Error('trigger runtime is unavailable');
+          }
           const executable = registry.lookup(
             release.manifest.universalId,
             release.digest,
