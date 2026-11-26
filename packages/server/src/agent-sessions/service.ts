@@ -26,6 +26,7 @@ import {
   cancelTurn,
   claimTurn,
   closeTurn,
+  GRACE_MS,
   lockSession,
   turnCancelled,
   turnState,
@@ -286,8 +287,9 @@ export class AgentSessions {
 
   /**
    * Deletes a chat (§5.4): cancels its turn and erases its stored content at
-   * once. A chat whose turn was running keeps its row, marked deleted and
-   * without its title, until that runtime has stopped: the turn stays fenced
+   * once. A chat whose runtime may still be at work (a running turn, or one
+   * stopped moments ago) keeps its row, marked deleted and without its
+   * title, until that runtime has stopped: the turn stays fenced
    * as `cancelled`, so the runtime's poll sees the cancel and a step already
    * under way still counts (§6.5). Maintenance then erases again and deletes
    * the row.
@@ -296,10 +298,15 @@ export class AgentSessions {
     const owned = this.owner(caller);
     await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await this.session(tx, owned.owner, id, true);
-      const running = await cancelTurn(tx, id);
+      await cancelTurn(tx, id);
       await eraseAgentContent(tx, caller.workspaceId, [id]);
-      if (running)
-        await tx`update agent_sessions set status = 'deleted', title = '' where id = ${id}`;
+      // Whether a runtime may still be at work, cancelled just now or by an
+      // earlier Stop: it hasn't closed, and its deadline plus the grace hasn't
+      // passed. Maintenance deletes the row by the same test.
+      const [live] = await tx`
+        select 1 from agent_turns where session_id = ${id} and stopped_at is null
+          and deadline + make_interval(secs => ${GRACE_MS / 1000}) > clock_timestamp()`;
+      if (live) await tx`update agent_sessions set status = 'deleted', title = '' where id = ${id}`;
       else await tx`delete from agent_sessions where id = ${id}`;
     });
   }

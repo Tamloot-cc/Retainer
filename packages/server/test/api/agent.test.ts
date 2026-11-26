@@ -178,6 +178,32 @@ describe('chats', () => {
     expect((await claim(gone, goneToken.token)).status).toBe(404);
   });
 
+  it('keeps a chat stopped and then deleted while its runtime may still report', async () => {
+    const id = await newChat();
+    const turn = await claimed(id);
+    const stopped = await t.request(`/v1/agent/chats/${id}/cancel`, {
+      key: keys.writer,
+      method: 'POST',
+    });
+    expect(stopped.body).toEqual({ cancelled: true });
+    const deleted = await t.request(`/v1/agent/chats/${id}`, {
+      key: keys.writer,
+      method: 'DELETE',
+    });
+    expect(deleted.status).toBe(204);
+    const [row] = await db.owner<{ status: string }[]>`
+      select status from agent_sessions where id = ${id}`;
+    expect(row?.status).toBe('deleted');
+    // The runtime's step under way still counts, and its close still lands.
+    expect((await report(id, turn.turnToken, 'after-stop')).body).toMatchObject({
+      action: 'stop',
+    });
+    const [usage] = await db.owner<{ n: number }[]>`
+      select count(*)::int as n from ai_usage where agent_session_id = ${id}`;
+    expect(usage?.n).toBe(1);
+    expect((await close(id, turn.turnToken, 'cancelled')).status).toBe(200);
+  });
+
   it('deletes a chat with no running turn outright', async () => {
     const id = await newChat();
     const turn = await claimed(id);

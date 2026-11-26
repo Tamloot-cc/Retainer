@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import postgres from 'postgres';
 import type { TestProject } from 'vitest/node';
-import { migrateAgentStore } from '../src/agent-runtime/store-migration.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { databaseUrl } from './helpers/db.js';
 
@@ -42,7 +42,13 @@ export default async function setup(project: TestProject) {
   await admin.unsafe(`create database "${template}"`);
   try {
     await runMigrations(databaseUrl(adminUrl, template));
-    await migrateAgentStore(databaseUrl(adminUrl, template));
+    // The agent's store step (agent spec §5.2). Loaded only where it exists:
+    // the migration compatibility check copies this file into older checkouts
+    // as their template adapter (test/compatibility/run.ts).
+    if (existsSync(new URL('../src/agent-runtime/store-migration.ts', import.meta.url))) {
+      const { migrateAgentStore } = await import('../src/agent-runtime/store-migration.js');
+      await migrateAgentStore(databaseUrl(adminUrl, template));
+    }
   } catch (error) {
     await admin.unsafe(`drop database if exists "${template}" with (force)`);
     await admin.end();
