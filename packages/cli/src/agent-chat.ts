@@ -42,6 +42,12 @@ const ENDINGS: Record<string, string> = {
   failed: 'Something went wrong in this turn.',
 };
 
+/** How a `data-turn-end` chunk says the turn ended. */
+function turnEnd(chunk: Record<string, unknown>): { status: string; code: string | null } {
+  const data = chunk.data as { status?: string; code?: string | null } | undefined;
+  return { status: data?.status ?? 'failed', code: data?.code ?? null };
+}
+
 /** What one UI message stream chunk prints, given what came before. */
 export function renderChunk(state: RenderState, chunk: Record<string, unknown>): string {
   const line = (text: string) => {
@@ -91,9 +97,8 @@ export function renderChunk(state: RenderState, chunk: Record<string, unknown>):
     case 'error':
       return line(`Error: ${short(chunk.errorText, 200)}`);
     case 'data-turn-end': {
-      const data = chunk.data as { status?: string; code?: string | null } | undefined;
-      const status = data?.status ?? 'failed';
-      state.ended = { status, code: data?.code ?? null };
+      state.ended = turnEnd(chunk);
+      const { status } = state.ended;
       return line(ENDINGS[status] ?? `The turn ended: ${status}.`);
     }
     default:
@@ -160,18 +165,18 @@ export async function sendMessage(
   }
   const state = renderState(io.color);
   let finished = false;
-  for await (const chunk of sseChunks(response.body)) {
+  // How the turn ended is recorded whatever the output (--json included).
+  const emit = (chunk: Record<string, unknown>) => {
     if (chunk.type === 'finish') finished = true;
+    if (chunk.type === 'data-turn-end') state.ended = turnEnd(chunk);
     if (io.json) io.json(chunk);
     else io.write(renderChunk(state, chunk));
-  }
+  };
+  for await (const chunk of sseChunks(response.body)) emit(chunk);
   // A stream that ends without its `finish` was cut on the way (a proxy, a
   // dropped connection): what arrived is never reported as a finished answer.
-  if (!finished && !state.ended) {
-    const cut = { type: 'data-turn-end', data: { status: 'incomplete', code: 'stream_cut' } };
-    if (io.json) io.json(cut);
-    else io.write(renderChunk(state, cut));
-  }
+  if (!finished && !state.ended)
+    emit({ type: 'data-turn-end', data: { status: 'incomplete', code: 'stream_cut' } });
   if (!io.json && state.at !== 'start' && state.at !== 'line') io.write('\n');
   return { ...(state.ended ?? { status: 'completed', code: null }), text: state.text };
 }

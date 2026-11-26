@@ -91,6 +91,16 @@ describe('sending a message', () => {
       // Cut before its `finish`.
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end('data: {"type":"text-delta","id":"a","delta":"Hel"}\n\n');
+    } else if (req.url === '/v1/agent/chats/c3/token') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({ token: 'st', expiresAt: '', streamUrl: `${origin}/chats/c3/stream` }),
+      );
+    } else if (req.url === '/chats/c3/stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        'data: {"type":"data-turn-end","data":{"status":"refused","code":"refused"}}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n',
+      );
     } else if (req.url === '/chats/c1/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end(
@@ -125,5 +135,16 @@ describe('sending a message', () => {
     const result = await sendMessage(api, 'c2', 'Hi', { write: (t) => (out += t), color: false });
     expect(result).toEqual({ status: 'incomplete', code: 'stream_cut', text: 'Hel' });
     expect(out).toContain('The answer was cut short.');
+  });
+
+  it('reports how the turn ended in JSON mode too', async () => {
+    const api = new RetainerClient({ baseUrl: origin, accessToken: 'cli-token', workspace: 'w1' });
+    const chunks: unknown[] = [];
+    const json = { write: () => {}, color: false, json: (c: unknown) => chunks.push(c) };
+    const cut = await sendMessage(api, 'c2', 'Hi', json);
+    expect(cut).toMatchObject({ status: 'incomplete', code: 'stream_cut' });
+    expect(chunks.at(-1)).toMatchObject({ type: 'data-turn-end' });
+    const refused = await sendMessage(api, 'c3', 'Hi', json);
+    expect(refused).toMatchObject({ status: 'refused', code: 'refused' });
   });
 });
