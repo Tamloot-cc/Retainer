@@ -26,6 +26,14 @@ import { startWorker } from './worker/index.js';
 import { startPurger } from './worker/purge.js';
 import { upgradeWorkspaces } from './workspaces/upgrade.js';
 
+// The agent runtime (docs/specs/agent.md §4.3, §13) runs alone: it opens no
+// pool but the `mastra` role's and runs no migrations, so it branches before
+// anything below loads the configuration or connects as the owner.
+if (process.env.RETAINER_ROLE === 'agent') {
+  const { serveAgentRuntime } = await import('@retainer/agent/runtime');
+  await serveAgentRuntime();
+}
+
 const config = loadConfig();
 setLogLevel(config.LOG_LEVEL);
 

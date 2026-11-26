@@ -1,0 +1,10 @@
+{
+  "enterpriseBindings": ["MastraFGAPermissions", "getWorkflowFGAResourceId", "requireFGA"],
+  "licences": {
+    "@mastra/ai-sdk/LICENSE.md": "f0351b469d1548e547882f01d2486a90f6bd0ff3c89defec841bbf5641265776",
+    "@mastra/core/LICENSE.md": "f0351b469d1548e547882f01d2486a90f6bd0ff3c89defec841bbf5641265776",
+    "@mastra/memory/LICENSE.md": "f0351b469d1548e547882f01d2486a90f6bd0ff3c89defec841bbf5641265776",
+    "@mastra/pg/LICENSE.md": "f0351b469d1548e547882f01d2486a90f6bd0ff3c89defec841bbf5641265776",
+    "@mastra/schema-compat/LICENSE.md": "f0351b469d1548e547882f01d2486a90f6bd0ff3c89defec841bbf5641265776"
+  }
+}

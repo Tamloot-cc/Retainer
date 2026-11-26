@@ -10,7 +10,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @retainer/shared build && pnpm --filter @retainer/extension build && pnpm --filter @retainer/sdk build && pnpm --filter @retainer/agent build && pnpm -r typecheck",
     "test": "pnpm -r test && node --test scripts/test-extension-release.mjs scripts/test-check-layers.mjs scripts/test-publish-npm.mjs",
-    "lint": "biome check . && node scripts/check-layers.mjs",
+    "lint": "biome check . && node scripts/check-layers.mjs && node scripts/check-mastra-licence.mjs",
     "format": "biome format --write .",
     "dev": "pnpm --filter @retainer/server dev",
     "db:generate": "pnpm --filter @retainer/server db:generate",
@@ -31,7 +31,9 @@
     "test:extensions:webhooks": "node scripts/test-extension-compose.mjs --webhook",
     "test:extensions:last-contact": "node scripts/test-extension-compose.mjs --last-contact",
     "test:extensions:files": "node scripts/test-extension-compose.mjs --webhook --files",
-    "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs"
+    "test:extensions:granola-bundle": "node scripts/test-granola-bundle.mjs",
+    "check:mastra-licence": "node scripts/check-mastra-licence.mjs",
+    "test:agent:compose": "node scripts/test-agent-compose.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",

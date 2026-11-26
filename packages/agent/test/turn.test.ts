@@ -351,6 +351,20 @@ describe('a chat turn', () => {
     expect(api.ofPath('/tools/search')).toHaveLength(1);
   });
 
+  it('asks again while an extension tool call is pending, with the same toolCallId', async () => {
+    let calls = 0;
+    api.toolAnswer = () => (++calls < 3 ? { pending: true } : { ok: true, output: { found: 1 } });
+    anthropic.enqueue(toolStep, answerStep());
+    const { outcome } = await turn(crypto.randomUUID(), 'Hello');
+    expect(outcome.status).toBe('completed');
+    const toolCalls = api.ofPath('/tools/search');
+    expect(toolCalls).toHaveLength(3);
+    expect(new Set(toolCalls.map((c) => (c.body as { toolCallId: string }).toolCallId)).size).toBe(
+      1,
+    );
+    expect(JSON.stringify(anthropic.requests[1]!.body.messages)).toContain('found');
+  });
+
   it('turns a tool error result into a result for the model', async () => {
     api.toolAnswer = () => ({
       ok: false,

@@ -90,17 +90,28 @@ export function buildTools(pinned: PinnedTool[], dispatch: ToolDispatch) {
             const toolCallId =
               (context as { agent?: { toolCallId?: string } })?.agent?.toolCallId ??
               crypto.randomUUID();
-            const timeoutMs = Math.max(1_000, Math.min(6 * 60_000, dispatch.deadline - Date.now()));
+            const signal = (context as { abortSignal?: AbortSignal })?.abortSignal;
             try {
-              const answer = await dispatch.api.tool(
-                dispatch.sessionId,
-                turnToken(context),
-                tool.name,
-                { toolCallId, input },
-                { timeoutMs, signal: (context as { abortSignal?: AbortSignal })?.abortSignal },
-              );
-              if (answer.ok) return answer.output;
-              return { error: answer.error };
+              // An extension tool answers `pending` while its job runs; the
+              // same toolCallId finds the same job (contract, Changes).
+              for (;;) {
+                const left = dispatch.deadline - Date.now();
+                if (left <= 0 || signal?.aborted) {
+                  return {
+                    error: { code: 'tool_unavailable', message: 'The turn ran out of time.' },
+                  };
+                }
+                const answer = await dispatch.api.tool(
+                  dispatch.sessionId,
+                  turnToken(context),
+                  tool.name,
+                  { toolCallId, input },
+                  { timeoutMs: Math.max(1_000, left), signal },
+                );
+                if ('pending' in answer) continue;
+                if (answer.ok) return answer.output;
+                return { error: answer.error };
+              }
             } catch (error) {
               if (error instanceof TurnFencedError) {
                 dispatch.onFenced(error.code);

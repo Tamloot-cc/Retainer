@@ -1,0 +1,55 @@
+# The workspace agent (docs/specs/agent.md §13). Combine with compose.yml:
+#   docker compose -f docker/compose.yml -f docker/compose.agent.yml up -d
+# Needs ANTHROPIC_API_KEY, RETAINER_AGENT_RUNTIME_SECRET (32+ characters) and
+# RETAINER_MASTRA_PASSWORD in the environment or an .env file.
+#
+# The agent runs in a container of its own. Its only database credential is
+# the retainer_mastra role, which reaches the mastra schema and nothing else;
+# it reaches Retainer's data only through the API. The server forwards each
+# chat's stream (/v1/agent/chats/:id/stream) to it, so the web app keeps one
+# origin.
+x-mastra-url: &mastra-url "postgres://retainer_mastra:${RETAINER_MASTRA_PASSWORD:?set RETAINER_MASTRA_PASSWORD for the agent's database role}@postgres:5432/retainer"
+x-runtime-secret: &runtime-secret "${RETAINER_AGENT_RUNTIME_SECRET:?set RETAINER_AGENT_RUNTIME_SECRET (32+ characters)}"
+
+services:
+  retainer:
+    environment:
+      RETAINER_AGENT_RUNTIME_SECRET: *runtime-secret
+      RETAINER_AGENT_UPSTREAM: http://agent:8788
+      # The API reads chats with it, and sets the role's password from it.
+      RETAINER_MASTRA_DATABASE_URL: *mastra-url
+
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # No migrations and no owner pool: the agent role branches first.
+    command: ["node", "dist/index.js"]
+    environment:
+      RETAINER_ROLE: agent
+      RETAINER_MASTRA_DATABASE_URL: *mastra-url
+      RETAINER_AGENT_RUNTIME_SECRET: *runtime-secret
+      RETAINER_API_ORIGIN: http://retainer:8787
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY for the agent}"
+      PORT: "8788"
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8788/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # The server applies migrations (Mastra's tables, the role) first.
+    depends_on:
+      retainer:
+        condition: service_started
+      postgres:
+        condition: service_healthy

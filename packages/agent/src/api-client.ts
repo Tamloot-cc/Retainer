@@ -53,6 +53,12 @@ export type ToolAnswer =
   | { ok: true; output: unknown }
   | { ok: false; error: { code: string; message: string } };
 
+/** An extension tool whose job hasn't finished within one request: ask again. */
+export type ToolPending = { pending: true };
+
+/** Every runtime-route request answers within API Gateway's 30 s (hosted). */
+export const MAX_REQUEST_MS = 25_000;
+
 export type TurnState = {
   status: 'running' | 'cancelled' | 'timed_out' | 'closed';
   current: boolean;
@@ -132,7 +138,10 @@ export class RuntimeApi {
   }
 
   /** Trades a stream token, with the runtime credential, for a turn (spec §7.3). */
-  async claim(sessionId: string, body: { streamToken: string; title?: string }): Promise<Claim> {
+  async claim(
+    sessionId: string,
+    body: { streamToken: string; title?: string; notAfter?: string; build?: string },
+  ): Promise<Claim> {
     const { status, json } = await this.#call<Claim>(
       'POST',
       this.#url(sessionId, 'claim'),
@@ -150,13 +159,13 @@ export class RuntimeApi {
     name: string,
     body: { toolCallId: string; input: unknown },
     options: { timeoutMs: number; signal?: AbortSignal },
-  ): Promise<ToolAnswer> {
-    const { status, json } = await this.#call<ToolAnswer>(
+  ): Promise<ToolAnswer | ToolPending> {
+    const { status, json } = await this.#call<ToolAnswer | ToolPending>(
       'POST',
       this.#url(sessionId, `tools/${encodeURIComponent(name)}`),
       turnToken,
       body,
-      options.timeoutMs,
+      Math.min(options.timeoutMs, MAX_REQUEST_MS),
       options.signal,
     );
     if (status === 409) throw new TurnFencedError(RuntimeApi.#code(json, 'turn_cancelled'));
