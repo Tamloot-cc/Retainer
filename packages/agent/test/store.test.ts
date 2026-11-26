@@ -18,7 +18,7 @@ afterAll(async () => {
 });
 
 describe('the Mastra store', () => {
-  it('creates only the memory and workflows tables, in the mastra schema', async () => {
+  it('creates only the memory tables, in the mastra schema', async () => {
     const { rows } = await db.query(
       `select tablename from pg_tables where schemaname = 'mastra' order by 1`,
     );
@@ -28,10 +28,6 @@ describe('the Mastra store', () => {
       'mastra_observational_memory',
       'mastra_resources',
       'mastra_threads',
-      'mastra_workflow_run_entries',
-      'mastra_workflow_run_owners',
-      'mastra_workflow_runs',
-      'mastra_workflow_snapshot',
     ]);
   });
 
