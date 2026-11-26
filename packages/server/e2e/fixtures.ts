@@ -895,8 +895,12 @@ export const test = base.extend<
       });
     } finally {
       if (agentServer) {
-        agentServer.closeAllConnections();
-        await new Promise<void>((r) => agentServer?.close(() => r()));
+        const closing = agentServer;
+        await new Promise<void>((r) => {
+          closing.close(() => r());
+          // A stopped turn's stream can still be open: stop accepting, then close it.
+          if ('closeAllConnections' in closing) closing.closeAllConnections();
+        });
       }
       await anthropic?.stop();
       await new Promise<void>((resolve, reject) => {
