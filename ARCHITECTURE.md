@@ -2087,7 +2087,7 @@ database's VPC with internet, through a NAT gateway, because Google and
 Microsoft sign-in and OAuth client metadata need it. The `model` function (4)
 runs outside the VPC, with no database access. The `api`,
 `consolidate` and `ops` functions keep no route to the internet, and `api` does not
-import Better Auth: only an `accounts` module does, and only `index` and
+import Better Auth: only the `accounts` folder does, and only `index` and
 `lambda/control.ts` import that. In a container with `RETAINER_ROLE=all`, everything runs in one process.
 
 **Database roles.** Each function logs in with its own role: `ops` as the owner,
@@ -2151,10 +2151,10 @@ a pool of its own.
 
 ### Server layers
 
-Each server module in `packages/server/src` belongs to a layer and imports only
+Each folder in `packages/server/src` belongs to a layer and imports only
 from its own layer and the ones below it:
 
-| Layer      | Modules                                                                                                                                                               | Holds                                                                             |
+| Layer      | Folders                                                                                                                                                               | Holds                                                                             |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Entry      | `index`, `cli`, `migrate`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                                              | Starting the server, the CLI and the Lambda functions                             |
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`                                        | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
@@ -2166,13 +2166,13 @@ from its own layer and the ones below it:
 The schema engine sits above the records because a schema change rewrites
 records and views, while records only need to read a schema: `schema` holds the
 read side and `schema-engine` the write side. Events are records, so the core
-modules may import each other. No other modules may form a cycle, and no files
+folders may import each other. No other folders may form a cycle, and no files
 may. `scripts/check-layers.mjs` enforces this as part of `pnpm lint`, and fails
-when a new module has no layer. It also refuses MIT packages importing server
+when a new folder has no layer. It also refuses MIT packages importing server
 code, and lets only `api`, `extension-control`, `operator` and `lambda` import
 `model`, the proxy for extension model calls
 ([extensions-model-calls.md](docs/specs/extensions-model-calls.md) §3.5).
-Retainer's core never calls a model. The workspace agent's server modules,
+Retainer's core never calls a model. The workspace agent's server folders,
 `agent-runtime` (tokens, the turn lease, the erasure of stored agent content)
 and `agent-sessions` (the session API and runtime routes), are never imported
 by the core: `forget` doesn't reach agent sessions
@@ -2188,7 +2188,7 @@ TypeScript on Node 26 (the extension and routine runner image uses Node
 Drizzle for table definitions and drizzle-kit migrations, Zod, the
 official MCP TypeScript SDK, and Better Auth with its JWT, MCP and client
 metadata plugins for signing people in and for OAuth (accounts mode only, in the
-`accounts` module). `jose` verifies OAuth access tokens in the API, which does not
+`accounts` folder). `jose` verifies OAuth access tokens in the API, which does not
 import Better Auth. The job queue is Postgres itself (4.2), with
 no queue library. No LLM SDK in the server: the model proxy forwards HTTP.
 The optional web package uses Vite, React 19, TanStack Router/Query, Tailwind

@@ -58,7 +58,7 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
   (including the built-in routine builder) may call a model through the model
   proxy (`docs/specs/extensions-model-calls.md`, `docs/specs/routines.md`).
 - No embeddings or semantic search: search is Postgres full-text only.
-- Server modules import only from their own layer and those below it
+- Server folders import only from their own layer and those below it
   (`ARCHITECTURE.md` section 8); `pnpm lint` checks this.
 - `packages/server`, `docker/` and `docs/` are AGPL-3.0; every other package
   (`shared`, `sdk`, `mcp`, `web`, `extension`, `runner`) and
