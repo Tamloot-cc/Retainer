@@ -8,7 +8,6 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type InputHTMLAttributes,
-  lazy,
   type PointerEvent,
   type ReactNode,
   type Ref,
@@ -878,8 +877,6 @@ export {
 } from './entry.js';
 export { type FitItem, FitList, fitCount } from './fit-list.js';
 export { ColorDot, IdentityTag, ObjectIcon, RecordAvatar } from './identity.js';
-/** React Flow and dagre are heavy, so the canvas loads on first render; wrap it in Suspense. */
-export const Diagram = lazy(() => import('./diagram.js').then((m) => ({ default: m.Diagram })));
 export {
   ApiName,
   CardGrid,

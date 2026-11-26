@@ -10,7 +10,7 @@
   --xy-controls-box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
   --xy-minimap-background-color: var(--card);
   --xy-minimap-mask-background-color: color-mix(in srgb, var(--muted) 70%, transparent);
-  --xy-minimap-mask-stroke-color: var(--border);
+  --xy-minimap-mask-stroke-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
   --xy-minimap-node-background-color: var(--muted);
   --xy-minimap-node-stroke-color: var(--border);
   --xy-attribution-background-color: transparent;
@@ -40,4 +40,123 @@
   .retainer-diagram .react-flow__controls-button:last-child {
     border-right: 0;
   }
+}
+
+.diagram-workspace {
+  container: diagram / inline-size;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+}
+
+.diagram-actions {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-block-end: 1px solid var(--border);
+}
+
+.diagram-events > label {
+  align-items: center;
+  min-block-size: 2rem;
+  padding-inline: 0.25rem;
+}
+
+@media (pointer: coarse) {
+  .diagram-events > label {
+    min-block-size: 2.75rem;
+  }
+}
+
+.diagram-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  isolation: isolate;
+  block-size: clamp(23rem, 64dvh, 46rem);
+  min-block-size: 0;
+}
+
+.diagram-body[data-inspector] {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 43%);
+}
+
+.diagram-inspector {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  border-block-start: 1px solid var(--border);
+  background: var(--background);
+}
+
+.diagram-inspector-content {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border-block-start: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+@container diagram (min-width: 38rem) {
+  .diagram-body[data-inspector] {
+    grid-template-columns: minmax(0, 1fr) minmax(17rem, 32%);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .diagram-inspector {
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--border);
+  }
+}
+
+.diagram-fullscreen {
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100dvh;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.diagram-fullscreen:modal {
+  overscroll-behavior: contain;
+}
+
+.diagram-fullscreen::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.diagram-fullscreen .diagram-workspace {
+  block-size: 100dvh;
+  border: 0;
+  border-radius: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.diagram-fullscreen .diagram-body {
+  flex: 1;
 }

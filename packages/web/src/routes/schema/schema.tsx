@@ -1,12 +1,14 @@
 import { Link } from '@tanstack/react-router';
 import { Clock } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 import { useWorkspace } from '../../api/client.js';
-import { Button, Page, Tabs } from '../../ui/index.js';
+import { Button, Notice, Page, Tabs } from '../../ui/index.js';
 import { useView } from '../state.js';
-import { DiagramTab } from './diagram-tab.js';
 import { HistoryTab } from './history-tab.js';
 import { ObjectsTab } from './objects-tab.js';
 import { useSchemaChanges } from './schema-model.js';
+
+const DiagramTab = lazy(() => import('./diagram-tab.js').then((m) => ({ default: m.DiagramTab })));
 
 export function SchemaPage() {
   const { schema } = useWorkspace(),
@@ -50,7 +52,15 @@ export function SchemaPage() {
           { value: 'history', label: 'Change history', count: all.data?.total },
         ]}
       />
-      {tab === 'objects' ? <ObjectsTab /> : tab === 'diagram' ? <DiagramTab /> : <HistoryTab />}
+      {tab === 'objects' ? (
+        <ObjectsTab />
+      ) : tab === 'diagram' ? (
+        <Suspense fallback={<Notice>Loading diagram…</Notice>}>
+          <DiagramTab />
+        </Suspense>
+      ) : (
+        <HistoryTab />
+      )}
     </Page>
   );
 }
