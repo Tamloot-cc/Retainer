@@ -328,6 +328,7 @@ describe('ChatPage', () => {
     await waitFor(() => expect(detail).toHaveBeenCalledTimes(3));
     expect(screen.getByText('Hello there.')).toBeTruthy();
     expect(screen.getByText('The agent declined to answer this.')).toBeTruthy();
+    expect(document.querySelector('.retainer-mark[data-mood="error"]')).toBeTruthy();
   });
 
   it('shows how a turn ended after a reload, from the saved chat', async () => {
@@ -415,13 +416,18 @@ describe('ChatPage', () => {
       'Who is Dana?{Enter}',
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
-    expect(await screen.findByText('Stopped.')).toBeTruthy();
+    expect(await screen.findByText('Stopping…')).toBeTruthy();
+    await waitFor(() => expect(detail.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.queryByText('Stopped.')).toBeNull();
+    expect(document.querySelector('.retainer-mark[data-mood="stopping"]')).toBeTruthy();
     expect(screen.getByText('Who is Dana?', { selector: 'div' })).toBeTruthy();
     // The runtime saves its step and stops; only checking back can show it.
     const calls = detail.mock.calls.length;
     runtimeStopped = true;
     expect(await screen.findByText('Dana is a buyer at Acme.', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText('Stopped.')).toBeTruthy();
+    expect(screen.queryByText('Stopping…')).toBeNull();
+    expect(document.querySelector('.retainer-mark[data-mood="idle"]')).toBeTruthy();
     expect(detail.mock.calls.length).toBeGreaterThan(calls);
   }, 10_000);
 
@@ -526,12 +532,15 @@ describe('ChatPage', () => {
       vi.fn(async () => new Response(JSON.stringify({ code: 'turn_stopping' }), { status: 409 })),
     );
     show(<ChatPage />);
-    expect(await screen.findByText('Stopped.')).toBeTruthy();
+    expect(await screen.findByText('Stopping…')).toBeTruthy();
     await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
     expect(await screen.findByText(/still stopping/)).toBeTruthy();
+    expect(screen.getByText('Stopping…')).toBeTruthy();
+    expect(screen.queryByText('Stopped.')).toBeNull();
     runtimeStopped = true;
     expect(await screen.findByText('Dana is a buyer at Acme.', {}, { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText('Hi', { selector: 'div' })).toBeTruthy();
+    expect(screen.getByText('Stopped.')).toBeTruthy();
   }, 10_000);
 
   it('shows a turn still running from before, and stops it', async () => {

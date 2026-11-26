@@ -14,6 +14,7 @@
  * LogoMark sets --mark-cycle, the length of the shown mood's cycle.
  */
 .retainer-mark {
+  --mark-square-color: #ff603f;
   --dir: 1;
   display: inline-flex;
   flex-shrink: 0;
@@ -46,7 +47,7 @@
   fill: transparent;
 }
 .mark-square {
-  fill: #ff603f;
+  fill: var(--mark-square-color);
 }
 @media (prefers-color-scheme: dark) {
   .mark-ring {
@@ -63,6 +64,20 @@
 .retainer-mark[data-tile] .mark-ring {
   fill: #d4fa38;
 }
+.retainer-mark[data-mood="error"] .mark-ring {
+  fill: var(--mark-square-color);
+}
+.retainer-mark[data-mood="error"] .mark-fixed {
+  display: none;
+}
+
+/* The square keeps its original orientation relative to the ring. */
+.retainer-mark[data-mood="idle"] .mark-turn {
+  transform: rotate(-43.7deg);
+}
+.retainer-mark[data-mood="stopping"] {
+  --mark-bottom: 136.3deg;
+}
 
 /* Moods. Animations exist only when motion is welcome; otherwise each mood is a still pose. */
 @media (prefers-reduced-motion: no-preference) {
@@ -72,7 +87,7 @@
     will-change: transform;
   }
 
-  /* idle: nearly still; the square drifts out of the gap and back. */
+  /* idle: the square levitates above the gap. */
   .retainer-mark[data-mood="idle"] .mark-move {
     animation: retainer-mark-drift var(--mark-cycle) ease-in-out infinite;
   }
@@ -82,9 +97,12 @@
     animation: retainer-mark-breathe var(--mark-cycle) ease-in-out infinite;
   }
 
-  /* thinking: a steady spin with the square upright. */
+  /* thinking: a wind-up and a counterclockwise orbit, with the square upright. */
   .retainer-mark[data-mood="thinking"] :is(.mark-turn, .mark-upright) {
-    animation: retainer-mark-spin var(--mark-cycle) linear infinite;
+    animation: retainer-mark-spin var(--mark-cycle) ease-in-out infinite;
+  }
+  .retainer-mark[data-mood="thinking"] .mark-pop {
+    animation: retainer-mark-think-pop var(--mark-cycle) ease-in-out infinite;
   }
 
   /* reading: the gap scans back and forth, pausing at each end. */
@@ -108,6 +126,11 @@
     animation: retainer-mark-step var(--mark-cycle) cubic-bezier(0.65, 0, 0.35, 1) infinite;
   }
 
+  /* stopping: the square pulls the ring around with it, then settles at the bottom. */
+  .retainer-mark[data-mood="stopping"] .mark-turn {
+    animation: retainer-mark-swing var(--mark-cycle) ease-in-out forwards;
+  }
+
   /* done (once): a quick turn and a pop of the square. Its own keyframes name, so
      that coming from thinking restarts the turn instead of continuing the spin's clock. */
   .retainer-mark[data-mood="done"] :is(.mark-turn, .mark-upright) {
@@ -117,15 +140,42 @@
     animation: retainer-mark-pop var(--mark-cycle) ease-out;
   }
 
-  /* error (once): the square shakes in the gap. */
-  .retainer-mark[data-mood="error"] .mark-move {
+  /* Restore the interrupted layers before the whole mark shakes or settles. */
+  .retainer-mark:is([data-mood="stopping"], [data-mood="error"])
+    :is(.mark-move, .mark-pop, .mark-upright),
+  .retainer-mark[data-mood="stopping"] .mark-breathe,
+  .retainer-mark[data-mood="error"] .mark-turn {
+    animation: retainer-mark-restore calc(var(--mark-cycle) * 0.38) ease-out;
+  }
+  .retainer-mark[data-mood="stopping"] .mark-breathe {
+    --mark-from: var(--mark-from-breathe, none);
+  }
+  .retainer-mark[data-mood="error"] .mark-turn {
+    --mark-from: var(--mark-from-turn, none);
+  }
+  .retainer-mark:is([data-mood="stopping"], [data-mood="error"]) .mark-move {
+    --mark-from: var(--mark-from-move, none);
+  }
+  .retainer-mark:is([data-mood="stopping"], [data-mood="error"]) .mark-pop {
+    --mark-from: var(--mark-from-pop, none);
+  }
+  .retainer-mark:is([data-mood="stopping"], [data-mood="error"]) .mark-upright {
+    --mark-from: var(--mark-from-upright, none);
+  }
+
+  /* The first 38% restores the original pose. The last 62% shakes both pieces together. */
+  .retainer-mark[data-mood="error"] > svg > .mark-breathe {
     animation: retainer-mark-shake var(--mark-cycle) ease-in-out;
   }
 }
 
 @keyframes retainer-mark-drift {
+  0%,
+  100% {
+    transform: translate(18px, -19px);
+  }
   50% {
-    transform: translate(14px, -14px);
+    transform: translate(84px, -88px);
   }
 }
 @keyframes retainer-mark-breathe {
@@ -134,8 +184,26 @@
   }
 }
 @keyframes retainer-mark-spin {
-  to {
-    transform: rotate(calc(360deg * var(--dir)));
+  0% {
+    transform: rotate(0deg);
+  }
+  24% {
+    transform: rotate(calc(28deg * var(--dir)));
+  }
+  100% {
+    transform: rotate(calc(-360deg * var(--dir)));
+  }
+}
+@keyframes retainer-mark-think-pop {
+  0%,
+  100% {
+    transform: none;
+  }
+  24% {
+    transform: scale(0.78);
+  }
+  58% {
+    transform: scale(1.32);
   }
 }
 @keyframes retainer-mark-whirl {
@@ -165,6 +233,35 @@
   70%,
   100% {
     transform: rotate(calc(360deg * var(--dir)));
+  }
+}
+@keyframes retainer-mark-restore {
+  from {
+    transform: var(--mark-from);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes retainer-mark-swing {
+  0% {
+    transform: var(--mark-from-turn, none);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.25, 1);
+  }
+  43% {
+    transform: rotate(calc(var(--mark-bottom) + 18deg));
+  }
+  60% {
+    transform: rotate(calc(var(--mark-bottom) - 9deg));
+  }
+  76% {
+    transform: rotate(calc(var(--mark-bottom) + 4deg));
+  }
+  90% {
+    transform: rotate(calc(var(--mark-bottom) - 1deg));
+  }
+  100% {
+    transform: rotate(var(--mark-bottom));
   }
 }
 @keyframes retainer-mark-stash {
@@ -228,21 +325,24 @@
   }
 }
 @keyframes retainer-mark-shake {
-  0%,
+  38%,
   100% {
     transform: none;
   }
-  15% {
-    transform: translateX(-28px);
+  0% {
+    transform: var(--mark-from-breathe, none);
   }
-  35% {
-    transform: translateX(24px);
+  47% {
+    transform: translateX(-128px);
   }
-  55% {
-    transform: translateX(-16px);
+  59% {
+    transform: translateX(112px);
   }
-  75% {
-    transform: translateX(10px);
+  72% {
+    transform: translateX(-80px);
+  }
+  85% {
+    transform: translateX(42px);
   }
 }
 
@@ -259,6 +359,9 @@
   }
   .retainer-mark[data-mood="saving"] .mark-pop {
     transform: scale(0.75);
+  }
+  .retainer-mark[data-mood="stopping"] .mark-turn {
+    transform: rotate(var(--mark-bottom));
   }
 }
 

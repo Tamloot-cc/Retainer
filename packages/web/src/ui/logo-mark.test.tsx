@@ -31,6 +31,27 @@ describe('changing mood', () => {
     );
   });
 
+  it('shows errors and cancellation immediately and clears stopping as soon as it settles', () => {
+    expect(moodReducer(at('working'), { type: 'want', mood: 'error', now: false })).toEqual(
+      at('error'),
+    );
+    expect(moodReducer(at('thinking'), { type: 'want', mood: 'stopping', now: false })).toEqual(
+      at('stopping'),
+    );
+    expect(moodReducer(at('stopping'), { type: 'want', mood: 'idle', now: false })).toEqual(
+      at('idle'),
+    );
+  });
+
+  it('leaves idle immediately and keeps stopping after the square lands', () => {
+    expect(moodReducer(at('idle'), { type: 'want', mood: 'thinking', now: false })).toEqual(
+      at('thinking'),
+    );
+    expect(
+      moodReducer(at('stopping'), { type: 'cycle', name: 'retainer-mark-swing', ended: true }),
+    ).toEqual(at('stopping'));
+  });
+
   it('counts only the shown mood’s main animation', () => {
     const waiting = at('thinking', 'reading');
     // Another layer's keyframes, and the end of a one-shot turn, are not thinking's cycle.
@@ -91,6 +112,21 @@ describe('LogoMark', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('captures the live pose before switching to error', () => {
+    const { container, rerender } = render(<LogoMark mood="idle" />);
+    const logo = mark(container);
+    const turn = logo.querySelector<SVGGElement>('svg > .mark-breathe .mark-turn');
+    const move = logo.querySelector<SVGGElement>('.mark-move');
+    if (!turn || !move) throw new Error('Missing SVG layers');
+    turn.style.transform = 'rotate(-43.7deg)';
+    move.style.transform = 'translate(18px, -19px)';
+
+    rerender(<LogoMark mood="error" />);
+    expect(mood(logo)).toBe('error');
+    expect(logo.style.getPropertyValue('--mark-from-turn')).toBe('rotate(-43.7deg)');
+    expect(logo.style.getPropertyValue('--mark-from-move')).toBe('translate(18px, -19px)');
   });
 
   it('changes mood at the end of the current cycle', () => {

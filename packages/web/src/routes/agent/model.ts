@@ -450,18 +450,20 @@ export type ChatStatus = 'submitted' | 'streaming' | 'ready' | 'error';
 /**
  * What the assistant's mark shows (assistant avatar spec §7): listening while
  * the person types, thinking before it acts, reading for read tools, saving for
- * writes, working while the answer streams, done when a turn ends and error
- * when one fails.
+ * writes, working while the answer streams, stopping while cancellation settles,
+ * and done or error for the outcome of a turn seen on this page.
  */
 export function avatarMood(input: {
   status: ChatStatus;
   messages: ChatMessage[];
   typing: boolean;
-  ended: boolean;
+  outcome: 'done' | 'error' | null;
   running: boolean;
+  stopping: boolean;
 }): LogoMood {
   const { status, messages } = input;
   if (status === 'error') return 'error';
+  if (input.stopping) return 'stopping';
   if (status === 'submitted') return 'thinking';
   if (status === 'streaming') {
     const last = messages.at(-1);
@@ -483,9 +485,9 @@ export function avatarMood(input: {
     return 'thinking';
   }
   if (input.running) return 'working';
+  if (input.outcome === 'error') return 'error';
   if (input.typing) return 'listening';
-  if (input.ended) return 'done';
-  return 'idle';
+  return input.outcome ?? 'idle';
 }
 
 /** The words beside the mark, so the motion is never the only signal. */
@@ -494,4 +496,5 @@ export const MOOD_TEXT: Partial<Record<LogoMood, string>> = {
   reading: 'Reading…',
   saving: 'Saving to your workspace…',
   working: 'Writing the answer…',
+  stopping: 'Stopping…',
 };
