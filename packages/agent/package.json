@@ -16,6 +16,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.94",
     "@mastra/ai-sdk": "1.12.1",
     "@mastra/core": "1.86.0",
     "@mastra/memory": "1.41.3",
