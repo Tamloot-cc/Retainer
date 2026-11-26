@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { WORKSPACE_HEADER } from '../../src/auth/account-session.js';
 import {
   createOrganization,
   setOrganizationMember,
@@ -8,6 +9,7 @@ import { createWorkspace } from '../../src/workspaces/workspaces.js';
 import { type AccountsTestApp, ORIGIN, startAccountsApp } from '../helpers/accounts.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
+import { loadDocsContract } from '../helpers/docs-contract.js';
 import { connect, fetchClientMetadata, mcpCall } from '../helpers/oauth.js';
 
 // Workspace and personal memory over REST and MCP (personal memory spec 4.4,
@@ -277,7 +279,18 @@ describe('accounts mode', () => {
       ((await (await v1(viewer, '/v1/records/me/facts')).json()) as { facts: unknown[] }).facts,
     ).toHaveLength(1);
     // And clear it all: the retracted fact is deleted too.
-    const cleared = await v1(viewer, '/v1/records/me/forget', 'POST');
+    const clearPath = '/v1/records/me/forget';
+    const contract = await loadDocsContract();
+    const parameters = contract.paths[clearPath]?.post?.parameters ?? [];
+    const headers = new Headers({ cookie: viewer.cookie, origin: ORIGIN });
+    for (const parameter of parameters.filter(
+      ({ in: location, required }) => location === 'header' && required,
+    )) {
+      const value = parameter.name === WORKSPACE_HEADER ? workspaceId : parameter.example;
+      if (typeof value !== 'string') throw new Error(`No example for ${parameter.name}`);
+      headers.set(parameter.name, value);
+    }
+    const cleared = await app.api.request(`${ORIGIN}${clearPath}`, { method: 'POST', headers });
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({ cleared: true, counts: { facts: 2 } });
     expect(

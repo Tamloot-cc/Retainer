@@ -47,7 +47,6 @@ const stringLength = (minLength: number, maxLength: number) =>
     maxLength,
   }) satisfies Schema;
 const nullString: Schema = { type: ['string', 'null'] };
-const nullable = (schema: Schema): Schema => ({ anyOf: [schema, { type: 'null' }] });
 const paged = (name: string, item: Schema) =>
   object({ [name]: array(item), nextCursor: nullString });
 const attachment = choice('participant', 'about', 'field');
@@ -155,6 +154,7 @@ function endpoint({
     operationId,
     summary,
     description: [description, accessText].filter(Boolean).join(' '),
+    ...(access === 'public' || access === 'any' ? {} : { 'x-retainer-scope': access }),
     ...(security !== undefined ? { security } : access === 'public' ? { security: [] } : {}),
     parameters: [...pathParameters, ...parameters],
     ...(requestSchema
@@ -366,7 +366,7 @@ endpoint({
   operationId: 'get-event',
   summary: 'Read an event',
   access: 'read',
-  response: { schema: ref('Record') },
+  response: { schema: ref('EventRead') },
 });
 endpoint({
   tag: 'Events',
@@ -433,46 +433,8 @@ endpoint({
 });
 
 const schemaStatus = choice('applied', 'proposed', 'rejected', 'failed');
-const schemaChange = object(
-  {
-    id,
-    status: schemaStatus,
-    operations: array(map()),
-    request: array(map()),
-    isDestructive: boolean,
-    template: text,
-    reason: nullString,
-    requestedBy: ref('Actor'),
-    decidedBy: nullable(ref('Actor')),
-    appliedVersion: { type: ['integer', 'null'] },
-    error: nullString,
-    createdAt: timestamp,
-    decidedAt: nullString,
-  },
-  [
-    'id',
-    'status',
-    'operations',
-    'request',
-    'isDestructive',
-    'reason',
-    'requestedBy',
-    'decidedBy',
-    'appliedVersion',
-    'error',
-    'createdAt',
-    'decidedAt',
-  ],
-);
-const schemaResult = object(
-  {
-    status: choice('applied', 'proposed', 'rejected', 'failed', 'unchanged'),
-    change: nullable(schemaChange),
-    schemaVersion: integer,
-    recordIds: array(id),
-  },
-  ['status', 'change', 'schemaVersion'],
-);
+const schemaChange = ref('SchemaChange');
+const schemaResult = ref('SchemaChangeResult');
 endpoint({
   tag: 'Schema',
   method: 'post',
@@ -618,6 +580,14 @@ endpoint({
       required: true,
       schema: { type: 'string', const: 'web' },
       example: 'web',
+    },
+    {
+      in: 'header',
+      name: 'X-Retainer-Workspace',
+      required: true,
+      schema: id,
+      example: simpleId,
+      description: 'ID of the workspace whose personal memory is cleared.',
     },
   ],
   response: { schema: ref('ClearPersonalMemory') },

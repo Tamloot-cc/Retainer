@@ -119,8 +119,30 @@ test('clearing personal memory uses a signed-in session', async () => {
   const webHeader = operation.parameters.find(({ name }) => name === 'X-Retainer-Client');
   assert.ok(webHeader?.required);
   assert.equal(webHeader.schema.const, 'web');
+  const workspaceHeader = operation.parameters.find(({ name }) => name === 'X-Retainer-Workspace');
+  assert.ok(workspaceHeader?.required);
+  assert.equal(workspaceHeader.schema.format, 'uuid');
   assert.equal(
     operation.responses['200'].content['application/json'].schema.$ref,
     '#/components/schemas/ClearPersonalMemory',
+  );
+});
+
+test('event reads and schema history expose their concrete response shapes', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const eventRead = contract.paths['/v1/events/{id}'].get;
+  assert.equal(
+    eventRead.responses['200'].content['application/json'].schema.$ref,
+    '#/components/schemas/EventRead',
+  );
+  const schemas = contract.components.schemas;
+  assert.ok(schemas.EventRead.required.includes('event'));
+  assert.equal(
+    schemas.SchemaChange.properties.operations.items.$ref,
+    '#/components/schemas/SchemaDiffOperation',
+  );
+  assert.equal(
+    schemas.SchemaChange.properties.request.items.$ref,
+    '#/components/schemas/SchemaOperation',
   );
 });

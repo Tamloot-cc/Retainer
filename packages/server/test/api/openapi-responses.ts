@@ -36,8 +36,12 @@ import {
   SAVED_VIEW_KINDS,
   SAVED_VIEW_VISIBILITIES,
   type SavedView,
+  SCHEMA_CHANGE_STATUSES,
   SCHEMA_OWNERS,
+  type SchemaChange,
+  type SchemaChangeResult,
   type SchemaDescription,
+  type SchemaDiffOperation,
   type SearchResult,
   type Session,
   type TimelineItem,
@@ -51,7 +55,10 @@ import { z } from 'zod';
 import { fileMetadataSchema, type SignedTransfer } from '../../src/file-storage/contract.js';
 import type { ErrorBody } from '../../src/http/response.js';
 import type { clearMyMemory } from '../../src/memory/service.js';
-import { fieldDefinitionSchema } from '../../src/schema-engine/operations.js';
+import {
+  fieldDefinitionSchema,
+  schemaOperationSchema,
+} from '../../src/schema-engine/operations.js';
 
 // Check the shape in both directions. Check keys separately so adding an optional
 // field to the API type also requires documenting it here.
@@ -330,6 +337,98 @@ const contextFact = z.object({
   internal: z.literal(true).optional(),
 });
 
+const diffObject = z.object({
+  objectId: id,
+  object: text,
+  objectLabel: text,
+  objectClass: z.enum(OBJECT_CLASSES),
+});
+const diffField = diffObject.extend({
+  fieldId: id,
+  field: text,
+  fieldLabel: text,
+  fieldType: z.enum(FIELD_TYPES).nullable(),
+});
+const objectNames = z.object({ nameSingular: text, namePlural: text });
+const diffSchema = response<SchemaDiffOperation>()(
+  z.union([
+    z.object({
+      kind: z.literal('create_object'),
+      object: objectView.omit({ fields: true, eventColumns: true }).extend({
+        universalId: id,
+        labelFieldLabel: text.nullable(),
+      }),
+    }),
+    diffObject.extend({
+      kind: z.literal('update_object'),
+      property: z.enum(['labelSingular', 'labelPlural', 'description']),
+      from: text.nullable(),
+      to: text.nullable(),
+    }),
+    diffObject.extend({
+      kind: z.literal('update_object'),
+      property: z.literal('labelField'),
+      from: text.nullable(),
+      to: text.nullable(),
+      fromLabel: text.nullable(),
+      toLabel: text.nullable(),
+    }),
+    diffObject.extend({ kind: z.literal('rename_object'), from: objectNames, to: objectNames }),
+    diffObject.extend({ kind: z.enum(['deprecate_object', 'protect_object']) }),
+    diffObject.extend({
+      kind: z.literal('create_field'),
+      field: field.omit({ readOnly: true, protectedOptions: true }).extend({
+        universalId: id,
+        coreRole: z.enum(CORE_ROLES).nullable(),
+      }),
+      targetLabels: z.array(z.object({ singular: text, plural: text })).optional(),
+    }),
+    diffField.extend({
+      kind: z.literal('update_field'),
+      property: z.enum([
+        'label',
+        'description',
+        'isNullable',
+        'isUnique',
+        'isFilterable',
+        'isSearchable',
+        'rollUpEvents',
+      ]),
+      from: z.union([text, z.boolean(), z.null()]),
+      to: z.union([text, z.boolean(), z.null()]),
+    }),
+    diffField.extend({ kind: z.literal('rename_field'), from: text, to: text }),
+    diffField.extend({ kind: z.enum(['deprecate_field', 'protect_field']) }),
+    diffField.extend({
+      kind: z.literal('add_option'),
+      option: z.object({ value: text, label: text }),
+    }),
+    diffField.extend({ kind: z.literal('update_option'), value: text, from: text, to: text }),
+    diffField.extend({ kind: z.literal('remove_option'), value: text, optionLabel: text }),
+  ]),
+);
+// History preserves the request accepted by the schema engine, including its operation variants.
+type StoredSchemaChange = Omit<SchemaChange, 'request'> & {
+  request: z.output<typeof schemaOperationSchema>[];
+};
+const schemaChange = response<StoredSchemaChange>()(
+  z.object({
+    id,
+    status: z.enum(SCHEMA_CHANGE_STATUSES),
+    operations: z.array(diffSchema),
+    request: z.array(schemaOperationSchema),
+    isDestructive: z.boolean(),
+    template: text.optional(),
+    reason: text.nullable(),
+    requestedBy: actorSchema,
+    decidedBy: actorSchema.nullable(),
+    appliedVersion: z.int().nullable(),
+    error: text.nullable(),
+    createdAt: timestamp,
+    decidedAt: timestamp.nullable(),
+  }),
+);
+
 const responses = {
   Workspace: workspace,
   Actor: actorSchema,
@@ -370,6 +469,9 @@ const responses = {
   ),
   EventPage: response<EventPage>()(z.object({ ...page, records: z.array(eventRecord) })),
   EventRecord: eventRecord,
+  EventRead: response<PresentedRecord & { event: EventDetails }>()(
+    record.extend({ event: eventDetails }),
+  ),
   EventDetails: eventDetails,
   Participants: participants,
   AddedLinks: addedLinks,
@@ -381,6 +483,19 @@ const responses = {
       participants,
       about: z.array(id),
       added: addedLinks.optional(),
+    }),
+  ),
+  SchemaDiffOperation: diffSchema,
+  SchemaOperation: schemaOperationSchema,
+  SchemaChange: schemaChange,
+  SchemaChangeResult: response<
+    Omit<SchemaChangeResult, 'change'> & { change: StoredSchemaChange | null }
+  >()(
+    z.object({
+      status: z.enum([...SCHEMA_CHANGE_STATUSES, 'unchanged']),
+      change: schemaChange.nullable(),
+      schemaVersion: z.int(),
+      recordIds: z.array(id).optional(),
     }),
   ),
   SchemaDescription: response<SchemaDescription>()(
