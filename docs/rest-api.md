@@ -182,7 +182,8 @@ The [generated API reference](api/index.mdx) has request and response schemas an
 | `GET /v1/records/:id/context`                       | `read`           | Context pack; `?tokenBudget=` (default 2000, at most 16000)          |
 | `GET /v1/records/:id/timeline`                      | `read`           | Events, field values and facts, newest first; filters, cursor        |
 | `POST /v1/records/:id/merge`                        | `write`, user    | Merge `recordId` into this record                                    |
-| `POST /v1/records/:id/forget`                       | `admin`, user    | Erase a person for a privacy request; not reversible                 |
+| `POST /v1/records/me/forget`                         | `read`, session  | Clear your personal memory in the current workspace                   |
+| `POST /v1/records/:id/forget`                        | `admin`, user    | Erase a person for a privacy request; not reversible                 |
 | `POST /v1/events`                                   | `write`          | Log an event; returns matched and unmatched participants             |
 | `POST /v1/events/query`                             | `read`           | Filter, sort and page events of every event type at once             |
 | `POST /v1/events/move`                              | `admin`, user    | Move events to another event type; `schema:write` for a dry run      |

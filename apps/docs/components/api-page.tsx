@@ -33,7 +33,8 @@ function example(
 
 export const OpenAPIPage = createOpenAPIPage({
   generateCodeSamples({ operation }) {
-    const authenticated = operation.security?.length !== 0;
+    const authenticated =
+      operation.security?.some((requirement) => 'bearerAuth' in requirement) ?? true;
     return [
       example('curl', curl, authenticated),
       example('javascript', javascript, authenticated),

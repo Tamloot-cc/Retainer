@@ -58,8 +58,10 @@ test('event claims require their historical fact status in the OpenAPI contract'
   const claims = contract.paths['/v1/events/{id}/claims'].get;
   const { facts } = claims.responses['200'].content['application/json'].schema.properties;
   assert.equal(facts.items.$ref, '#/components/schemas/HistoricalFact');
-  const status = contract.components.schemas.HistoricalFact.allOf[1];
-  assert.deepEqual(status.required, ['status']);
+  const status = contract.components.schemas.HistoricalFact.allOf.find((branch) =>
+    branch.required?.includes('status'),
+  );
+  assert.ok(status, 'historical facts require status');
   assert.deepEqual(status.properties.status.enum, ['current', 'retracted', 'superseded', 'ended']);
 });
 
@@ -97,4 +99,28 @@ test('the timeline and review queue export typed items', async () => {
   );
   assert.ok(MergeSuggestion.required.includes('id'));
   assert.ok(UnresolvedParticipant.required.includes('eventId'));
+});
+
+test('fact pages identify their target and record deletion requires the cascade IDs', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const { FactsPage, DeleteRecord } = contract.components.schemas;
+  const [record, profile] = FactsPage.allOf[0].anyOf;
+  assert.deepEqual(record.required, ['record']);
+  assert.deepEqual(record.not.required, ['profile']);
+  assert.deepEqual(profile.required, ['profile']);
+  assert.deepEqual(profile.not.required, ['record']);
+  assert.ok(DeleteRecord.required.includes('deletedRecordIds'));
+});
+
+test('clearing personal memory uses a signed-in session', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const operation = contract.paths['/v1/records/me/forget'].post;
+  assert.deepEqual(operation.security, [{ secureSession: [] }, { localSession: [] }]);
+  const webHeader = operation.parameters.find(({ name }) => name === 'X-Retainer-Client');
+  assert.ok(webHeader?.required);
+  assert.equal(webHeader.schema.const, 'web');
+  assert.equal(
+    operation.responses['200'].content['application/json'].schema.$ref,
+    '#/components/schemas/ClearPersonalMemory',
+  );
 });

@@ -7,11 +7,13 @@ import {
   actorSchema,
   CORE_ROLES,
   type ContextPack,
+  type DeleteRecordResult,
   EVENT_COLUMNS,
   type EventContentPage,
   type EventDetails,
   type EventPage,
   type EventRecord,
+  type FactPlace,
   FIELD_TYPES,
   type FieldView,
   type LinkedRecordPage,
@@ -29,6 +31,7 @@ import {
   type ProfileContextPack,
   type RecordPage,
   type RecordReference,
+  type RetractEventResult,
   type ReviewQueue,
   SAVED_VIEW_KINDS,
   SAVED_VIEW_VISIBILITIES,
@@ -47,6 +50,7 @@ import {
 import { z } from 'zod';
 import { fileMetadataSchema, type SignedTransfer } from '../../src/file-storage/contract.js';
 import type { ErrorBody } from '../../src/http/response.js';
+import type { clearMyMemory } from '../../src/memory/service.js';
 import { fieldDefinitionSchema } from '../../src/schema-engine/operations.js';
 
 // Check the shape in both directions. Check keys separately so adding an optional
@@ -171,7 +175,10 @@ const record = response<PresentedRecord>()(
 );
 const eventRecord = response<EventRecord>()(record.extend({ type: text, event: eventDetails }));
 const page = { nextCursor: text.nullable(), relationReferences: references.optional() };
-const factPlace = z.union([z.object({ record: id }), z.object({ profile })]);
+const factPlace = z.union([
+  z.object({ record: id }).meta({ not: { required: ['profile'] } }),
+  z.object({ profile }).meta({ not: { required: ['record'] } }),
+]);
 const factSource = z.union([
   z.object({ event: id, quote: text.nullable() }),
   z.object({ event: z.null(), internal: z.literal(true), quote: z.null() }),
@@ -186,10 +193,7 @@ const factFields = {
   sources: z.array(factSource),
 };
 const fact = response<PresentedFact>()(
-  z.union([
-    z.object({ ...factFields, record: id, status: factStatus.optional() }),
-    z.object({ ...factFields, profile, status: factStatus.optional() }),
-  ]),
+  z.intersection(factPlace, z.object({ ...factFields, status: factStatus.optional() })),
 );
 const field = response<FieldView>()(
   z.object({
@@ -227,6 +231,12 @@ const objectView = response<ObjectView>()(
   }),
 );
 const aggregateOp = z.enum(AGGREGATE_OPS);
+const deleted = { id, deleted: z.literal(true) };
+const retraction = z.object({
+  retractedAssertions: z.int(),
+  recomputedRecordIds: z.array(id),
+  hiddenFactIds: z.array(id),
+});
 
 const aggregateValue = z.object({
   field: text,
@@ -397,6 +407,9 @@ const responses = {
     }),
   ),
   Fact: fact,
+  FactsPage: response<FactPlace & { facts: PresentedFact[]; nextCursor: string | null }>()(
+    z.intersection(factPlace, z.object({ facts: z.array(fact), nextCursor: text.nullable() })),
+  ),
   HistoricalFact: response<PresentedFact & { status: NonNullable<PresentedFact['status']> }>()(
     z.intersection(fact, z.object({ status: factStatus })),
   ),
@@ -409,6 +422,16 @@ const responses = {
       createdAt: timestamp,
       updatedAt: timestamp,
       editedAt: timestamp.nullable(),
+    }),
+  ),
+  DeleteRecord: response<DeleteRecordResult>()(
+    retraction.partial().extend({ ...deleted, deletedRecordIds: z.array(id) }),
+  ),
+  RetractEvent: response<RetractEventResult>()(retraction.extend(deleted)),
+  ClearPersonalMemory: response<Awaited<ReturnType<typeof clearMyMemory>>>()(
+    z.object({
+      cleared: z.literal(true),
+      counts: z.object({ profiles: z.int(), facts: z.int(), notes: z.int(), responses: z.int() }),
     }),
   ),
   SavedView: response<SavedView>()(

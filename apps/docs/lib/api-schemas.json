@@ -2985,96 +2985,36 @@
       "required": ["workspace", "objects", "valueFormats", "builtIns"]
     },
     "Fact": {
-      "anyOf": [
+      "allOf": [
         {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "content": {
-              "type": "string"
-            },
-            "kind": {
-              "type": "string",
-              "enum": ["stated", "inferred"]
-            },
-            "validFrom": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "validTo": {
-              "anyOf": [
-                {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "record": {
                   "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                 }
-              ]
-            },
-            "writtenBy": {
-              "$ref": "#/components/schemas/Actor"
-            },
-            "sources": {
-              "type": "array",
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "event": {
-                        "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                      },
-                      "quote": {
-                        "type": ["string", "null"]
-                      }
-                    },
-                    "required": ["event", "quote"]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "event": {
-                        "type": "null"
-                      },
-                      "internal": {
-                        "type": "boolean",
-                        "const": true
-                      },
-                      "quote": {
-                        "type": "null"
-                      }
-                    },
-                    "required": ["event", "internal", "quote"]
-                  }
-                ]
+              },
+              "required": ["record"],
+              "not": {
+                "required": ["profile"]
               }
             },
-            "record": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "status": {
-              "type": "string",
-              "enum": ["current", "retracted", "superseded", "ended"]
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": ["me", "workspace"]
+                }
+              },
+              "required": ["profile"],
+              "not": {
+                "required": ["record"]
+              }
             }
-          },
-          "required": [
-            "id",
-            "content",
-            "kind",
-            "validFrom",
-            "validTo",
-            "writtenBy",
-            "sources",
-            "record"
           ]
         },
         {
@@ -3147,32 +3087,174 @@
                 ]
               }
             },
-            "profile": {
-              "type": "string",
-              "enum": ["me", "workspace"]
-            },
             "status": {
               "type": "string",
               "enum": ["current", "retracted", "superseded", "ended"]
             }
           },
-          "required": [
-            "id",
-            "content",
-            "kind",
-            "validFrom",
-            "validTo",
-            "writtenBy",
-            "sources",
-            "profile"
+          "required": ["id", "content", "kind", "validFrom", "validTo", "writtenBy", "sources"]
+        }
+      ]
+    },
+    "FactsPage": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "record": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": ["record"],
+              "not": {
+                "required": ["profile"]
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": ["me", "workspace"]
+                }
+              },
+              "required": ["profile"],
+              "not": {
+                "required": ["record"]
+              }
+            }
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "facts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Fact"
+              }
+            },
+            "nextCursor": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["facts", "nextCursor"]
         }
       ]
     },
     "HistoricalFact": {
       "allOf": [
         {
-          "$ref": "#/components/schemas/Fact"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "record": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": ["record"],
+              "not": {
+                "required": ["profile"]
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": ["me", "workspace"]
+                }
+              },
+              "required": ["profile"],
+              "not": {
+                "required": ["record"]
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "content": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["stated", "inferred"]
+            },
+            "validFrom": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "validTo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "writtenBy": {
+              "$ref": "#/components/schemas/Actor"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "quote": {
+                        "type": ["string", "null"]
+                      }
+                    },
+                    "required": ["event", "quote"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "null"
+                      },
+                      "internal": {
+                        "type": "boolean",
+                        "const": true
+                      },
+                      "quote": {
+                        "type": "null"
+                      }
+                    },
+                    "required": ["event", "internal", "quote"]
+                  }
+                ]
+              }
+            },
+            "status": {
+              "type": "string",
+              "enum": ["current", "retracted", "superseded", "ended"]
+            }
+          },
+          "required": ["id", "content", "kind", "validFrom", "validTo", "writtenBy", "sources"]
         },
         {
           "type": "object",
@@ -3226,6 +3308,122 @@
         }
       },
       "required": ["id", "record", "body", "author", "createdAt", "updatedAt", "editedAt"]
+    },
+    "DeleteRecord": {
+      "type": "object",
+      "properties": {
+        "retractedAssertions": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "recomputedRecordIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "hiddenFactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "deleted": {
+          "type": "boolean",
+          "const": true
+        },
+        "deletedRecordIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        }
+      },
+      "required": ["id", "deleted", "deletedRecordIds"]
+    },
+    "RetractEvent": {
+      "type": "object",
+      "properties": {
+        "retractedAssertions": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "recomputedRecordIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "hiddenFactIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "deleted": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": ["retractedAssertions", "recomputedRecordIds", "hiddenFactIds", "id", "deleted"]
+    },
+    "ClearPersonalMemory": {
+      "type": "object",
+      "properties": {
+        "cleared": {
+          "type": "boolean",
+          "const": true
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "profiles": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "facts": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "notes": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "responses": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["profiles", "facts", "notes", "responses"]
+        }
+      },
+      "required": ["cleared", "counts"]
     },
     "SavedView": {
       "type": "object",
@@ -4228,26 +4426,37 @@
       ]
     },
     "TimelinePage": {
-      "anyOf": [
+      "allOf": [
         {
-          "type": "object",
-          "properties": {
-            "items": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/TimelineItem"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "record": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": ["record"],
+              "not": {
+                "required": ["profile"]
               }
             },
-            "nextCursor": {
-              "type": ["string", "null"]
-            },
-            "record": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "enum": ["me", "workspace"]
+                }
+              },
+              "required": ["profile"],
+              "not": {
+                "required": ["record"]
+              }
             }
-          },
-          "required": ["items", "nextCursor", "record"]
+          ]
         },
         {
           "type": "object",
@@ -4260,13 +4469,9 @@
             },
             "nextCursor": {
               "type": ["string", "null"]
-            },
-            "profile": {
-              "type": "string",
-              "enum": ["me", "workspace"]
             }
           },
-          "required": ["items", "nextCursor", "profile"]
+          "required": ["items", "nextCursor"]
         }
       ]
     },
@@ -4810,29 +5015,37 @@
         "facts": {
           "type": "array",
           "items": {
-            "anyOf": [
+            "allOf": [
               {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "record": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": ["record"],
+                    "not": {
+                      "required": ["profile"]
+                    }
                   },
-                  "content": {
-                    "type": "string"
-                  },
-                  "validFrom": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "record": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "enum": ["me", "workspace"]
+                      }
+                    },
+                    "required": ["profile"],
+                    "not": {
+                      "required": ["record"]
+                    }
                   }
-                },
-                "required": ["id", "content", "validFrom", "record"]
+                ]
               },
               {
                 "type": "object",
@@ -4848,13 +5061,9 @@
                   "validFrom": {
                     "type": "string",
                     "format": "date-time"
-                  },
-                  "profile": {
-                    "type": "string",
-                    "enum": ["me", "workspace"]
                   }
                 },
-                "required": ["id", "content", "validFrom", "profile"]
+                "required": ["id", "content", "validFrom"]
               }
             ]
           }

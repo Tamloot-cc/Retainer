@@ -95,6 +95,7 @@ type Endpoint = {
   access: Access;
   description?: string;
   parameters?: ParameterObject[];
+  security?: OperationObject['security'];
   request?: { example?: unknown; optional?: true };
   response: { schema?: Schema; example?: unknown; status?: number; description?: string };
   additionalResponses?: Record<string, ResponseObject>;
@@ -117,6 +118,7 @@ function endpoint({
   access,
   description,
   parameters = [],
+  security,
   request,
   response: success,
   additionalResponses,
@@ -153,7 +155,7 @@ function endpoint({
     operationId,
     summary,
     description: [description, accessText].filter(Boolean).join(' '),
-    ...(access === 'public' ? { security: [] } : {}),
+    ...(security !== undefined ? { security } : access === 'public' ? { security: [] } : {}),
     parameters: [...pathParameters, ...parameters],
     ...(requestSchema
       ? {
@@ -403,17 +405,7 @@ endpoint({
   access: 'read',
   description: 'List facts about a record, the workspace profile, or the personal profile.',
   parameters: pageParams(100, 500),
-  response: {
-    schema: object(
-      {
-        record: id,
-        profile: choice('workspace', 'me'),
-        facts: array(ref('Fact')),
-        nextCursor: nullString,
-      },
-      ['facts', 'nextCursor'],
-    ),
-  },
+  response: { schema: ref('FactsPage') },
 });
 endpoint({
   tag: 'Facts',
@@ -569,11 +561,6 @@ endpoint({
 });
 
 const impactedRecords = array(object({ object: text, count: integer }));
-const eventRetraction = {
-  retractedAssertions: integer,
-  recomputedRecordIds: array(id),
-  hiddenFactIds: array(id),
-};
 endpoint({
   tag: 'Records',
   method: 'get',
@@ -601,12 +588,7 @@ endpoint({
   access: 'write',
   description: 'For events, also retracts facts and field claims that depended on the event.',
   request: { optional: true },
-  response: {
-    schema: object(
-      { id, deleted: { const: true }, deletedRecordIds: array(id), ...eventRetraction },
-      ['id', 'deleted'],
-    ),
-  },
+  response: { schema: ref('DeleteRecord') },
 });
 endpoint({
   tag: 'Records',
@@ -618,6 +600,30 @@ endpoint({
   description: 'The caller must act as a user. The ID in the URL identifies the survivor.',
   parameters: [idempotency],
   response: { schema: ref('MergeResult') },
+});
+endpoint({
+  tag: 'Records',
+  method: 'post',
+  path: '/v1/records/me/forget',
+  operationId: 'clear-personal-memory',
+  summary: 'Clear your personal memory',
+  access: 'read',
+  description:
+    'The person must be signed in to the web app. Clears personal memory in the current workspace. If supplied, Origin must match the deployment origin.',
+  security: [{ secureSession: [] }, { localSession: [] }],
+  parameters: [
+    {
+      in: 'header',
+      name: 'X-Retainer-Client',
+      required: true,
+      schema: { type: 'string', const: 'web' },
+      example: 'web',
+    },
+  ],
+  response: { schema: ref('ClearPersonalMemory') },
+  additionalResponses: {
+    '401': response('The sign-in session is missing or invalid.', ref('Error')),
+  },
 });
 endpoint({
   tag: 'Records',
@@ -702,7 +708,7 @@ endpoint({
   summary: 'Delete an event and retract its claims',
   access: 'write',
   request: { optional: true },
-  response: { schema: object({ id, deleted: { const: true }, ...eventRetraction }) },
+  response: { schema: ref('RetractEvent') },
 });
 for (const { suffix, operationId, summary } of [
   {
@@ -1048,6 +1054,18 @@ export const contract: Document = {
   components: {
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', description: 'A workspace API key.' },
+      secureSession: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: '__Secure-retainer.session_token',
+        description: 'The signed-in web session over HTTPS.',
+      },
+      localSession: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'retainer.session_token',
+        description: 'The signed-in web session for local HTTP.',
+      },
     },
     schemas,
     responses: {
