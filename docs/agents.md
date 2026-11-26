@@ -222,6 +222,11 @@ Things worth knowing:
   `ifMissing` defaults to `"fail"`, so "update Dana's address" can never
   create a second Dana; pass `"create"` to create when nothing matches. To
   find someone by name or phone, use `search` or `query_records` first.
+- **Several records at once.** Pass up to 50 single-record inputs in
+  `upsert_records({ items: [...] })`. Include the `object` and any `source`
+  for each item. Check every result for errors and pending fields. For creates
+  without `id` or `match`, use a distinct `idempotencyKey` per item and keep it
+  when retrying.
 - **Pending values.** Each field in a write comes back as `applied`,
   `pending_review` or `superseded`. An agent's value that would overwrite what
   a person entered waits for review; the agent should say so rather than claim

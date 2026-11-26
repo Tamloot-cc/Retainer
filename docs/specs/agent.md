@@ -970,6 +970,10 @@ can still report its usage, which counts, and the answer is `stop`
   `get_context("me")`, as any agent connected for them would.
 - It logs what it learns the way any agent does: `get_guide("log_from_chat")`.
 
+The web chat and the saved task trace group consecutive completed calls to
+the same tool with the same outcome. Expand a group to see its calls in order.
+A bulk record write reports how many items succeeded and how many failed.
+
 ### 6.7 The terminal client
 
 `retainer agent chat` in `packages/cli` opens a chat and renders the stream
@@ -1113,7 +1117,7 @@ of the agent's.
 | Group            | Tools                                                                                                          | Runs where                         | Chat        | Task                   |
 | ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------- |
 | `retainer.read`  | `search`, `query_records`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content` | Agent runtime, through the API     | Yes         | If listed              |
-| `retainer.write` | `upsert_record`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
+| `retainer.write` | `upsert_record`, `upsert_records`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
 | `web.search`     | Anthropic's `web_search_20250305`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
 | `tools.<name>`   | Extension tools declared `read` (`extensions-tools.md`)                                                        | Through Retainer, as their own job | `read` only | `read` only, if listed |
 

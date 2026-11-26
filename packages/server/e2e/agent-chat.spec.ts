@@ -95,11 +95,83 @@ test.describe('with the agent', () => {
     const region = messages.getByRole('region', { name: 'Markdown table' });
     await expect(region.getByRole('columnheader', { name: 'Next step' })).toBeVisible();
     await expect(messages.getByText('Revenue is unavailable for Juniper Systems.')).toBeVisible();
-    expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    expect(await page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
+    // Layout can settle after the text is visible: poll the measurements.
+    await expect.poll(() => region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect.poll(() => page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
     await region.focus();
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  });
+
+  test('groups repeated writes and shows how many bulk items failed', async ({
+    page,
+    retainer: r,
+  }) => {
+    const companies = ['Maple Workshop', 'Juniper Labs', 'Cedar Studio'];
+    r.anthropic?.enqueue(
+      {
+        blocks: companies.map((name, i) => ({
+          type: 'tool_use' as const,
+          id: `toolu_${i}`,
+          name: 'upsert_record',
+          input: { object: 'company', values: { name } },
+        })),
+        stopReason: 'tool_use',
+      },
+      {
+        blocks: [
+          {
+            type: 'tool_use',
+            id: 'toolu_bulk',
+            name: 'upsert_records',
+            input: {
+              items: [
+                {
+                  object: 'company',
+                  values: { name: 'Birch Design' },
+                  idempotencyKey: 'demo-birch',
+                },
+                { object: 'company', match: { name: 'Missing Company' } },
+              ],
+            },
+          },
+        ],
+        stopReason: 'tool_use',
+      },
+      {
+        blocks: [{ type: 'text', text: 'I saved four companies. One update failed.' }],
+        stopReason: 'end_turn',
+      },
+    );
+    await signIn(page, r.url, r.keys.user);
+    await chatLink(page).click();
+    await page.getByRole('textbox', { name: 'Message' }).fill('Save the companies from my notes.');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    const messages = page.getByRole('list', { name: 'Messages' });
+    const summary = messages.getByText('Saved 3 records', { exact: true });
+    const calls = messages.getByText('Saved a record', { exact: true });
+    await expect(summary).toBeVisible();
+    await expect(messages.getByText('Saved 1 record, 1 failed')).toBeVisible();
+    await expect(messages.getByText('I saved four companies. One update failed.')).toBeVisible();
+    // Exercise the saved trace after the streamed messages are reconciled.
+    const id = new URL(page.url()).pathname.split('/').at(-1);
+    await expect
+      .poll(async () => (await r.request(`/agent/chats/${id}`, undefined, r.keys.user)).running)
+      .toBe(false);
+    await page.reload();
+    await expect(summary).toBeVisible();
+    await expect(calls.first()).toBeHidden();
+
+    await summary.locator('..').press('Space');
+    await expect(calls).toHaveCount(3);
+    for (const call of await calls.all()) await expect(call).toBeVisible();
+    await calls.first().click();
+    await expect(messages.getByText('Maple Workshop', { exact: false }).first()).toBeVisible();
+
+    await page.reload();
+    await expect(summary).toBeVisible();
+    await expect(calls.first()).toBeHidden();
   });
 
   test('stops a turn that is taking long', async ({ page, retainer: r }) => {

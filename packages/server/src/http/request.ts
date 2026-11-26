@@ -41,11 +41,7 @@ export async function readBody<T extends z.ZodType>(
     if (maxBytes && c.req.raw.body) {
       const bytes = await readCapped(c.req.raw.body, maxBytes);
       if (!bytes)
-        throw new AppError(
-          413,
-          'quota_exceeded',
-          'request body exceeds the source transport limit',
-        );
+        throw new AppError(413, 'quota_exceeded', 'request body exceeds the transport limit');
       text = Buffer.from(bytes).toString('utf8');
     } else text = await c.req.text();
     body = text.trim() === '' ? {} : JSON.parse(text);
@@ -98,3 +94,8 @@ export function limitParam(c: Context, fallback: number, max: number): number {
   }
   return value;
 }
+
+export const objectName = z
+  .string()
+  .min(1)
+  .describe('Singular API name of the object, e.g. "person", as describe_schema lists it.');

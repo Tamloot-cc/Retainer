@@ -29,7 +29,8 @@ work.
 ## What it adds
 
 - **The Retainer MCP server**, with every Retainer tool, its guides and its
-  prompts.
+  prompts. Use `upsert_records` to save several records in one call and check
+  the result for each record.
 - **A check after every turn.** When Claude finishes a turn, a Stop hook
   checks it in the background, so it never slows you down. It skips turns
   that already used Retainer, short turns, slash commands and turns you

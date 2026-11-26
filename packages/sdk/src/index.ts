@@ -79,6 +79,7 @@ import type {
   TimelineItemKind,
   TimelinePage,
   UpdateViewInput,
+  UpsertRecordsResponse,
   WorkspaceFeedInput,
   WorkspaceFeedPage,
   WriteResponse,
@@ -126,6 +127,13 @@ export type UpsertInput = PatchInput & {
   id?: string;
   match?: Record<string, unknown>;
   ifMissing?: 'fail' | 'create';
+};
+export type UpsertRecordsItem = Omit<UpsertInput, 'values'> & {
+  object: string;
+  values?: UpsertInput['values'];
+  bindings?: BindingWriteStamp;
+  /** For creates without id or match. Reuse the same key when retrying this item. */
+  idempotencyKey?: string;
 };
 export type { MoveEventsInput, MoveEventsResult };
 export type LogEventInput = EventInput & { bindings?: BindingWriteStamp };
@@ -272,6 +280,10 @@ export class RetainerClient {
   }
   upsertRecord(object: string, input: UpsertInput & { bindings?: BindingWriteStamp }) {
     return this.post<WriteResponse>(`/v1/objects/${encodeURIComponent(object)}/upsert`, input);
+  }
+  /** Saves several records. The result at each index is its write response or error. */
+  upsertRecords(items: UpsertRecordsItem[]) {
+    return this.post<UpsertRecordsResponse>('/v1/records/upsert', { items });
   }
   patchRecord(id: string, input: PatchInput & { bindings?: BindingWriteStamp }) {
     return this.request<WriteResponse>(`/v1/records/${encodeURIComponent(id)}`, {

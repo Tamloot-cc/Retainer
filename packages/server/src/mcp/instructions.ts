@@ -16,7 +16,10 @@ query_records on their type, or with object "event" for every type at once,
 and pass linked to get the events directly attached to one record. For history including one-hop event
 rollups, use get_context or get_timeline. Before working on a person or company,
 read get_context: their current values, linked records, facts and recent events in one
-call; get_timeline shows how they got there. Write records with upsert_record.
+call; get_timeline shows how they got there. Write one record with upsert_record.
+When saving several records, use upsert_records and check each result for
+errors or pending_review. Give creates without id or match a distinct
+idempotencyKey per item so retrying the batch won't create duplicates.
 Write the values you learned; Retainer keeps every claim's history and decides
 which value wins. A value a person set outranks yours, so your write may come
 back as pending_review: tell your user it is waiting for approval rather than
@@ -45,7 +48,7 @@ After a meeting, call, email thread or chat, write what you learned in order:
 3. remember, citing the same source (with a short quote if useful), for
    plain-language facts that do not fit a field.
 4. upsert_record for tasks someone committed to, as task records.
-Each call is its own write, so you can stop and resume; logging the same
+Each record write commits on its own, so you can stop and resume. Logging the same
 externalId again returns the same event, adding any participants and about
 records it did not have yet.
 
