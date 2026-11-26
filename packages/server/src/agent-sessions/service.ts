@@ -410,8 +410,8 @@ export class AgentSessions {
     name: string,
     body: unknown,
   ): Promise<RetainerToolResult | { pending: true }> {
-    const input = parse(toolBody, body);
     const workspaceId = turnTokenWorkspace(token);
+    const input = parse(toolBody, body);
     const { verified, session } = await inWorkspace(this.sql, workspaceId, async (tx) => {
       const verified = await verifyTurnToken(tx, token, sessionId);
       if (!verified.live) throw turnCancelled();
@@ -534,8 +534,9 @@ export class AgentSessions {
    * is answered `stop`.
    */
   async report(token: string, sessionId: string, body: unknown) {
+    const workspaceId = turnTokenWorkspace(token);
     const input = parse(reportBody, body);
-    return inWorkspace(this.sql, turnTokenWorkspace(token), async (tx) => {
+    return inWorkspace(this.sql, workspaceId, async (tx) => {
       const verified = await verifyTurnToken(tx, token, sessionId, { lock: true });
       const { turn } = verified;
       const [session] = await tx<
@@ -603,6 +604,7 @@ export class AgentSessions {
   }
 
   close(token: string, sessionId: string, body: unknown) {
+    turnTokenWorkspace(token);
     const input = parse(closeBody, body);
     return closeTurn(this.sql, token, sessionId, {
       status: input.status as (typeof CLOSE_STATUSES)[number],

@@ -32,7 +32,7 @@ export async function maintainAgents(sql: Sql, discovery: Sql, deadline: number)
       const ids = expired.map((row) => row.id);
       if (ids.length > 0) {
         await eraseAgentContent(tx, workspace, ids);
-        await tx`delete from agent_sessions where id = any(${tx.array(ids)}::uuid[])`;
+        await tx`delete from agent_sessions where id = any(${ids}::uuid[])`;
       }
     });
   }

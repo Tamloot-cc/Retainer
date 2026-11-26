@@ -21,7 +21,7 @@ export async function eraseAgentContent(
 ): Promise<number> {
   const [row] = await tx<{ erased: number }[]>`
     select retainer_erase_agent_content(${workspaceId}::uuid,
-      ${sessions === null ? null : tx.array([...sessions])}::uuid[]) as erased`;
+      ${sessions === null ? null : [...sessions]}::uuid[]) as erased`;
   return row?.erased ?? 0;
 }
 
