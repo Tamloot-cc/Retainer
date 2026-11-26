@@ -13,7 +13,7 @@ export type AgentAppOptions = {
   runtimeSecret: string;
   /** The `retainer_mastra` role's connection (D8). */
   mastraUrl: string;
-  /** Web app origins allowed to stream from a browser (hosted). */
+  /** Web app origins allowed to stream from a browser, when nothing in front adds CORS (self-hosted). */
   allowedOrigins?: string[];
   /** The latest deadline this invocation allows: its remaining time less 30 s (spec §6.3). */
   notAfter?: (context: unknown) => Date | undefined;
