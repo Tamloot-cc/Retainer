@@ -317,12 +317,7 @@ endpoint({
   request: {
     example: { aggregates: [{ field: 'amount', op: 'sum' }] },
   },
-  response: {
-    schema: object({ total: integer, values: array(map()), groups: array(map()) }, [
-      'total',
-      'values',
-    ]),
-  },
+  response: { schema: ref('AggregateResult') },
 });
 
 endpoint({
@@ -442,53 +437,7 @@ endpoint({
   request: {
     example: { query: 'Acme renewal', limit: 10 },
   },
-  response: {
-    schema: object(
-      {
-        records: array(
-          object(
-            {
-              id,
-              object: text,
-              label: nullString,
-              match: choice('text', 'similar_label'),
-              detail: text,
-            },
-            ['id', 'object', 'label', 'match'],
-          ),
-        ),
-        facts: array(
-          object(
-            {
-              id,
-              record: id,
-              profile: choice('workspace', 'me'),
-              content: text,
-              validFrom: timestamp,
-            },
-            ['id', 'content', 'validFrom'],
-          ),
-        ),
-        events: array(
-          object(
-            {
-              id,
-              type: text,
-              occurredAt: timestamp,
-              title: nullString,
-              summary: nullString,
-              records: array(id),
-              match: choice('content'),
-            },
-            ['id', 'type', 'occurredAt', 'title', 'summary', 'records'],
-          ),
-        ),
-        references: map(ref('RecordReference')),
-      },
-      ['records', 'facts', 'events'],
-    ),
-    example: { records: [], facts: [], events: [] },
-  },
+  response: { schema: ref('SearchResult') },
 });
 
 const schemaStatus = choice('applied', 'proposed', 'rejected', 'failed');
@@ -694,6 +643,20 @@ endpoint({
 });
 
 endpoint({
+  tag: 'Records',
+  method: 'get',
+  path: '/v1/records/{id}/linked',
+  operationId: 'list-linked-records',
+  summary: 'List records linked to a record',
+  access: 'read',
+  parameters: [
+    ...pageParams(50, 200),
+    query('object', 'Filter by the linked record object API name.'),
+  ],
+  response: { schema: ref('LinkedRecordPage') },
+});
+
+endpoint({
   tag: 'Events',
   method: 'get',
   path: '/v1/records/{id}/events',
@@ -704,13 +667,7 @@ endpoint({
     ...pageParams(50, 200),
     query('link', 'Filter by how the event is attached.', attachment),
   ],
-  response: {
-    schema: object({
-      items: array({ allOf: [ref('Record'), object({ via: map(), event: ref('EventDetails') })] }),
-      nextCursor: nullString,
-      references: map(ref('RecordReference')),
-    }),
-  },
+  response: { schema: ref('AttachedEventPage') },
 });
 endpoint({
   tag: 'Events',
@@ -778,12 +735,7 @@ endpoint({
   summary: 'Read full event content',
   access: 'read',
   parameters: [query('after', 'The opaque nextAfter from the previous page.')],
-  response: {
-    schema: object({
-      parts: array(object({ id, occurredAt: timestamp, originalDate: nullString, text })),
-      nextAfter: nullString,
-    }),
-  },
+  response: { schema: ref('EventContentPage') },
 });
 endpoint({
   tag: 'Events',
@@ -819,38 +771,7 @@ endpoint({
   parameters: [
     query('tokenBudget', 'Approximate size budget for the context pack.', bound(1, 16000, 2000)),
   ],
-  response: {
-    schema: {
-      anyOf: [
-        object({
-          record: object({
-            id,
-            object: text,
-            label: nullString,
-            fields: map(
-              object({
-                value: {},
-                writtenBy: ref('Actor'),
-                observedAt: timestamp,
-              }),
-            ),
-          }),
-          linkedRecords: array(map()),
-          facts: array(map()),
-          recentEvents: array(map()),
-          omitted: object({ linkedRecords: integer, facts: integer, recentEvents: integer }),
-          tokenEstimate: integer,
-        }),
-        object({
-          profile: choice('workspace', 'me'),
-          label: nullString,
-          facts: array(map()),
-          omitted: object({ facts: integer }),
-          tokenEstimate: integer,
-        }),
-      ],
-    },
-  },
+  response: { schema: { anyOf: [ref('ContextPack'), ref('ProfileContextPack')] } },
 });
 endpoint({
   tag: 'Retrieval',
@@ -867,17 +788,7 @@ endpoint({
     query('from', 'Start of the time range.', timestamp),
     query('to', 'End of the time range.', timestamp),
   ],
-  response: {
-    schema: object(
-      {
-        record: id,
-        profile: choice('workspace', 'me'),
-        items: array(map()),
-        nextCursor: nullString,
-      },
-      ['items', 'nextCursor'],
-    ),
-  },
+  response: { schema: ref('TimelinePage') },
 });
 
 endpoint({
@@ -999,15 +910,7 @@ endpoint({
     query('limit', 'Maximum items per collection.', bound(1, 500, 100)),
     ...collections.map((name) => query(`${name}Cursor`, `Page cursor for ${name}.`)),
   ],
-  response: {
-    schema: object({
-      pendingAssertions: array(ref('Assertion')),
-      unresolvedParticipants: array(map()),
-      mergeSuggestions: array(map()),
-      totals: map(integer),
-      nextCursors: map(nullString),
-    }),
-  },
+  response: { schema: ref('ReviewQueue') },
 });
 endpoint({
   tag: 'Review',

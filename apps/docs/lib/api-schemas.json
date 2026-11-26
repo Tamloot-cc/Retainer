@@ -3582,6 +3582,1334 @@
         "reviewedAt"
       ]
     },
+    "AggregateResult": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "countEmpty",
+                  "countNotEmpty",
+                  "percentEmpty",
+                  "percentNotEmpty",
+                  "countUnique",
+                  "sum",
+                  "avg",
+                  "min",
+                  "max"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "amountMicros": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "currency": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 3
+                      }
+                    },
+                    "required": ["amountMicros", "currency"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mixedCurrencies": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": ["field", "op", "value"]
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": ["string", "null"]
+              },
+              "total": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "countEmpty",
+                        "countNotEmpty",
+                        "percentEmpty",
+                        "percentNotEmpty",
+                        "countUnique",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "amountMicros": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3
+                            }
+                          },
+                          "required": ["amountMicros", "currency"]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mixedCurrencies": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["field", "op", "value"]
+                }
+              }
+            },
+            "required": ["value", "total", "values"]
+          }
+        }
+      },
+      "required": ["total", "values"]
+    },
+    "AttachedEventPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "object": {
+                "type": "string"
+              },
+              "label": {
+                "type": ["string", "null"]
+              },
+              "fields": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {},
+                "description": "Keys are API field names from the workspace schema."
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "createdBy": {
+                "$ref": "#/components/schemas/Actor"
+              },
+              "updatedBy": {
+                "$ref": "#/components/schemas/Actor"
+              },
+              "provenance": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "pendingAssertion": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Assertion"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "assertion": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Assertion"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "pendingAssertionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    }
+                  },
+                  "required": ["assertion", "pendingAssertionIds"]
+                }
+              },
+              "relationReferences": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/RecordReference"
+                }
+              },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "comments": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "facts": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "linked": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "claims": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["comments", "facts", "linked", "claims"]
+              },
+              "event": {
+                "$ref": "#/components/schemas/EventDetails"
+              },
+              "via": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "participant"
+                      }
+                    },
+                    "required": ["kind"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "about"
+                      }
+                    },
+                    "required": ["kind"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "field"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "field"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "rollup"
+                      },
+                      "field": {
+                        "type": "string"
+                      },
+                      "record": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": ["kind", "field", "record"]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "object",
+              "label",
+              "fields",
+              "createdAt",
+              "updatedAt",
+              "createdBy",
+              "updatedBy",
+              "event",
+              "via"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": ["string", "null"]
+        },
+        "references": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/components/schemas/RecordReference"
+          }
+        }
+      },
+      "required": ["items", "nextCursor", "references"]
+    },
+    "EventContentPage": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "occurredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "originalDate": {
+                "type": ["string", "null"]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "occurredAt", "originalDate", "text"]
+          }
+        },
+        "nextAfter": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["parts", "nextAfter"]
+    },
+    "TimelineItem": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "type": {
+              "type": "string"
+            },
+            "title": {
+              "type": ["string", "null"]
+            },
+            "summary": {
+              "type": ["string", "null"]
+            },
+            "via": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "participant"
+                    }
+                  },
+                  "required": ["kind"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "about"
+                    }
+                  },
+                  "required": ["kind"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "field"
+                    },
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["kind", "field"]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "rollup"
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "record": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "required": ["kind", "field", "record"]
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "event"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": ["id", "type", "title", "summary", "via", "kind", "at"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "field_change"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "field": {
+              "type": "string"
+            },
+            "value": {},
+            "status": {
+              "type": "string",
+              "enum": ["active", "superseded"]
+            },
+            "current": {
+              "type": "boolean"
+            },
+            "actor": {
+              "$ref": "#/components/schemas/Actor"
+            },
+            "confidence": {
+              "type": "number"
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": ["string", "null"]
+                    },
+                    "occurredAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": ["id", "type", "title", "occurredAt"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "relationReferences": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/components/schemas/RecordReference"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "at",
+            "field",
+            "value",
+            "status",
+            "current",
+            "actor",
+            "confidence",
+            "source"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "fact"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "content": {
+              "type": "string"
+            },
+            "factKind": {
+              "type": "string",
+              "enum": ["stated", "inferred"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["current", "superseded", "ended"]
+            },
+            "validTo": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "writtenBy": {
+              "$ref": "#/components/schemas/Actor"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "quote": {
+                        "type": ["string", "null"]
+                      }
+                    },
+                    "required": ["event", "quote"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "null"
+                      },
+                      "internal": {
+                        "type": "boolean",
+                        "const": true
+                      },
+                      "quote": {
+                        "type": "null"
+                      }
+                    },
+                    "required": ["event", "internal", "quote"]
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "at",
+            "content",
+            "factKind",
+            "status",
+            "validTo",
+            "writtenBy",
+            "sources"
+          ]
+        }
+      ]
+    },
+    "TimelinePage": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TimelineItem"
+              }
+            },
+            "nextCursor": {
+              "type": ["string", "null"]
+            },
+            "record": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": ["items", "nextCursor", "record"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TimelineItem"
+              }
+            },
+            "nextCursor": {
+              "type": ["string", "null"]
+            },
+            "profile": {
+              "type": "string",
+              "enum": ["me", "workspace"]
+            }
+          },
+          "required": ["items", "nextCursor", "profile"]
+        }
+      ]
+    },
+    "MergeSuggestion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "recordIds": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/RecordReference"
+          }
+        },
+        "reason": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "recordIds", "records", "reason", "createdAt"]
+    },
+    "UnresolvedParticipant": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "position": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "handle": {
+          "type": ["string", "null"]
+        },
+        "role": {
+          "type": ["string", "null"]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "deletedRecordIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "position",
+        "handle",
+        "role",
+        "occurredAt",
+        "title",
+        "deletedRecordIds"
+      ]
+    },
+    "ReviewQueue": {
+      "type": "object",
+      "properties": {
+        "pendingAssertions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Assertion"
+          }
+        },
+        "unresolvedParticipants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/UnresolvedParticipant"
+          }
+        },
+        "mergeSuggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/MergeSuggestion"
+          }
+        },
+        "totals": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": ["pendingAssertions", "unresolvedParticipants", "mergeSuggestions"]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "required": ["pendingAssertions", "unresolvedParticipants", "mergeSuggestions"]
+        },
+        "nextCursors": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": ["pendingAssertions", "unresolvedParticipants", "mergeSuggestions"]
+          },
+          "additionalProperties": {
+            "type": ["string", "null"]
+          },
+          "required": ["pendingAssertions", "unresolvedParticipants", "mergeSuggestions"]
+        }
+      },
+      "required": [
+        "pendingAssertions",
+        "unresolvedParticipants",
+        "mergeSuggestions",
+        "totals",
+        "nextCursors"
+      ]
+    },
+    "LinkedRecordPage": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "title": {
+                "type": ["string", "null"]
+              },
+              "object": {
+                "type": "string"
+              },
+              "via": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "string",
+                    "enum": ["anchor", "linked"]
+                  }
+                },
+                "required": ["field", "on"]
+              },
+              "selects": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["id", "title", "object", "via", "selects"]
+          }
+        },
+        "nextCursor": {
+          "type": ["string", "null"]
+        },
+        "totals": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "required": ["items", "nextCursor", "totals"]
+    },
+    "ContextPack": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "object": {
+              "type": "string"
+            },
+            "label": {
+              "type": ["string", "null"]
+            },
+            "fields": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "value": {},
+                  "writtenBy": {
+                    "$ref": "#/components/schemas/Actor"
+                  },
+                  "observedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": ["value", "writtenBy", "observedAt"]
+              }
+            }
+          },
+          "required": ["id", "object", "label", "fields"]
+        },
+        "linkedRecords": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "object": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "title": {
+                      "type": ["string", "null"]
+                    },
+                    "via": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "on": {
+                          "type": "string",
+                          "enum": ["anchor", "linked"]
+                        }
+                      },
+                      "required": ["field", "on"]
+                    },
+                    "selects": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": ["id", "title", "via", "selects"]
+                }
+              }
+            },
+            "required": ["object", "total", "items"]
+          }
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "content": {
+                "type": "string"
+              },
+              "validFrom": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "writtenBy": {
+                "$ref": "#/components/schemas/Actor"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "internal": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": ["id", "content", "validFrom", "writtenBy", "sources"]
+          }
+        },
+        "recentEvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "type": {
+                "type": "string"
+              },
+              "occurredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "title": {
+                "type": ["string", "null"]
+              },
+              "summary": {
+                "type": ["string", "null"]
+              },
+              "via": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "participant"
+                      }
+                    },
+                    "required": ["kind"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "about"
+                      }
+                    },
+                    "required": ["kind"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "field"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "field"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "rollup"
+                      },
+                      "field": {
+                        "type": "string"
+                      },
+                      "record": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": ["kind", "field", "record"]
+                  }
+                ]
+              }
+            },
+            "required": ["id", "type", "occurredAt", "title", "summary", "via"]
+          }
+        },
+        "omitted": {
+          "type": "object",
+          "properties": {
+            "linkedRecords": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "facts": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "recentEvents": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["linkedRecords", "facts", "recentEvents"]
+        },
+        "tokenEstimate": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["record", "linkedRecords", "facts", "recentEvents", "omitted", "tokenEstimate"]
+    },
+    "ProfileContextPack": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["me", "workspace"]
+        },
+        "label": {
+          "type": ["string", "null"]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "content": {
+                "type": "string"
+              },
+              "validFrom": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "writtenBy": {
+                "$ref": "#/components/schemas/Actor"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "internal": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": ["id", "content", "validFrom", "writtenBy", "sources"]
+          }
+        },
+        "omitted": {
+          "type": "object",
+          "properties": {
+            "facts": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["facts"]
+        },
+        "tokenEstimate": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["profile", "label", "facts", "omitted", "tokenEstimate"]
+    },
+    "SearchResult": {
+      "type": "object",
+      "properties": {
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "object": {
+                "type": "string"
+              },
+              "label": {
+                "type": ["string", "null"]
+              },
+              "match": {
+                "type": "string",
+                "enum": ["text", "similar_label"]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "object", "label", "match"]
+          }
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "record": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": ["id", "content", "validFrom", "record"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": ["me", "workspace"]
+                  }
+                },
+                "required": ["id", "content", "validFrom", "profile"]
+              }
+            ]
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "type": {
+                "type": "string"
+              },
+              "occurredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "title": {
+                "type": ["string", "null"]
+              },
+              "summary": {
+                "type": ["string", "null"]
+              },
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "match": {
+                "type": "string",
+                "const": "content"
+              }
+            },
+            "required": ["id", "type", "occurredAt", "title", "summary", "records"]
+          }
+        },
+        "references": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/components/schemas/RecordReference"
+          }
+        }
+      },
+      "required": ["records", "facts", "events"]
+    },
     "FileMetadata": {
       "type": "object",
       "properties": {
@@ -3605,8 +4933,7 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": ["name", "mediaType", "bytes", "sha256"],
-      "additionalProperties": false
+      "required": ["name", "mediaType", "bytes", "sha256"]
     },
     "FileTransfer": {
       "type": "object",

@@ -1,33 +1,47 @@
 import {
   type AddedLinks,
   AGGREGATE_OPS,
+  type AggregateResult,
   type AssertionView,
+  type AttachedEventPage,
   actorSchema,
   CORE_ROLES,
+  type ContextPack,
   EVENT_COLUMNS,
+  type EventContentPage,
   type EventDetails,
   type EventPage,
   type EventRecord,
   FIELD_TYPES,
   type FieldView,
+  type LinkedRecordPage,
   type LogEventResult,
   type MatchedParticipant,
   type MergeResult,
+  type MergeSuggestion,
+  moneyValueSchema,
   OBJECT_CLASSES,
   type ObjectView,
   type Participants,
   type PresentedComment,
   type PresentedFact,
   type PresentedRecord,
+  type ProfileContextPack,
   type RecordPage,
   type RecordReference,
+  type ReviewQueue,
   SAVED_VIEW_KINDS,
   SAVED_VIEW_VISIBILITIES,
   type SavedView,
   SCHEMA_OWNERS,
   type SchemaDescription,
+  type SearchResult,
   type Session,
+  type TimelineItem,
+  type TimelinePage,
   type UnmatchedParticipant,
+  type UnresolvedParticipant,
+  type Via,
   type WriteResponse,
 } from '@retainer/shared';
 import { z } from 'zod';
@@ -64,6 +78,7 @@ const recordReference = response<RecordReference>()(
   z.object({ id, object: text, label: text.nullable() }),
 );
 const references = z.record(text, recordReference);
+const sourceReference = z.object({ id, type: text, title: text.nullable(), occurredAt: timestamp });
 const assertion = response<AssertionView>()(
   z.object({
     id,
@@ -81,7 +96,7 @@ const assertion = response<AssertionView>()(
     isInitial: z.boolean(),
     observedAt: timestamp,
     createdAt: timestamp,
-    source: z.object({ id, type: text, title: text.nullable(), occurredAt: timestamp }).nullable(),
+    source: sourceReference.nullable(),
     conflictingRecord: recordReference.nullable(),
     relationReferences: references.optional(),
     reviewedBy: actorSchema.nullable(),
@@ -156,6 +171,11 @@ const record = response<PresentedRecord>()(
 );
 const eventRecord = response<EventRecord>()(record.extend({ type: text, event: eventDetails }));
 const page = { nextCursor: text.nullable(), relationReferences: references.optional() };
+const factPlace = z.union([z.object({ record: id }), z.object({ profile })]);
+const factSource = z.union([
+  z.object({ event: id, quote: text.nullable() }),
+  z.object({ event: z.null(), internal: z.literal(true), quote: z.null() }),
+]);
 const factFields = {
   id,
   content: text,
@@ -163,12 +183,7 @@ const factFields = {
   validFrom: timestamp,
   validTo: timestamp.nullable(),
   writtenBy: actorSchema,
-  sources: z.array(
-    z.union([
-      z.object({ event: id, quote: text.nullable() }),
-      z.object({ event: z.null(), internal: z.literal(true), quote: z.null() }),
-    ]),
-  ),
+  sources: z.array(factSource),
 };
 const fact = response<PresentedFact>()(
   z.union([
@@ -212,6 +227,98 @@ const objectView = response<ObjectView>()(
   }),
 );
 const aggregateOp = z.enum(AGGREGATE_OPS);
+
+const aggregateValue = z.object({
+  field: text,
+  op: aggregateOp,
+  value: z.union([z.number(), text, moneyValueSchema, z.null()]),
+  mixedCurrencies: z.literal(true).optional(),
+});
+const via = response<Via>()(
+  z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('participant') }),
+    z.object({ kind: z.literal('about') }),
+    z.object({ kind: z.literal('field'), field: text }),
+    z.object({ kind: z.literal('rollup'), field: text, record: id }),
+  ]),
+);
+const eventItem = z.object({
+  id,
+  type: text,
+  occurredAt: timestamp,
+  title: text.nullable(),
+  summary: text.nullable(),
+  via,
+});
+const timelineItem = response<TimelineItem>()(
+  z.discriminatedUnion('kind', [
+    eventItem.omit({ occurredAt: true }).extend({ kind: z.literal('event'), at: timestamp }),
+    z.object({
+      kind: z.literal('field_change'),
+      id,
+      at: timestamp,
+      field: text,
+      value: z.unknown(),
+      status: z.enum(['active', 'superseded']),
+      current: z.boolean(),
+      actor: actorSchema,
+      confidence: z.number(),
+      source: sourceReference.nullable(),
+      relationReferences: references.optional(),
+    }),
+    z.object({
+      kind: z.literal('fact'),
+      id,
+      at: timestamp,
+      content: text,
+      factKind: factFields.kind,
+      status: z.enum(['current', 'superseded', 'ended']),
+      validTo: timestamp.nullable(),
+      writtenBy: actorSchema,
+      sources: z.array(factSource),
+    }),
+  ]),
+);
+const unresolvedParticipant = response<UnresolvedParticipant>()(
+  z.object({
+    eventId: id,
+    position: z.int(),
+    handle: text.nullable(),
+    role: text.nullable(),
+    occurredAt: timestamp,
+    title: text.nullable(),
+    deletedRecordIds: z.array(id),
+  }),
+);
+const mergeSuggestion = response<MergeSuggestion>()(
+  z.object({
+    id,
+    recordIds: z.tuple([id, id]),
+    records: z.array(recordReference),
+    reason: text,
+    createdAt: timestamp,
+  }),
+);
+const reviewCollection = z.enum([
+  'pendingAssertions',
+  'unresolvedParticipants',
+  'mergeSuggestions',
+]);
+const linkedRecord = z.object({
+  id,
+  title: text.nullable(),
+  object: text,
+  via: z.object({ field: text, on: z.enum(['anchor', 'linked']) }),
+  selects: values,
+});
+const contextFact = z.object({
+  id,
+  content: text,
+  validFrom: timestamp,
+  writtenBy: actorSchema,
+  sources: z.array(id),
+  internal: z.literal(true).optional(),
+});
 
 const responses = {
   Workspace: workspace,
@@ -333,7 +440,107 @@ const responses = {
     }),
   ),
   Assertion: assertion,
-  FileMetadata: fileMetadataSchema,
+  AggregateResult: response<AggregateResult>()(
+    z.object({
+      total: z.int(),
+      values: z.array(aggregateValue),
+      groups: z
+        .array(
+          z.object({ value: text.nullable(), total: z.int(), values: z.array(aggregateValue) }),
+        )
+        .optional(),
+    }),
+  ),
+  AttachedEventPage: response<AttachedEventPage>()(
+    z.object({
+      items: z.array(record.extend({ event: eventDetails, via })),
+      nextCursor: text.nullable(),
+      references,
+    }),
+  ),
+  EventContentPage: response<EventContentPage>()(
+    z.object({
+      parts: z.array(z.object({ id, occurredAt: timestamp, originalDate: text.nullable(), text })),
+      nextAfter: text.nullable(),
+    }),
+  ),
+  TimelineItem: timelineItem,
+  TimelinePage: response<TimelinePage>()(
+    z.intersection(
+      factPlace,
+      z.object({ items: z.array(timelineItem), nextCursor: text.nullable() }),
+    ),
+  ),
+  MergeSuggestion: mergeSuggestion,
+  UnresolvedParticipant: unresolvedParticipant,
+  ReviewQueue: response<ReviewQueue>()(
+    z.object({
+      pendingAssertions: z.array(assertion),
+      unresolvedParticipants: z.array(unresolvedParticipant),
+      mergeSuggestions: z.array(mergeSuggestion),
+      totals: z.record(reviewCollection, z.int()),
+      nextCursors: z.record(reviewCollection, text.nullable()),
+    }),
+  ),
+  LinkedRecordPage: response<LinkedRecordPage>()(
+    z.object({
+      items: z.array(linkedRecord),
+      nextCursor: text.nullable(),
+      totals: z.record(text, z.int()),
+    }),
+  ),
+  ContextPack: response<ContextPack>()(
+    z.object({
+      record: record.pick({ id: true, object: true, label: true }).extend({
+        fields: z.record(
+          text,
+          z.object({ value: z.unknown(), writtenBy: actorSchema, observedAt: timestamp }),
+        ),
+      }),
+      linkedRecords: z.array(
+        z.object({
+          object: text,
+          total: z.int(),
+          items: z.array(linkedRecord.omit({ object: true })),
+        }),
+      ),
+      facts: z.array(contextFact),
+      recentEvents: z.array(eventItem),
+      omitted: z.object({ linkedRecords: z.int(), facts: z.int(), recentEvents: z.int() }),
+      tokenEstimate: z.int(),
+    }),
+  ),
+  ProfileContextPack: response<ProfileContextPack>()(
+    z.object({
+      profile,
+      label: text.nullable(),
+      facts: z.array(contextFact),
+      omitted: z.object({ facts: z.int() }),
+      tokenEstimate: z.int(),
+    }),
+  ),
+  SearchResult: response<SearchResult>()(
+    z.object({
+      records: z.array(
+        recordReference.extend({
+          match: z.enum(['text', 'similar_label']),
+          detail: text.optional(),
+        }),
+      ),
+      facts: z.array(
+        z.intersection(factPlace, z.object({ id, content: text, validFrom: timestamp })),
+      ),
+      events: z.array(
+        eventItem.omit({ via: true }).extend({
+          records: z.array(id),
+          match: z.literal('content').optional(),
+        }),
+      ),
+      references: references.optional(),
+    }),
+  ),
+  // File responses extend this component with the file ID and state.
+  FileMetadata: z.object(fileMetadataSchema.shape),
   FileTransfer: response<SignedTransfer>()(
     z.object({ url: text, headers: z.record(text, text), expiresAt: timestamp }),
   ),

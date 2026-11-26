@@ -62,3 +62,39 @@ test('event claims require their historical fact status in the OpenAPI contract'
   assert.deepEqual(status.required, ['status']);
   assert.deepEqual(status.properties.status.enum, ['current', 'retracted', 'superseded', 'ended']);
 });
+
+test('file responses can extend the generated metadata schema with an ID and state', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  assert.notEqual(contract.components.schemas.FileMetadata.additionalProperties, false);
+  for (const [path, method] of [
+    ['/v1/files/{id}', 'get'],
+    ['/v1/files/{id}/finalize', 'post'],
+  ]) {
+    const response = contract.paths[path][method].responses['200'].content['application/json'];
+    assert.equal(response.schema.allOf[0].$ref, '#/components/schemas/FileMetadata');
+    assert.ok(response.schema.allOf[1].required.includes('id'));
+  }
+});
+
+test('the timeline and review queue export typed items', async () => {
+  const contract = JSON.parse(await readFile('out/openapi.json', 'utf8'));
+  const { TimelineItem, ReviewQueue, MergeSuggestion, UnresolvedParticipant } =
+    contract.components.schemas;
+  assert.deepEqual(
+    TimelineItem.oneOf.map(({ properties, required }) => {
+      assert.ok(required.includes('kind') && required.includes('at'));
+      return properties.kind.const;
+    }),
+    ['event', 'field_change', 'fact'],
+  );
+  assert.equal(
+    ReviewQueue.properties.mergeSuggestions.items.$ref,
+    '#/components/schemas/MergeSuggestion',
+  );
+  assert.equal(
+    ReviewQueue.properties.unresolvedParticipants.items.$ref,
+    '#/components/schemas/UnresolvedParticipant',
+  );
+  assert.ok(MergeSuggestion.required.includes('id'));
+  assert.ok(UnresolvedParticipant.required.includes('eventId'));
+});
