@@ -1,5 +1,5 @@
 import { MastraCompositeStore } from '@mastra/core/storage';
-import { MemoryPG, WorkflowsPG } from '@mastra/pg';
+import { MemoryPG } from '@mastra/pg';
 import pg from 'pg';
 
 /** Mastra's tables live in this schema, reached only by the `retainer_mastra` role (spec §5.2). */
@@ -49,9 +49,10 @@ class FencedPool extends pg.Pool {
 
 /**
  * Mastra's store for the agent runtime and the API's chat read endpoints:
- * a composite store with only the `memory` and `workflows` domains, in the
- * `mastra` schema, that never runs DDL (`disableInit` on the composite store,
- * where Mastra reads it). One small pool shared by both domains.
+ * a composite store with only the `memory` domain, in the `mastra` schema,
+ * that never runs DDL (`disableInit` on the composite store, where Mastra
+ * reads it). PR 1 found that Mastra's loop writes no `workflows` row without
+ * approvals, so that domain is left out until approvals come (spec §5.1).
  */
 export function createMastraStore(opts: {
   connectionString: string;
@@ -81,7 +82,6 @@ export function createMastraStore(opts: {
     disableInit: true,
     domains: {
       memory: new MemoryPG({ pool, schemaName: MASTRA_SCHEMA, skipDefaultIndexes: false }),
-      workflows: new WorkflowsPG({ pool, schemaName: MASTRA_SCHEMA, skipDefaultIndexes: false }),
     },
   });
   return {
@@ -91,7 +91,7 @@ export function createMastraStore(opts: {
 }
 
 /**
- * Creates or upgrades Mastra's tables for the two domains, as the role it is
+ * Creates or upgrades Mastra's tables for the `memory` domain, as the role it is
  * given (the migration role). Idempotent. Grants are the caller's job.
  */
 export async function initMastraSchema(connectionString: string): Promise<void> {
@@ -100,9 +100,7 @@ export async function initMastraSchema(connectionString: string): Promise<void> 
   try {
     await pool.query(`create schema if not exists ${MASTRA_SCHEMA}`);
     const memory = new MemoryPG({ pool, schemaName: MASTRA_SCHEMA });
-    const workflows = new WorkflowsPG({ pool, schemaName: MASTRA_SCHEMA });
     await memory.init();
-    await workflows.init();
   } finally {
     await pool.end();
   }

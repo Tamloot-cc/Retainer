@@ -481,7 +481,6 @@ describe('a chat turn', () => {
          select row_to_json(m)::text as t from mastra.mastra_messages m
          union all select row_to_json(t)::text from mastra.mastra_threads t
          union all select row_to_json(r)::text from mastra.mastra_resources r
-         union all select row_to_json(w)::text from mastra.mastra_workflow_snapshot w
        ) x`,
     );
     const dump = String(rows[0]?.dump ?? '');

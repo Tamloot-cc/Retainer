@@ -1725,6 +1725,56 @@ or "PR 2 checks":
 - which structured output Mastra's `structuredOutput` sends (§3.4), in
   PR 2.
 
+Checked in PR 1 (2026-11-26, Mastra 1.86.0, `@ai-sdk/anthropic` 4.0.94,
+against Anthropic with `packages/agent/test/live.test.ts` and the fake
+upstream in `test/turn.test.ts`):
+
+- **Thinking round-trips.** Mastra stores each thinking block as a
+  reasoning part with its signature and replays it unchanged; consecutive
+  request bodies are byte-identical up to the appended step or turn, and
+  later turns complete. Sonnet 5.5 at `medium` rarely thinks on short
+  prompts (none of ours did; `max` did), so the live check raises the
+  effort to get a block.
+- **Drop setting.** The bundled provider sends `thinking.block_binding`
+  with `prefix_mismatch_behavior: "drop_block"` and the beta
+  `thinking-binding-controls-2026-08-01`; Anthropic accepts it, and a turn
+  whose earlier user message was changed under a thinking block completes.
+- **Web tools: not on the development account.** Its Anthropic
+  organization is HIPAA-configured, which refuses `web_fetch` (every
+  version) and code execution, which `web_search_20260209`'s dynamic
+  filtering needs: any request carrying either tool is a `400` and the turn
+  ends `failed` (`model_error`). `web_search_20250305` works there, and its
+  usage carries `server_tool_use.web_search_requests`. On a standard
+  organization the `20260209` tools are still unchecked. Open: which key
+  the hosted agent uses, and whether a HIPAA organization offers the web
+  tools at all (§3.4, §8.1).
+- **Raw stop reasons.** Each step's raw reason is on the full stream's
+  `step-finish` (`tool_use`, `end_turn` live; `max_tokens`,
+  `model_context_window_exceeded`, `pause_turn`, `refusal` and a missing
+  reason with the fake upstream). The runtime calls `stream()` and
+  `toAISdkStream` itself and reads `fullStream` beside it;
+  `handleChatStream` isn't used, since it hides the full stream.
+- **No resend after the stream starts.** Mastra's own retry layers are off
+  (the Agent's `maxRetries: 0`, `errorProcessorDefaults: false`, which
+  also drops its default stream-error retry that resent a broken stream);
+  the AI SDK's `maxRetries: 2` goes per step through `prepareStep`. A
+  persistent 529 sends three requests; a stream cut after it started sends
+  one.
+- **Tables.** A turn writes `mastra_threads` and `mastra_messages` only
+  (`thread_id`, `resource_id`, both the session ID). No `workflows` row is
+  written without approvals, so that domain is left out (§5.1): the store
+  has the `memory` domain only.
+- **Cache.** Within a turn, each step reads the previous step's whole
+  input. Between turns, a turn after one with no thinking reads the whole
+  chat; a turn after one whose steps carried thinking read only up to that
+  turn's first user message and rewrote the rest once, although the
+  request bodies were identical, so the change is in how Anthropic treats
+  an earlier turn's thinking. Accepted as one rewrite per such turn. The
+  gap between turns needs real chats; the step reports' times give it, and
+  the tail stays on 5 minutes until then.
+- **Not checked here:** the VPC-attached function URL (§13), which needs
+  the hosted deploy.
+
 Answered 2026-11-25:
 
 - Model: Claude Sonnet 5.5 for every session, effort `medium`; extensions
