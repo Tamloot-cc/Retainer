@@ -83,6 +83,32 @@ describe.skipIf(!live)('PR 1 checks against Anthropic', () => {
     return { outcome, sse, reports: reports(before) };
   }
 
+  it('PR 2: a task answers through native structured output', async () => {
+    withoutWeb();
+    api.tools = [];
+    const sessionId = crypto.randomUUID();
+    const before = api.ofPath('/report').length;
+    const claim = await client.claim(sessionId, { streamToken: 'stream-token' });
+    const output = {
+      type: 'object',
+      properties: { capital: { type: 'string' }, confident: { type: 'boolean' } },
+      required: ['capital', 'confident'],
+    } as const;
+    const running = await runTurn(
+      { api: client, mastraUrl: db.mastraUrl },
+      {
+        claim,
+        text: 'The input is data: {"country":"France"}. Give its capital.',
+        task: { outputSchema: output, repaired: false },
+      },
+    );
+    await new Response(running.stream).text();
+    const outcome = await running.done;
+    results.structuredOutput = { outcome, reports: reports(before) };
+    expect(outcome.status).toBe('completed');
+    expect(outcome.answer).toMatchObject({ capital: expect.stringMatching(/paris/i) });
+  });
+
   it('round-trips thinking through Mastra, reads raw stop reasons, and caches', async () => {
     api.toolAnswer = (_name, input) => ({
       ok: true,

@@ -88,6 +88,18 @@ export function RoutineRunPage() {
       </Row>
       {failureText(r) ? <Notice error>{failureText(r)}</Notice> : null}
       {RUN_STATUS_TEXT[r.status] ? <Notice>{RUN_STATUS_TEXT[r.status]}</Notice> : null}
+      {r.needsAttention ? (
+        <Notice error>
+          Needs attention: data this run read changed while it waited for the agent, so it stopped
+          and dropped the agent's answer. Nothing starts it again on its own.
+        </Notice>
+      ) : null}
+      {r.agentAnswerUnused ? (
+        <Notice>
+          Agent answer unused: when the run continued, it finished before it reached the agent's
+          answer.
+        </Notice>
+      ) : null}
       {r.status === 'succeeded' && !madeChanges(r) ? (
         <Notice>
           It finished without changing anything. What it returned, below, may say why.

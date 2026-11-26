@@ -1,8 +1,10 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { RuntimeApi, RuntimeApiError } from './api-client.js';
 import { MAX_MESSAGE_CHARS, streamBodyLimit } from './limits.js';
 import { errorFields, logEvent } from './logger.js';
+import { runTask } from './task.js';
 import { runTurn, titleFrom } from './turn.js';
 
 export type AgentAppOptions = {
@@ -49,6 +51,12 @@ export function parseStreamBody(value: unknown): Body | undefined {
   return value as Body;
 }
 
+function sameSecret(a: string, b: string) {
+  const left = createHash('sha256').update(a).digest();
+  const right = createHash('sha256').update(b).digest();
+  return a.length > 0 && timingSafeEqual(left, right);
+}
+
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -81,6 +89,36 @@ export function createAgentApp(options: AgentAppOptions) {
     });
 
   app.get('/health', () => new Response('ok'));
+
+  /**
+   * A task job (spec §9.3, self-hosted): the dispatcher's delivery, with the
+   * runtime credential. Answered at once; the task runs in the background
+   * and ends with its close. Hosted, the function's native event runs it.
+   */
+  app.post('/tasks/:id/run', async (c) => {
+    const sessionId = c.req.param('id');
+    if (!SESSION_ID.test(sessionId)) return error(404, 'not_found');
+    const header = c.req.header('authorization') ?? '';
+    const credential = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+    if (!sameSecret(credential, options.runtimeSecret)) return error(401, 'unauthorized');
+    let job: unknown;
+    try {
+      job = ((await c.req.json()) as { job?: unknown }).job;
+    } catch {
+      job = undefined;
+    }
+    if (typeof job !== 'string' || job.length === 0 || job.length > 500)
+      return error(400, 'invalid_request');
+    void runTask(
+      {
+        api,
+        mastraUrl: options.mastraUrl,
+        ...(options.pollIntervalMs ? { pollIntervalMs: options.pollIntervalMs } : {}),
+      },
+      { sessionId, job, build: options.build },
+    ).catch((e) => logEvent('error', 'task_failed', { sessionId, ...errorFields(e) }));
+    return new Response(null, { status: 202 });
+  });
 
   app.post('/chats/:id/stream', streamBodyLimit(), async (c) => {
     const sessionId = c.req.param('id');

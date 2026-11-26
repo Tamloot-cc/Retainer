@@ -1,6 +1,8 @@
 import { functionSecrets } from '@retainer/extension';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { taskTools } from '../../agent-sessions/tasks.js';
+import type { RetainerToolHost } from '../../agent-sessions/tools.js';
 import type { Caller } from '../../caller.js';
 import type { Sql } from '../../db/client.js';
 import { inWorkspace, lockSchemaShared } from '../../db/tx.js';
@@ -25,8 +27,21 @@ export function runtimeRoutes(
   catalog: ExtensionCatalog,
   broker?: SecretBroker,
   oauthClients: ExtensionOAuthClients = new Map(),
+  /** Retainer's tools as the agent sees them; without it no task can be staged (agent spec §9.2). */
+  agentTools?: RetainerToolHost,
 ) {
   const queue = new ExtensionQueue(sql, catalog.runtime);
+  /** Stages an agent task for this run; it runs once the run returns `{ wait: taskId }`. */
+  app.post('/extensions/:id/runtime/agent-tasks', async (c) => {
+    if (!agentTools)
+      throw new AppError(409, 'agent_unavailable', 'this server has no workspace agent');
+    const caller = c.get('caller');
+    const body = await readBody(c, z.json());
+    const staged = await queue.stageAgentTask(lease(caller), body, (tx, groups) =>
+      taskTools(tx, caller, agentTools, catalog.runtime, groups),
+    );
+    return c.json(staged, 201);
+  });
   app.post('/extensions/:id/runs/:run/retry', async (c) =>
     c.json(
       await queue.retry(

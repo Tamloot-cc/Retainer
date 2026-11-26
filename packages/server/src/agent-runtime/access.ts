@@ -22,6 +22,8 @@ export const agentAccessSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('member'), userId: z.uuid() }),
   z.strictObject({ kind: z.literal('cli'), userId: z.uuid(), loginId: z.uuid() }),
   z.strictObject({ kind: z.literal('key'), hash: z.string().regex(/^[a-f0-9]{64}$/) }),
+  /** A task's turn (spec §7.2, §7.3): its grant, bound to the caller that waits for it. */
+  z.strictObject({ kind: z.literal('task'), sessionId: z.uuid() }),
 ]);
 export type AgentAccess = z.infer<typeof agentAccessSchema>;
 
@@ -99,6 +101,7 @@ export async function agentCaller(
   access: AgentAccess,
   binding?: AgentBinding,
 ): Promise<Caller> {
+  if (access.kind === 'task') return taskCaller(sql, workspaceId, access.sessionId, binding);
   if (access.kind === 'key') {
     const [key] = await sql<
       {
@@ -143,5 +146,87 @@ export async function agentCaller(
       check: cli ? { kind: 'cli', ...cli } : { kind: 'agent', userId: access.userId },
     },
     ...(binding ? { agent: { ...binding, ...(cli ? { cli } : {}) } } : {}),
+  };
+}
+
+type TaskGrantRow = {
+  caller_kind: 'routine' | 'extension';
+  routine_run_id: string | null;
+  routine_id: string | null;
+  extension_job_id: string | null;
+  installation_id: string | null;
+  mode: 'run' | 'test' | 'dry';
+  state: string;
+  tool_groups: string[];
+  routine_label: string | null;
+  version_number: number | null;
+  granted_actor: 'agent' | 'integration' | null;
+  granted_scopes: ('read' | 'write')[] | null;
+};
+
+/**
+ * A task's caller (spec §7.2): a task from a routine writes as the agent
+ * naming the routine, one from an extension as that installation's actor.
+ * Writes need `retainer.write` and a caller mode that writes (`run`, `test`);
+ * an extension's are also capped by its installation's grant. No personal
+ * memory. Its binding carries the parent, for the cause chain and the grant.
+ */
+async function taskCaller(
+  sql: Sql | Tx,
+  workspaceId: string,
+  sessionId: string,
+  binding?: AgentBinding,
+): Promise<Caller> {
+  const [task] = await sql<TaskGrantRow[]>`
+    select t.caller_kind, t.routine_run_id, t.routine_id, t.extension_job_id, t.installation_id,
+      t.mode, t.state, t.tool_groups, coalesce(v.name, rt.name) as routine_label, v.number as version_number,
+      i.granted_actor, i.granted_scopes
+    from agent_tasks t
+    left join routine_runs r on r.id = t.routine_run_id
+    left join routines rt on rt.id = t.routine_id
+    left join routine_versions v on v.id = r.version_id
+    left join extension_installations i on i.id = t.installation_id
+    where t.session_id = ${sessionId}`;
+  if (!task || task.state !== 'running') throw accessLost();
+  const writes =
+    task.tool_groups.includes('retainer.write') && (task.mode === 'run' || task.mode === 'test');
+  const parent =
+    task.caller_kind === 'routine'
+      ? {
+          kind: 'routine' as const,
+          runId: task.routine_run_id as string,
+          routineId: task.routine_id,
+          mode: task.mode,
+        }
+      : {
+          kind: 'extension' as const,
+          jobId: task.extension_job_id as string,
+          installationId: task.installation_id as string,
+          mode: task.mode,
+        };
+  const actor: Actor =
+    task.caller_kind === 'routine'
+      ? {
+          type: 'agent',
+          id: task.routine_id ?? (task.routine_run_id as string),
+          name: `${task.routine_label ?? 'Routine'} (routine agent${task.version_number ? `, version ${task.version_number}` : ''}${task.mode === 'test' ? ', test' : ''})`,
+        }
+      : {
+          type: task.granted_actor ?? 'agent',
+          id: task.installation_id as string,
+        };
+  const scopes: ApiKeyScope[] =
+    task.caller_kind === 'extension'
+      ? (['read', 'write'] as const).filter(
+          (scope) => (task.granted_scopes ?? []).includes(scope) && (scope === 'read' || writes),
+        )
+      : writes
+        ? ['read', 'write']
+        : ['read'];
+  return {
+    workspaceId,
+    actor,
+    scopes,
+    ...(binding ? { agent: { ...binding, task: parent } } : {}),
   };
 }

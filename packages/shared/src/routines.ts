@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Actor } from './actor.js';
+import { agentToolGroupSchema } from './agent-tasks.js';
 import type { AggregateOp, FilterOperator } from './api.js';
 import type { FieldType } from './field-types.js';
 
@@ -56,6 +57,8 @@ export const ROUTINE_LIMITS = {
   tools: 20,
   /** Attempts of one run before it fails for good. */
   attempts: 3,
+  /** Agent tasks one run may start (agent spec §10.1). */
+  agentTasks: 10,
 } as const;
 
 export const ROUTINE_STATUSES = [
@@ -75,6 +78,8 @@ export const ROUTINE_RUN_STATUSES = [
   'queued',
   'held',
   'running',
+  /** Parked on an agent task (agent spec §9.2): a row, no function and no lease. */
+  'waiting',
   'succeeded',
   'failed',
   'skipped',
@@ -87,7 +92,7 @@ export const ROUTINE_RUN_STATUSES = [
 ] as const;
 export type RoutineRunStatus = (typeof ROUTINE_RUN_STATUSES)[number];
 export const FINISHED_RUN_STATUSES: readonly RoutineRunStatus[] = ROUTINE_RUN_STATUSES.filter(
-  (status) => !['queued', 'held', 'running'].includes(status),
+  (status) => !['queued', 'held', 'running', 'waiting'].includes(status),
 );
 
 /** The coded reasons a builder reports for a gap (§5.2). */
@@ -183,6 +188,13 @@ export const routineManifestSchema = z.strictObject({
   }),
   /** The only rank in the first version (§6.4); room for a person's rank later. */
   rank: z.literal('agent').optional(),
+  /**
+   * The workspace agent's tool groups, for `retainer.ai.agent` (agent spec
+   * §9.4). An extension tool listed here must also be in `uses.tools` and read.
+   */
+  agent: z
+    .strictObject({ tools: z.array(agentToolGroupSchema).min(1).max(ROUTINE_LIMITS.tools) })
+    .optional(),
 });
 export type RoutineManifest = z.infer<typeof routineManifestSchema>;
 export type RoutineTrigger = RoutineManifest['when'];
@@ -256,6 +268,8 @@ export type RoutineCapabilities = {
   objects: RoutineObjectDescription[];
   tools: RoutineToolDescription[];
   model: { available: boolean };
+  /** The workspace agent, for `retainer.ai.agent` (agent spec §9.4): its tool groups. */
+  agent: { available: boolean; tools: string[] };
   timezone: string;
   triggers: ('record' | 'schedule' | 'manual')[];
   limits: typeof ROUTINE_LIMITS;
@@ -342,6 +356,7 @@ export const ROUTINE_EFFECT_OPERATIONS = [
   'remember',
   'tool',
   'ai.generate',
+  'ai.agent',
 ] as const;
 export type RoutineEffectOperation = (typeof ROUTINE_EFFECT_OPERATIONS)[number];
 export const ROUTINE_READ_OPERATIONS = [
@@ -377,7 +392,9 @@ export type RoutineEffectResponse =
         maxTokens: number;
       };
     }
-  | { state: 'reported'; stop: boolean };
+  | { state: 'reported'; stop: boolean }
+  /** An agent task was started and the run parked on it (agent spec §9.2): the run ends here. */
+  | { state: 'waiting'; taskId: string };
 
 /** Codes an effect is refused with; each ends the run with that status or error. */
 export const ROUTINE_STOP_CODES = {
@@ -463,10 +480,31 @@ export function routineFacts(manifest: RoutineManifest, names: FactsNames): stri
     if (manifest.uses.tools.some((name) => names.tool(name)?.effect === 'send'))
       facts.push('It can send things outside Retainer without anyone reviewing them first.');
   } else facts.push('Calls no tools and sends nothing.');
+  if (manifest.agent) facts.push(agentFact(manifest.agent.tools, names));
   facts.push(
     'Writes as an agent: its values never replace what a person or a sync set without review.',
   );
   return facts;
+}
+
+/**
+ * The agent grant in plain words (agent spec §9.4): what the agent can do,
+ * and that workspace data it reads can reach Anthropic and its searches.
+ */
+export function agentFact(tools: readonly string[], names: Pick<FactsNames, 'tool'>): string {
+  const can: string[] = [];
+  if (tools.includes('retainer.read')) can.push('read this workspace');
+  if (tools.includes('retainer.write')) can.push('write to this workspace');
+  if (tools.includes('web.search')) can.push('search the web');
+  const extension = tools
+    .filter((tool) => tool.startsWith('tools.'))
+    .map((tool) => `"${names.tool(tool.slice(6))?.title ?? tool.slice(6)}"`);
+  if (extension.length) can.push(`call ${extension.join(', ')}`);
+  const list =
+    can.length <= 1
+      ? (can[0] ?? 'answer from what it is given')
+      : `${can.slice(0, -1).join(', ')} and ${can.at(-1)}`;
+  return `Uses an agent that can ${list}. Workspace data it reads${tools.includes('web.search') ? ' can appear in its searches and' : ''} is sent to Anthropic.`;
 }
 
 /** A filter in words: `stage is proposal and amount is greater than 100`. */
@@ -634,6 +672,8 @@ type Links = { primary: { url: string; label?: string } | null; additional?: { u
 type FullName = { first?: string; last?: string };
 type Address = { street1?: string; street2?: string; city?: string; state?: string; postcode?: string; country?: string };
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+/** A tool group the workspace agent may use: Retainer reads or writes, web search, or one extension tool that reads. */
+type AgentToolGroup = 'retainer.read' | 'retainer.write' | 'web.search' | \`tools.\${string}\`;
 /** A JSON Schema for a model's answer: object, array, string, number, integer, boolean, null. Retainer keeps an array's first maxItems items. */
 type OutputSchema =
   | { type: 'string' | 'number' | 'integer' | 'boolean' | 'null'; description?: string; enum?: readonly (string | number)[] }
@@ -712,6 +752,7 @@ export function generateRoutineTypes(input: {
   objects: RoutineObjectDescription[];
   tools: RoutineToolDescription[];
   model: boolean;
+  agent?: boolean;
 }): string {
   const objects = [...input.objects]
     .filter((object) => !RESERVED_SDK_NAMES.has(object.name))
@@ -802,6 +843,8 @@ ${objects
   ai: {
     /**${input.model ? '' : ' No model is available on this server.'} Asks a model for one typed answer. The model has no tools and sees only what you pass. */
     generate<const S extends OutputSchema>(input: { instructions: string; input: JsonValue; output: S }): Promise<Infer<S>>;
+    /**${input.agent ? '' : ' No agent is available on this server.'} Hands a task to the workspace agent, which can use tools (the manifest's \`agent.tools\`) and answers in the given shape. The run waits for the answer and replays from the top when it comes: take its input from \`record\` (the trigger snapshot), not from what the run or the agent writes. Throws the task's code (\`refused\`, \`timed_out\`, \`invalid_output\`, …) when it gives no answer. Prefer \`generate\` when no lookup is needed. */
+    agent<const S extends OutputSchema>(input: { instructions: string; input?: JsonValue; tools: AgentToolGroup[]; output: S; limits?: { maxSteps?: number; maxToolCalls?: number; webSearches?: number } }): Promise<Infer<S>>;
   };
 };
 /** What main receives. */
@@ -891,6 +934,10 @@ export type RoutineRunView = {
   modelCalls: number;
   output: Record<string, unknown> | null;
   calls: RoutineRunCall[];
+  /** A run that waited for an agent task and then diverged (agent spec §9.2). */
+  needsAttention?: boolean;
+  /** The run returned before it used its agent task's answer (agent spec §9.2). */
+  agentAnswerUnused?: boolean;
 };
 
 export type RoutineDetail = RoutineView & {

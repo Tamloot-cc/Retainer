@@ -1,6 +1,6 @@
 import { type Config, EXECUTOR_ROLE, loadConfig, ownerDatabaseUrl } from '../config.js';
 import { createRuntimeSql, createSql } from '../db/client.js';
-import { extensionServices } from '../extension-control/configuration.js';
+import { agentTasks, extensionServices } from '../extension-control/configuration.js';
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { ChangeMaintenance } from '../worker/changes.js';
 import { RoutineMaintenance } from '../worker/routines.js';
@@ -30,7 +30,12 @@ export async function createChangeMaintenanceHandler(config: Config) {
       discovery,
       queue,
       undefined,
-      new RoutineMaintenance(sql, discovery, services.routinesAvailable),
+      new RoutineMaintenance(
+        sql,
+        discovery,
+        services.routinesAvailable,
+        agentTasks(config, sql, discovery),
+      ),
     ),
     deployLock = createRuntimeSql(config, { max: 1, keepConnections: true });
   return async () => {

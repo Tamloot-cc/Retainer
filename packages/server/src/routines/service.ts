@@ -10,6 +10,7 @@ import {
   type ToolContract,
 } from '@retainer/shared';
 import { z } from 'zod';
+import { cancelRunTasks } from '../agent-runtime/tasks.js';
 import type { Caller } from '../caller.js';
 import { recheckElevation } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
@@ -236,7 +237,7 @@ export class Routines {
       if (!runs.length) throw notFound('routine preview');
       return {
         previewId,
-        done: runs.every((run) => !['queued', 'running'].includes(run.status)),
+        done: runs.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
         runs: await Promise.all(runs.map((run) => presentRun(tx, run, true))),
       };
     });
@@ -565,8 +566,16 @@ export class Routines {
       if (!row) throw notFound('routine');
       await tx`update routine_runs set status='discarded',code='archived',finished_at=clock_timestamp(),
         input=nullif(input-'triggerRecord','{}'::jsonb) where routine_id=${routineId} and status in ('queued','held')`;
-      await tx`update routine_runs set status='stopped',code='archived',finished_at=clock_timestamp(),lease_owner=null,lease_until=null,
-        input=nullif(input-'triggerRecord','{}'::jsonb) where routine_id=${routineId} and status='running'`;
+      const stopped = await tx<
+        { id: string }[]
+      >`update routine_runs set status='stopped',code='archived',finished_at=clock_timestamp(),
+        lease_owner=null,lease_until=null,fence=fence+1,input=nullif(input-'triggerRecord','{}'::jsonb)
+        where routine_id=${routineId} and status in ('running','waiting') returning id`;
+      await cancelRunTasks(
+        tx,
+        stopped.map((run) => run.id),
+        'archived',
+      );
       return { routineId, status: 'archived' };
     });
   }
@@ -978,6 +987,7 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
     }[]
   >`select position,operation,state,code,differs,record_id,result from routine_run_results
     where run_id=${run.id} order by position`;
+  const usedAgent = calls.some((call) => call.operation === 'ai.agent');
   return {
     id: run.id,
     routineId: run.routine_id,
@@ -1004,6 +1014,10 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
       recordId: call.record_id,
       ...(withResults && call.result !== null ? { result: call.result } : {}),
     })),
+    // A run that waited for an agent task and then diverged needs a person
+    // (agent spec §9.2); one that returned before using the answer says so.
+    ...(usedAgent && run.status === 'diverged' ? { needsAttention: true } : {}),
+    ...(run.output?.agentAnswerUnused === true ? { agentAnswerUnused: true } : {}),
   };
 }
 

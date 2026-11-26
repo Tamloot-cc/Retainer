@@ -116,7 +116,7 @@ export type CheckedManifest = { manifest: RoutineManifest; problems: RoutineProb
 export function checkManifest(
   tx: Tx,
   schema: CompiledSchema,
-  caps: Pick<Capabilities, 'installed' | 'model'>,
+  caps: Pick<Capabilities, 'installed' | 'model' | 'agent'>,
   raw: unknown,
 ): CheckedManifest {
   const problems: RoutineProblem[] = [];
@@ -197,6 +197,26 @@ export function checkManifest(
   manifest.uses.tools = [...new Set(manifest.uses.tools)].sort();
   if (manifest.uses.model && !caps.model.available)
     problem('uses.model', 'model_unavailable', 'this server has no model key');
+  // The agent's grant (agent spec §9.4): an extension tool it lists must be in
+  // `uses.tools` too, and read.
+  if (manifest.agent) {
+    if (!caps.agent.available)
+      problem('agent', 'agent_unavailable', 'this server has no workspace agent');
+    manifest.agent.tools = [...new Set(manifest.agent.tools)].sort();
+    for (const group of manifest.agent.tools) {
+      if (!group.startsWith('tools.')) continue;
+      const name = group.slice(6);
+      const tool = caps.installed.find((t) => t.name === name);
+      if (!manifest.uses.tools.includes(name))
+        problem('agent.tools', 'tool_not_listed', `list "${name}" in uses.tools too`);
+      else if (tool && tool.effect !== 'read')
+        problem(
+          'agent.tools',
+          'tool_not_allowed',
+          `the agent may only use tools that read; "${name}" doesn't`,
+        );
+    }
+  }
   return { manifest, problems };
 
   function checkFilter(tx: Tx, target: CompiledObject, filter: RoutineFilter, at: string) {

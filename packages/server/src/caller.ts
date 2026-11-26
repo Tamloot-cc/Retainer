@@ -68,7 +68,18 @@ export type AgentBinding = {
   turnId: string;
   generation: number;
   cli?: CliIdentity;
+  /**
+   * A task's parent (agent spec §7.2): its writes and tool jobs take their
+   * cause, origin and hops from it, and its grant holds only while the
+   * parent waits on exactly this task (§9.2).
+   */
+  task?: AgentTaskParent;
 };
+
+/** Who waits for a task: a routine run, or an extension invocation's job. */
+export type AgentTaskParent =
+  | { kind: 'routine'; runId: string; routineId: string | null; mode: 'run' | 'test' | 'dry' }
+  | { kind: 'extension'; jobId: string; installationId: string; mode: 'run' | 'test' | 'dry' };
 
 /** Only a `user` actor with `admin` scope is a human approval (3). */
 export function canApproveDestructive(actor: Actor, scopes: readonly ApiKeyScope[]): boolean {

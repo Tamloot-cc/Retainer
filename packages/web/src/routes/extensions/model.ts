@@ -188,5 +188,9 @@ export const accessText = (
   uses: readonly string[] = [],
 ) =>
   `It can ${scopes.join(' and ')} workspace CRM data. Its changes are recorded as made by an ${actor}.${
-    uses.includes('model') ? ` ${MODEL_USE_NOTICE}` : ''
+    uses.includes('agent')
+      ? ` It can hand tasks to the workspace agent. ${MODEL_USE_NOTICE}`
+      : uses.includes('model')
+        ? ` ${MODEL_USE_NOTICE}`
+        : ''
   }`;

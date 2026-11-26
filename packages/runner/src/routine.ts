@@ -617,6 +617,10 @@ export async function settleEffect(
   signal: AbortSignal,
 ): Promise<unknown> {
   if (response.state === 'done') return response.result;
+  // The run parked on an agent task (agent spec §9.2): this attempt ends
+  // here, and the task's answer replays it from the top.
+  if (response.state === 'waiting')
+    throw new Ended({ outcome: 'stopped', code: 'run_waiting', stoppedAt: message.position });
   if (response.state === 'reported') {
     if (response.stop)
       throw new Ended({ outcome: 'succeeded', stoppedAt: message.position, result: null });

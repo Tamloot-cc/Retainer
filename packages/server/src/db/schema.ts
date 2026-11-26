@@ -1929,6 +1929,11 @@ export const extensionJobs = pgTable(
     callerRunId: uuid('caller_run_id'),
     /** The member who started this tool from a button; polls must come from them (spec 4). */
     callerUserId: text('caller_user_id'),
+    /**
+     * The agent task this invocation waits for (`waiting`), or whose answer
+     * this child job carries (agent spec §9.2).
+     */
+    agentTaskId: uuid('agent_task_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2014,7 +2019,7 @@ export const extensionJobs = pgTable(
     ),
     check(
       'extension_jobs_status',
-      sql`${t.status} in ('queued', 'running', 'succeeded', 'failed', 'cancelled')`,
+      sql`${t.status} in ('queued', 'running', 'waiting', 'succeeded', 'failed', 'cancelled')`,
     ),
     pgPolicy('extension_jobs_workspace', {
       for: 'all',
@@ -3418,19 +3423,23 @@ export const routineRuns = pgTable(
       .where(sql`${t.status} in ('queued', 'running')`),
     index('routine_runs_record_idx')
       .on(t.routineId, t.recordId)
-      .where(sql`${t.status} in ('queued', 'held', 'running')`),
+      .where(sql`${t.status} in ('queued', 'held', 'running', 'waiting')`),
     index('routine_runs_preview_idx').on(t.workspaceId, t.previewId),
     index('routine_runs_version_idx').on(t.workspaceId, t.versionId),
     index('routine_runs_source_idx').on(t.workspaceId, t.sourceId),
     index('routine_runs_retention_idx').on(t.finishedAt).where(sql`${t.finishedAt} is not null`),
-    // One run at a time per routine and record (§6.2).
+    // One run at a time per routine and record (§6.2); a run waiting on an
+    // agent task holds its place (agent spec §9.2).
     uniqueIndex('routine_runs_one_running_uq')
       .on(t.routineId, t.recordId)
-      .where(sql`${t.status} = 'running' and ${t.mode} = 'run' and ${t.recordId} is not null`),
+      .where(
+        sql`${t.status} in ('running', 'waiting') and ${t.mode} = 'run' and ${t.recordId} is not null`,
+      ),
+    index('routine_runs_waiting_idx').on(t.expiresAt).where(sql`${t.status} = 'waiting'`),
     check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check', 'build')`),
     check(
       'routine_runs_status',
-      sql`${t.status} in ('queued', 'held', 'running', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')`,
+      sql`${t.status} in ('queued', 'held', 'running', 'waiting', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')`,
     ),
     check(
       'routine_runs_trigger_kind',
@@ -3466,6 +3475,10 @@ export const routineRunResults = pgTable(
     differs: boolean('differs').notNull().default(false),
     /** The tool job a `tool` effect started. */
     toolJobId: uuid('tool_job_id'),
+    /** The agent task an `ai.agent` effect started (agent spec §9.2). */
+    agentTaskId: uuid('agent_task_id'),
+    /** An answered `ai.agent` effect the resumed run reached (agent spec §9.2). */
+    delivered: boolean('delivered').notNull().default(false),
     /** The record a write wrote. */
     recordId: uuid('record_id'),
     createdAt: createdAt(),
@@ -3675,5 +3688,80 @@ export const agentDays = pgTable(
     primaryKey({ columns: [t.workspaceId, t.day, t.subject] }),
     check('agent_days_steps', sql`${t.steps} >= 0`),
     tenantPolicy('agent_days_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/**
+ * An agent task (agent spec §9): the job side of a `task` session. Code
+ * hands the agent instructions (pinned as the session's second system
+ * block), input and an answer shape; its caller waits, parked, for the
+ * answer. The table is also the tasks' queue: one job per delivery, a job
+ * token's hash, attempts. `input` and `answer` may hold CRM content: the
+ * input goes once the task ends, the answer once it reaches its caller.
+ */
+export const agentTasks = pgTable(
+  'agent_tasks',
+  {
+    sessionId: uuid('session_id').primaryKey(),
+    workspaceId: workspaceId(),
+    /** Idempotency: `routine:<run>:<position>`, or `extension:<job>`. */
+    taskKey: text('task_key').notNull(),
+    callerKind: text('caller_kind').notNull(),
+    /** A routine caller: the run that waits, its routine and the effect's position. */
+    routineRunId: uuid('routine_run_id'),
+    routineId: uuid('routine_id'),
+    position: integer('position'),
+    /** An extension caller: the invocation's job, and its installation. */
+    extensionJobId: uuid('extension_job_id'),
+    installationId: uuid('installation_id'),
+    /** The caller's mode: `run` and `test` write; `dry` reports writes and calls no tool. */
+    mode: text('mode').notNull(),
+    /** `staged` (an extension's, until its invocation waits), `queued`, `running`, `completed`, `failed`, `cancelled`. */
+    state: text('state').notNull(),
+    /** The tool groups granted (§9.4), as the caller asked for them. */
+    toolGroups: jsonb('tool_groups').$type<string[]>().notNull(),
+    outputSchema: jsonb('output_schema').notNull(),
+    input: jsonb('input'),
+    answer: jsonb('answer'),
+    code: text('code'),
+    /** The parent's cause chain and hops, which the task's writes and tool jobs keep (§7.2). */
+    cause: jsonb('cause').$type<string[]>().notNull().default([]),
+    causeDepth: integer('cause_depth').notNull().default(0),
+    /** Deliveries of the task's job (§9.3); the queue's retry limit bounds them. */
+    attempts: integer('attempts').notNull().default(0),
+    availableAt: timestamptz('available_at').notNull().defaultNow(),
+    /** Before the parent's expiry, less a margin: no answer arrives for a run already gone (§9.2). */
+    expiresAt: timestamptz('expires_at').notNull(),
+    /** SHA-256 of the current delivery's job token, which the runtime trades for a turn. */
+    jobTokenHash: text('job_token_hash'),
+    /** When the current delivery may be handed out again if its runtime never claimed or closed. */
+    leaseUntil: timestamptz('lease_until'),
+    /** The schema repair turn was used (§9.3). */
+    repaired: boolean('repaired').notNull().default(false),
+    createdAt: createdAt(),
+    finishedAt: timestamptz('finished_at'),
+  },
+  (t) => [
+    unique('agent_tasks_ws_session_uq').on(t.workspaceId, t.sessionId),
+    unique('agent_tasks_key_uq').on(t.workspaceId, t.taskKey),
+    foreignKey({
+      name: 'agent_tasks_session_fk',
+      columns: [t.workspaceId, t.sessionId],
+      foreignColumns: [agentSessions.workspaceId, agentSessions.id],
+    }).onDelete('cascade'),
+    index('agent_tasks_due_idx').on(t.availableAt).where(sql`${t.state} in ('queued', 'running')`),
+    index('agent_tasks_run_idx').on(t.workspaceId, t.routineRunId),
+    index('agent_tasks_job_idx').on(t.workspaceId, t.extensionJobId),
+    check('agent_tasks_caller_kind', sql`${t.callerKind} in ('routine', 'extension')`),
+    check(
+      'agent_tasks_caller',
+      sql`(${t.callerKind} = 'routine' and ${t.routineRunId} is not null and ${t.position} is not null) or (${t.callerKind} = 'extension' and ${t.extensionJobId} is not null and ${t.installationId} is not null)`,
+    ),
+    check('agent_tasks_mode', sql`${t.mode} in ('run', 'test', 'dry')`),
+    check(
+      'agent_tasks_state',
+      sql`${t.state} in ('staged', 'queued', 'running', 'completed', 'failed', 'cancelled')`,
+    ),
+    tenantPolicy('agent_tasks_workspace', t.workspaceId),
   ],
 ).enableRLS();

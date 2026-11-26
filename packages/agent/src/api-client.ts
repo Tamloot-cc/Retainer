@@ -1,3 +1,4 @@
+import type { AgentOutputSchema } from '@retainer/shared';
 import type { PinnedTool } from './tools.js';
 
 /** Statuses a turn can be closed with (contract: "close"). */
@@ -35,6 +36,8 @@ export type Claim = {
   };
   addedParts: string[];
   limits: TurnLimits;
+  /** A task's claim (spec §9.3): its first message, answer schema and repair state. */
+  task?: { firstMessage: string; outputSchema: AgentOutputSchema; repaired: boolean };
 };
 
 export type StepReport = {
@@ -139,7 +142,9 @@ export class RuntimeApi {
   /** Trades a stream token, with the runtime credential, for a turn (spec §7.3). */
   async claim(
     sessionId: string,
-    body: { streamToken: string; title?: string; notAfter?: string; build?: string },
+    body:
+      | { streamToken: string; title?: string; notAfter?: string; build?: string }
+      | { job: string; notAfter?: string; build?: string },
   ): Promise<Claim> {
     const { status, json } = await this.#call<Claim>(
       'POST',
@@ -199,7 +204,13 @@ export class RuntimeApi {
   async close(
     sessionId: string,
     turnToken: string,
-    body: { status: TurnCloseStatus; errorCode: string | null; durationMs: number },
+    body: {
+      status: TurnCloseStatus;
+      errorCode: string | null;
+      durationMs: number;
+      answer?: unknown;
+      repaired?: boolean;
+    },
   ): Promise<{ status: string }> {
     const { status, json } = await this.#call<{ status: string }>(
       'POST',

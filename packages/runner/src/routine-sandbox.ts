@@ -105,7 +105,10 @@ const fixed = {
   events: Object.freeze({ log: (input) => effect('events.log', input) }),
   remember: (input) => effect('remember', input),
   tools,
-  ai: Object.freeze({ generate: (input) => effect('ai.generate', input) }),
+  ai: Object.freeze({
+    generate: (input) => effect('ai.generate', input),
+    agent: (input) => effect('ai.agent', input),
+  }),
 };
 const retainer = new Proxy({}, {
   get: (_, name) => {

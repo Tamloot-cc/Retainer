@@ -384,6 +384,7 @@ describe('SECURITY DEFINER functions', () => {
     retainer_erase_agent_content: ['retainer_control', RUNTIME_ROLE],
     retainer_sweep_agent_orphans: RUNTIME_ROLE,
     retainer_agent_maintenance_due: 'retainer_executor',
+    retainer_agent_tasks_due: 'retainer_executor',
   };
 
   it('exist only on the reviewed list, each fixing its search_path and execution role', async () => {

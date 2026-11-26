@@ -9,6 +9,9 @@ import {
   type ToolContract,
 } from '@retainer/shared';
 import { z } from 'zod';
+import { createTask, parseTaskRequest, TASK_EXPIRY_MARGIN_MS } from '../agent-runtime/tasks.js';
+import { taskTools } from '../agent-sessions/tasks.js';
+import type { RetainerToolHost } from '../agent-sessions/tools.js';
 import type { Caller, RoutineCaller } from '../caller.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
@@ -59,6 +62,8 @@ export type RuntimeConfig = RoutineConfig & {
   modelName: string;
   /** RETAINER_ROUTINE_MODEL_CALLS_PER_DAY. */
   modelCallsPerDay: number;
+  /** Retainer's tools as the agent sees them, to pin a task's tools (agent spec §9). */
+  agentTools?: RetainerToolHost | undefined;
 };
 
 type RunState = {
@@ -95,6 +100,7 @@ type ResultRow = {
   result: unknown;
   code: string | null;
   tool_job_id: string | null;
+  agent_task_id?: string | null;
 };
 
 const WRITE_OPERATIONS = ['record.create', 'record.update', 'events.log', 'remember'];
@@ -434,7 +440,7 @@ export class RoutineRuntime {
     hash: string,
   ): Promise<RoutineEffectResponse | ResultRow | null> {
     const [existing] = await tx<ResultRow[]>`
-      select position,operation,args_hash,state,result,code,tool_job_id from routine_run_results
+      select position,operation,args_hash,state,result,code,tool_job_id,agent_task_id from routine_run_results
       where run_id=${runId} and position=${request.position}`;
     if (!existing) {
       const [last] = await tx<{ max: number | null }[]>`
@@ -552,8 +558,10 @@ export class RoutineRuntime {
               where id=${runId} and fence=${fence}::bigint and status='running'
               returning id
             )
-            update routine_run_results x set differs=true from stopped where x.run_id=stopped.id
-              and x.position=${request.position}`,
+            update routine_run_results x set differs=x.differs or x.position=${request.position},
+              result=case when x.operation='ai.agent' then null else x.result end
+            from stopped where x.run_id=stopped.id
+              and (x.position=${request.position} or x.operation='ai.agent')`,
         );
       }
       throw error;
@@ -585,8 +593,13 @@ export class RoutineRuntime {
     const hash = requestHash(request.args);
     if (Buffer.byteLength(stableJson(request.args)) > ROUTINE_LIMITS.resultBytes)
       throw new AppError(413, 'quota_exceeded', "an effect's arguments exceed 64 KiB");
+    // A dry run's agent task runs too, in dry mode: it reports its writes and
+    // calls no extension tool (agent spec §7.2).
     const reporting =
-      ['dry', 'check', 'build'].includes(binding.mode) && request.operation !== 'ai.generate';
+      ['dry', 'check', 'build'].includes(binding.mode) &&
+      request.operation !== 'ai.generate' &&
+      request.operation !== 'ai.agent';
+    if (request.operation === 'ai.agent') await this.markDelivered(caller, request, hash);
     if (WRITE_OPERATIONS.includes(request.operation) && !reporting)
       return this.write(caller, binding, request, hash);
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
@@ -611,6 +624,8 @@ export class RoutineRuntime {
         return this.tool(tx, caller, binding, run, request, hash, started);
       if (request.operation === 'ai.generate')
         return this.model(tx, caller, run, request, hash, started);
+      if (request.operation === 'ai.agent')
+        return this.agent(tx, caller, binding, run, request, hash, started);
       throw new AppError(400, 'invalid_request', `unknown effect ${request.operation}`);
     });
   }
@@ -803,6 +818,117 @@ export class RoutineRuntime {
       toolJobId: jobId,
     });
     return { state: 'pending', tool: { callId: jobId } };
+  }
+
+  /**
+   * An answered agent task the replay reached (agent spec §9.2): marked in a
+   * transaction of its own, since a failed task's code is thrown, which
+   * rolls the effect's back. A run that succeeds with an answer it never
+   * reached returned early: its page notes the answer unused.
+   */
+  private async markDelivered(caller: Caller, request: RoutineEffectRequest, hash: string) {
+    const { runId } = this.binding(caller);
+    await inWorkspace(
+      this.sql,
+      caller.workspaceId,
+      (tx) => tx`update routine_run_results set delivered=true
+        where run_id=${runId} and position=${request.position} and operation='ai.agent'
+          and args_hash=${hash} and state in ('done','failed') and not delivered`,
+    );
+  }
+
+  /**
+   * `retainer.ai.agent` (agent spec §9.2): hands a task to the workspace
+   * agent and parks the run on it, in one transaction: the effect is
+   * recorded with the hash of its full arguments, the task is created under
+   * the run and position, the run is fenced and parked as `waiting`, and the
+   * task's job is queued. The runner ends the attempt; the task's
+   * completion stores its answer on the effect and queues the run again,
+   * which replays from the top and gets the answer here as a recorded
+   * effect. A retry that reaches the same effect while the task runs parks
+   * on the same task.
+   */
+  private async agent(
+    tx: Tx,
+    caller: Caller,
+    binding: RoutineCaller,
+    run: RunState,
+    request: RoutineEffectRequest,
+    hash: string,
+    started: ResultRow | null,
+  ): Promise<RoutineEffectResponse> {
+    if (!this.config.agentAvailable || !this.config.agentTools)
+      throw new AppError(409, 'agent_unavailable', 'this server has no workspace agent');
+    if (run.mode === 'check' || run.mode === 'build')
+      throw new AppError(403, 'forbidden', 'a check and the builder hand no tasks to the agent');
+    const granted = run.manifest?.agent?.tools;
+    if (!granted)
+      throw new AppError(
+        403,
+        'agent_not_declared',
+        'the manifest does not say the routine uses the agent (agent.tools)',
+      );
+    const task = parseTaskRequest(request.args);
+    const extra = task.tools.filter((group) => !granted.includes(group));
+    if (extra.length)
+      throw new AppError(
+        403,
+        'agent_tool_not_granted',
+        `the manifest's agent.tools does not list ${extra.map((group) => `"${group}"`).join(', ')}`,
+      );
+    let taskId = started?.agent_task_id ?? null;
+    if (!taskId) {
+      const [count] = await tx<{ count: number }[]>`
+        select count(*)::int as count from agent_tasks where routine_run_id=${run.id}`;
+      if ((count?.count ?? 0) >= ROUTINE_LIMITS.agentTasks)
+        throw refused(
+          'agent_task_limit',
+          `a run hands at most ${ROUTINE_LIMITS.agentTasks} tasks to the agent`,
+        );
+      // The task must answer before the run expires, time in the queue included.
+      const runExpiry =
+        run.expires_at ?? new Date(Date.now() + ROUTINE_LIMITS.expiryHours * 3600_000);
+      const expiresAt = new Date(runExpiry.getTime() - TASK_EXPIRY_MARGIN_MS);
+      if (expiresAt.getTime() <= Date.now() + 60_000)
+        throw refused('run_expired', 'the run expires before an agent task could answer');
+      await this.useRecord(tx, caller.workspaceId, run);
+      const pinned = await taskTools(
+        tx,
+        caller,
+        this.config.agentTools,
+        this.config.catalog,
+        task.tools,
+      );
+      const self = run.routine_id ?? run.id;
+      const created = await createTask(tx, caller.workspaceId, {
+        key: `routine:${run.id}:${request.position}`,
+        parent: {
+          kind: 'routine',
+          runId: run.id,
+          routineId: run.routine_id,
+          position: request.position,
+        },
+        mode: run.mode as 'run' | 'test' | 'dry',
+        request: task,
+        owner: `routine:${self}`,
+        tools: pinned.tools,
+        extensionTools: pinned.extensionTools,
+        baseSystemPrompt: pinned.baseSystemPrompt,
+        expiresAt,
+        cause: [...new Set([...run.cause, self])],
+        causeDepth: run.cause_depth + 1,
+        state: 'queued',
+      });
+      taskId = created.sessionId;
+      await tx`insert into routine_run_results(workspace_id,run_id,position,operation,args_hash,state,agent_task_id)
+        values(${caller.workspaceId},${run.id},${request.position},${request.operation},${hash},'started',${taskId})
+        on conflict(run_id,position) do update set agent_task_id=excluded.agent_task_id,updated_at=clock_timestamp()`;
+    }
+    // Parked: fenced, so this attempt's token opens nothing more, and leased
+    // to nobody. A waiting run is a row (§9.2).
+    await tx`update routine_runs set status='waiting',fence=fence+1,lease_owner=null,lease_until=null,
+      updated_at=clock_timestamp() where id=${run.id} and status='running' and fence=${binding.fence}::bigint`;
+    return { state: 'waiting', taskId };
   }
 
   /**

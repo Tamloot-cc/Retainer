@@ -292,7 +292,7 @@ export class RoutineExecutor {
       if (run.mode === 'run' && run.routine_id && recordId) {
         const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
           and (record_id=${recordId} or record_id in (select r.id from records r where r.merged_into_id=${recordId}))
-          and mode='run' and status='running' and id<>${id}`;
+          and mode='run' and status in ('running','waiting') and id<>${id}`;
         if (busy) return null;
       }
       // The initial record is an input, like the clock. A routine may change
@@ -410,8 +410,18 @@ export class RoutineExecutor {
           available_at=clock_timestamp()+${Math.min(300, 15 * 2 ** row.attempt)}*interval '1 second' where id=${run.runId}`;
         return;
       }
+      // An agent task's answer the run never reached: it returned early on its
+      // fresh reads (agent spec §9.2). The answer is cleared and the page says so.
+      const unused =
+        await tx`update routine_run_results set result=null,updated_at=clock_timestamp()
+        where run_id=${run.runId} and operation='ai.agent' and state in ('done','failed') and not delivered
+        returning position`;
+      const recorded =
+        unused.length > 0 && status === 'succeeded'
+          ? { ...(output ?? {}), agentAnswerUnused: true }
+          : output;
       await tx`update routine_runs set status=${status},code=${status === 'succeeded' ? null : code},
-        output=${output ? tx.json(jsonValue(output)) : null},finished_at=clock_timestamp(),
+        output=${recorded ? tx.json(jsonValue(recorded)) : null},finished_at=clock_timestamp(),
         input=nullif(input-'triggerRecord','{}'::jsonb),lease_owner=null,lease_until=null where id=${run.runId}`;
       if (run.mode !== 'run' || !row.routine_id) return;
       // The code passed a fresh check against the workspace's new types (§5.3).
@@ -443,6 +453,8 @@ export class RoutineMaintenance {
     private readonly sql: Sql,
     private readonly discoverySql: Sql,
     private readonly dispatchEnabled = true,
+    /** Hands task jobs to the agent runtime (agent spec §9.3), where one is configured. */
+    private readonly agentTasks?: { tick(deadline: number): Promise<unknown> },
   ) {}
   stop() {
     this.stopped = true;
@@ -484,6 +496,7 @@ export class RoutineMaintenance {
     await this.retention(deadline).catch(() => failed++);
     // The workspace agent's upkeep rides the same tick (agent spec §5.4, §6.3).
     await maintainAgents(this.sql, this.discoverySql, deadline).catch(() => failed++);
+    await this.agentTasks?.tick(deadline).catch(() => failed++);
     return { queued, failed };
   }
 

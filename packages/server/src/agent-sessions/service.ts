@@ -3,8 +3,10 @@ import {
   BASE_SYSTEM_PROMPT,
   createMastraStore,
   type MastraStoreHandle,
+  RETAINER_WRITE_TOOL_NAMES,
   readChatMessages,
 } from '@retainer/agent';
+import { AGENT_TASK_ERROR_CODES, AGENT_TASK_LIMITS } from '@retainer/shared';
 import { z } from 'zod';
 import {
   type AgentAccess,
@@ -14,7 +16,15 @@ import {
 } from '../agent-runtime/access.js';
 import { eraseAgentContent } from '../agent-runtime/erasure.js';
 import {
+  completeTask,
+  leaseTask,
+  type TaskRow,
+  taskDeadline,
+  taskFirstMessage,
+} from '../agent-runtime/tasks.js';
+import {
   isRuntimeCredential,
+  JOB_TOKEN_PREFIX,
   mintToken,
   parseToken,
   STREAM_TOKEN_PREFIX,
@@ -33,7 +43,7 @@ import {
   turnTokenWorkspace,
   verifyTurnToken,
 } from '../agent-runtime/turns.js';
-import type { Caller } from '../caller.js';
+import type { AgentBinding, Caller } from '../caller.js';
 import { recheckElevation } from '../db/cli.js';
 import type { Sql } from '../db/client.js';
 import type { WorkspaceSettings } from '../db/schema.js';
@@ -105,6 +115,16 @@ type SessionRow = {
   last_active_at: Date;
 };
 
+/** A task job's claim (§9.3): the delivery's job token instead of a stream token. */
+const jobClaimBody = z.strictObject({
+  job: z.string().min(1).max(500),
+  notAfter: z.iso.datetime().optional(),
+  build: z
+    .string()
+    .regex(/^[a-f0-9]{40}$/)
+    .optional(),
+});
+
 const claimBody = z.strictObject({
   streamToken: z.string().min(1).max(500),
   /** The latest deadline the runtime's invocation allows (§6.3). */
@@ -138,6 +158,10 @@ const closeBody = z.strictObject({
   status: z.enum(CLOSE_STATUSES as unknown as [string, ...string[]]),
   errorCode: z.string().max(100).nullable().optional(),
   durationMs: count,
+  /** A task's answer, already checked against its schema by the runtime (§9.3). */
+  answer: z.json().optional(),
+  /** The task used its repair turn (§9.3). */
+  repaired: z.boolean().optional(),
 });
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -322,6 +346,7 @@ export class AgentSessions {
   async claim(credential: string | undefined, sessionId: string, body: unknown) {
     if (!isRuntimeCredential(this.config.runtimeSecret, credential))
       throw new AppError(401, 'unauthorized', 'the agent runtime credential is missing or wrong');
+    if (body && typeof body === 'object' && 'job' in body) return this.claimTask(sessionId, body);
     const input = parse(claimBody, body);
     const parsed = parseToken(STREAM_TOKEN_PREFIX, input.streamToken);
     if (!parsed || !z.uuid().safeParse(sessionId).success)
@@ -348,9 +373,7 @@ export class AgentSessions {
       // The context counts as delivered once a step of a turn has been
       // reported: the runtime saves the message before its first model
       // request, so a turn that died before that gets it again (§3.5).
-      const [delivered] = await tx<{ steps: number }[]>`
-        select coalesce(sum(steps), 0)::int as steps from agent_turns where session_id = ${sessionId}`;
-      const first = (delivered?.steps ?? 0) === 0;
+      const first = (await sessionTotals(tx, sessionId)).steps === 0;
       const addedParts = await this.addedParts(tx, session, caller, first);
       const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH);
       if (!session.title && title)
@@ -373,6 +396,99 @@ export class AgentSessions {
         limits: { maxSteps, maxOutputTokens, maxToolCalls, webMaxUses },
       };
     });
+  }
+
+  /**
+   * Claims a task's turn (§9.3): the dispatcher's job token, with the runtime
+   * credential, for a turn under the task's own grant (§7.3). The deadline is
+   * 14 minutes, never past the task's expiry; the limits are what the task
+   * has left, since a delivered-again job continues the same session (§10.1).
+   */
+  private async claimTask(sessionId: string, body: unknown) {
+    const input = parse(jobClaimBody, body);
+    const parsed = parseToken(JOB_TOKEN_PREFIX, input.job);
+    if (!parsed || parsed.id !== sessionId?.toLowerCase())
+      throw new AppError(401, 'unauthorized', 'the job token is invalid or expired');
+    const workspaceId = parsed.workspaceId;
+    // A task that can't run any more is ended in a transaction that commits,
+    // and the claim is refused after it: throwing inside would roll the
+    // ending back, and every redelivery would try again.
+    const claimed = await inWorkspace(this.sql, workspaceId, async (tx) => {
+      const session = await lockSession<SessionRow>(tx, sessionId);
+      const [task] = await tx<TaskRow[]>`
+        select * from agent_tasks where session_id = ${sessionId} for update`;
+      if (
+        !session ||
+        !task ||
+        task.state !== 'running' ||
+        !task.job_token_hash ||
+        !secretMatches(task.job_token_hash, parsed.secret)
+      )
+        throw new AppError(401, 'unauthorized', 'the job token is invalid or expired');
+      if (task.expires_at.getTime() <= Date.now()) {
+        await completeTask(tx, sessionId, { status: 'failed', code: 'timed_out' });
+        return new AppError(409, 'task_expired', 'the task expired before it could run');
+      }
+      const access = { kind: 'task' as const, sessionId };
+      // The grant holds only while the caller waits on this task (§9.2).
+      await agentCaller(tx, workspaceId, access);
+      // A day's allowance that's used up ends the task now; its caller gets
+      // `limit_reached` instead of waiting out every redelivery.
+      if (await this.dayUse(tx, session)) {
+        await completeTask(tx, sessionId, { status: 'failed', code: 'limit_reached' });
+        return new AppError(
+          429,
+          'limit_reached',
+          "today's agent steps for this workspace are used up; try again tomorrow",
+        );
+      }
+      const limits = sessionLimits(session);
+      const { steps, tool_calls: toolCalls } = await sessionTotals(tx, sessionId);
+      if (steps >= limits.maxSteps) {
+        await completeTask(tx, sessionId, { status: 'failed', code: 'limit_reached' });
+        return new AppError(429, 'limit_reached', 'the task used all its steps');
+      }
+      const deadline = taskDeadline(task, input.notAfter ? new Date(input.notAfter) : undefined);
+      const claimed = await claimTurn(tx, workspaceId, {
+        sessionId,
+        access,
+        notAfter: deadline,
+        ...(input.build ? { build: input.build } : {}),
+      });
+      await leaseTask(tx, sessionId, claimed.turn.deadline);
+      const [workspace] = await tx<{ settings: WorkspaceSettings }[]>`
+        select settings from workspaces where id = ${workspaceId}`;
+      const day = workspaceDate(new Date(), workspace?.settings.timeZone).day;
+      return {
+        turnToken: claimed.token,
+        turnId: claimed.turn.id,
+        generation: claimed.turn.generation,
+        runId: claimed.turn.run_id,
+        deadline: claimed.turn.deadline.toISOString(),
+        session: {
+          id: session.id,
+          kind: session.kind,
+          firstTurn: steps === 0,
+          systemBlocks: session.system_blocks,
+          tools: session.tools,
+        },
+        addedParts: [],
+        task: {
+          firstMessage: taskFirstMessage(task.input ?? undefined, day),
+          outputSchema: task.output_schema,
+          repaired: task.repaired,
+        },
+        limits: {
+          maxSteps: limits.maxSteps - steps,
+          maxOutputTokens: limits.maxOutputTokens,
+          // What the whole task has left, like its steps (§10.1).
+          maxToolCalls: Math.max(0, limits.maxToolCalls - toolCalls),
+          webMaxUses: limits.webMaxUses,
+        },
+      };
+    });
+    if (claimed instanceof AppError) throw claimed;
+    return claimed;
   }
 
   /**
@@ -455,11 +571,24 @@ export class AgentSessions {
       return toolError('tool_not_available', `"${name}" is not one of this session's tools`);
     let caller: Caller;
     try {
-      caller = await agentCaller(this.sql, workspaceId, verified.access, verified.binding);
+      // In the workspace: a task's grant is read from its row (§7.3).
+      caller = await inWorkspace(this.sql, workspaceId, (tx) =>
+        agentCaller(tx, workspaceId, verified.access, verified.binding),
+      );
     } catch (error) {
       if (error instanceof AppError) return toolError(error.code, error.message);
       throw error;
     }
+    // A dry run's task (§7.2, `routines.md` §5.1): its writes are reported,
+    // not made, and it calls no extension tool.
+    const dry = caller.agent?.task?.mode === 'dry';
+    if (dry && pinned.kind === 'extension')
+      return toolError('dry_run', 'a dry run calls no extension tool');
+    if (dry && (RETAINER_WRITE_TOOL_NAMES as readonly string[]).includes(name))
+      return {
+        ok: true,
+        output: { dryRun: true, reported: { tool: name, input: input.input ?? {} } },
+      };
     if (pinned.kind === 'retainer') {
       const result = await this.host.call(caller, name, input.input ?? {});
       if (!result.ok && result.error.code === 'turn_cancelled') throw turnCancelled();
@@ -524,8 +653,9 @@ export class AgentSessions {
           functionId: tool.functionId,
           input: call.input,
           dedupeKey: `agent:${binding.turnId}:${call.toolCallId}`,
-          cause: [],
-          depth: 1,
+          // A task's tool jobs keep its parent's chain, so it still stops at
+          // 8 hops (§7.2); a chat's start one.
+          ...(await toolCause(tx, binding)),
           expiresAt: until,
           callerUserId: connectionId ? (caller.person?.id ?? null) : null,
         });
@@ -621,6 +751,9 @@ export class AgentSessions {
           action: 'stop' as const,
           reason: turn.status === 'cancelled' ? ('cancelled' as const) : ('stale' as const),
         };
+      // A task's limits are the whole task's: a job delivered again continues
+      // the same session (§10.1).
+      if (session.kind === 'task') totals = { ...totals, ...(await sessionTotals(tx, session.id)) };
       const over =
         totals.steps >= limits.maxSteps ||
         totals.tool_calls >= limits.maxToolCalls ||
@@ -636,14 +769,56 @@ export class AgentSessions {
     return turnState(this.sql, token, sessionId);
   }
 
+  /**
+   * The runtime's close. A task's close also ends the task (§9.3), in the
+   * same transaction: its answer, or the turn's ending as its code, goes to
+   * its caller. A delivery that died never closes; the dispatcher hands the
+   * job out again.
+   */
   close(token: string, sessionId: string, body: unknown) {
     turnTokenWorkspace(token);
     const input = parse(closeBody, body);
-    return closeTurn(this.sql, token, sessionId, {
-      status: input.status as (typeof CLOSE_STATUSES)[number],
-      errorCode: input.errorCode ?? null,
-      durationMs: input.durationMs,
-    });
+    if (input.answer !== undefined && input.status !== 'completed')
+      throw new AppError(400, 'invalid_request', 'only a completed turn carries an answer');
+    if (
+      input.answer !== undefined &&
+      Buffer.byteLength(JSON.stringify(input.answer)) > AGENT_TASK_LIMITS.answerBytes
+    )
+      throw new AppError(413, 'quota_exceeded', "a task's answer exceeds 64 KiB");
+    return closeTurn(
+      this.sql,
+      token,
+      sessionId,
+      {
+        status: input.status as (typeof CLOSE_STATUSES)[number],
+        errorCode: input.errorCode ?? null,
+        durationMs: input.durationMs,
+      },
+      async (tx, closed) => {
+        const [session] = await tx<{ kind: string }[]>`
+          select kind from agent_sessions where id = ${sessionId}`;
+        if (session?.kind !== 'task' || !closed) return;
+        if (input.repaired)
+          await tx`update agent_tasks set repaired = true where session_id = ${sessionId}`;
+        await completeTask(
+          tx,
+          sessionId,
+          input.status === 'completed' && input.answer !== undefined
+            ? { status: 'completed', answer: input.answer }
+            : {
+                status: 'failed',
+                code:
+                  input.status === 'completed'
+                    ? 'invalid_output'
+                    : input.errorCode && TASK_CODES.has(input.errorCode)
+                      ? input.errorCode
+                      : TASK_CODES.has(input.status)
+                        ? input.status
+                        : 'failed',
+              },
+        );
+      },
+    );
   }
 }
 
@@ -651,6 +826,29 @@ export class AgentSessions {
 function sessionLimits(session: Pick<SessionRow, 'limits'>) {
   return { ...CHAT_LIMITS, ...session.limits };
 }
+
+/** What a session's turns have used so far, across every claim. */
+async function sessionTotals(tx: Tx, sessionId: string) {
+  const [sum] = await tx<{ steps: number; tool_calls: number; web_searches: number }[]>`
+    select coalesce(sum(steps), 0)::int as steps, coalesce(sum(tool_calls), 0)::int as tool_calls,
+      coalesce(sum(web_searches), 0)::int as web_searches
+    from agent_turns where session_id = ${sessionId}`;
+  return sum ?? { steps: 0, tool_calls: 0, web_searches: 0 };
+}
+
+/** A tool job's cause: a task's parent chain one hop on, or a chat's fresh one. */
+async function toolCause(
+  tx: Tx,
+  binding: AgentBinding,
+): Promise<{ cause: string[]; depth: number }> {
+  if (!binding.task) return { cause: [], depth: 1 };
+  const [task] = await tx<{ cause: string[]; cause_depth: number }[]>`
+    select cause, cause_depth from agent_tasks where session_id = ${binding.sessionId}`;
+  return { cause: task?.cause ?? [], depth: (task?.cause_depth ?? 0) + 1 };
+}
+
+/** The codes a task ends with (§9.3); any other ending is `failed`. */
+const TASK_CODES = new Set<string>(AGENT_TASK_ERROR_CODES);
 
 function toolError(code: string, message: string): RetainerToolResult {
   return { ok: false, error: { code, message } };

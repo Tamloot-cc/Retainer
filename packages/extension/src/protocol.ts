@@ -1,5 +1,6 @@
 export const SYSTEM_LIFECYCLE_FUNCTION_ID = 'b150f9ad-0629-44d0-a103-67fa9b93426b';
 
+import { agentResultSchema } from '@retainer/shared';
 import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -47,6 +48,11 @@ export const invocationSchema = z.strictObject({
    * that opens model calls and nothing else (model calls spec 3.2).
    */
   model: z.strictObject({ origin: z.url(), token: z.string().min(1).max(8192) }).optional(),
+  /**
+   * The answer of the agent task this function waited for (agent spec §9.2):
+   * the function is called again with the same input and this.
+   */
+  agentResult: agentResultSchema.optional(),
 });
 export const executionResultSchema = z
   .strictObject({
@@ -62,8 +68,20 @@ export const executionResultSchema = z
      * `exchange:<hash>` or `release:<uuid>`. The server records each once per connection.
      */
     releaseIncomplete: z.array(z.string().regex(RELEASE_INCIDENT_PATTERN)).max(8).optional(),
+    /**
+     * The agent task this invocation waits for (agent spec §9.2), staged with
+     * `agentClient(invocation).start`. The job parks; the task's answer calls
+     * the function again.
+     */
+    wait: z.uuid().optional(),
   })
   .superRefine((result, ctx) => {
+    if (result.wait !== undefined && (result.status !== 'succeeded' || result.output !== undefined))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['wait'],
+        message: 'wait requires success without output',
+      });
     if (result.output === undefined) return;
     if (result.status !== 'succeeded') {
       ctx.addIssue({ code: 'custom', path: ['output'], message: 'output requires success' });

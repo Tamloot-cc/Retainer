@@ -528,3 +528,94 @@ describe('a chat turn', () => {
     expect(logs.join('\n')).not.toContain('sentinel-content-55aa');
   });
 });
+
+describe('a task turn', () => {
+  const OUTPUT = {
+    type: 'object',
+    properties: { round: { type: 'string' } },
+    required: ['round'],
+  } as const;
+  async function task(sessionId: string, text: string | null, repaired = false) {
+    const claim = await client.claim(sessionId, { streamToken: 'stream-token' });
+    const running = await runTurn(
+      { api: client, mastraUrl: db.mastraUrl },
+      { claim, text, task: { outputSchema: OUTPUT, repaired } },
+    );
+    await new Response(running.stream).text();
+    return running.done;
+  }
+  const json = (value: unknown, n = 5): FakeAnswer => ({
+    blocks: [{ type: 'text', text: JSON.stringify(value) }],
+    stopReason: 'end_turn',
+    usage: { input_tokens: n },
+  });
+
+  it('asks for native structured output and closes with the answer', async () => {
+    anthropic.enqueue(json({ round: 'Series B' }));
+    const outcome = await task(crypto.randomUUID(), 'Find the round.');
+    expect(outcome).toMatchObject({ status: 'completed', answer: { round: 'Series B' } });
+    const body = anthropic.requests[0]!.body;
+    // Native structured output (§3.4, the PR 2 check): the schema in
+    // output_config.format, closed, and no forced tool.
+    expect(body.output_config).toEqual({
+      effort: 'medium',
+      format: {
+        type: 'json_schema',
+        schema: expect.objectContaining({ ...OUTPUT, additionalProperties: false }),
+      },
+    });
+    expect(body.tool_choice).toEqual({ type: 'auto' });
+    expect(api.ofPath('/close').map((c) => c.body)).toEqual([
+      expect.objectContaining({ status: 'completed', answer: { round: 'Series B' } }),
+    ]);
+  });
+
+  it('gives an answer that misses the schema one repair turn', async () => {
+    anthropic.enqueue(json({ wrong: 1 }), json({ round: 'Seed' }));
+    const outcome = await task(crypto.randomUUID(), 'Find the round.');
+    expect(outcome).toMatchObject({ status: 'completed', answer: { round: 'Seed' } });
+    expect(anthropic.requests).toHaveLength(2);
+    expect(JSON.stringify(anthropic.requests[1]!.body.messages)).toContain(
+      "Your answer doesn't match the required shape",
+    );
+    expect(api.ofPath('/close').at(-1)?.body).toMatchObject({ repaired: true });
+  });
+
+  it('ends a second answer that misses the schema as invalid_output', async () => {
+    anthropic.enqueue(json({ wrong: 1 }), json({ wrong: 2 }));
+    const outcome = await task(crypto.randomUUID(), 'Find the round.');
+    expect(outcome).toMatchObject({ status: 'failed', errorCode: 'invalid_output' });
+    expect(outcome.answer).toBeUndefined();
+  });
+
+  it('gives a task whose repair turn was used no other', async () => {
+    anthropic.enqueue(json({ wrong: 1 }));
+    const outcome = await task(crypto.randomUUID(), 'Find the round.', true);
+    expect(outcome).toMatchObject({ status: 'failed', errorCode: 'invalid_output' });
+    expect(anthropic.requests).toHaveLength(1);
+  });
+
+  it('ends a refused task as refused, with no repair turn', async () => {
+    anthropic.enqueue({ blocks: [{ type: 'text', text: 'No.' }], stopReason: 'refusal' });
+    const outcome = await task(crypto.randomUUID(), 'Find the round.');
+    expect(outcome).toMatchObject({ status: 'refused' });
+    expect(anthropic.requests).toHaveLength(1);
+  });
+
+  it('continues a delivered-again job from its saved history without a new message', async () => {
+    const sessionId = crypto.randomUUID();
+    anthropic.enqueue(toolStep, json({ round: 'A' }));
+    await task(sessionId, 'Find the round.');
+    anthropic.enqueue(json({ round: 'B' }));
+    await task(sessionId, null);
+    const last = anthropic.requests.at(-1)!.body.messages as { role: string }[];
+    expect(last.filter((m) => m.role === 'user').length).toBeGreaterThanOrEqual(1);
+    const handle = createMastraStore({ connectionString: db.mastraUrl });
+    try {
+      const stored = await listSessionMessages(handle, sessionId);
+      expect(stored.filter((m) => m.role === 'user')).toHaveLength(1);
+    } finally {
+      await handle.close();
+    }
+  });
+});

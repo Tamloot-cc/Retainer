@@ -1,3 +1,4 @@
+import { cancelJobTasks } from '../agent-runtime/tasks.js';
 import type { Tx } from '../db/tx.js';
 import { finishMemberCleanup, recordCleanupFailure } from './lifecycle.js';
 
@@ -43,9 +44,16 @@ export async function cancelRuns(tx: Tx, installationId: string, cleanupGenerati
   await tx`update extension_attempts set status='cancelled',code='installation_disabled',finished_at=now()
     where finished_at is null and job_id in (select id from extension_jobs where installation_id=${installationId}
     and (${cleanupGeneration === undefined} or trigger_kind<>'disconnect'))`;
-  await tx`update extension_jobs set status='cancelled',code='installation_disabled',lease_owner=null,lease_until=null,updated_at=now()
-    where installation_id=${installationId} and status in ('queued','running')
-    and (${cleanupGeneration === undefined} or trigger_kind<>'disconnect')`;
+  const cancelled = await tx<
+    { id: string }[]
+  >`update extension_jobs set status='cancelled',code='installation_disabled',lease_owner=null,lease_until=null,updated_at=now()
+    where installation_id=${installationId} and status in ('queued','running','waiting')
+    and (${cleanupGeneration === undefined} or trigger_kind<>'disconnect') returning id`;
+  // An invocation waiting on an agent task is cancelled with its task (agent spec §9.2).
+  await cancelJobTasks(
+    tx,
+    cancelled.map((job) => job.id),
+  );
 }
 
 /** A terminal cleanup boundary records failure rather than cancelling the obligation. */

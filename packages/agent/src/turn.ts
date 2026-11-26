@@ -1,6 +1,7 @@
 import { toAISdkStream } from '@mastra/ai-sdk';
 import type { MastraDBMessage } from '@mastra/core/memory';
 import { RequestContext } from '@mastra/core/request-context';
+import { type AgentOutputSchema, answerProblem, fitAnswer, providerSchema } from '@retainer/shared';
 import {
   ANTHROPIC_PROVIDER_OPTIONS,
   buildTools,
@@ -31,7 +32,13 @@ export const TITLE_LENGTH = 80;
 
 export type TurnStatus = TurnCloseStatus;
 
-export type TurnOutcome = { status: TurnStatus; errorCode: string | null; steps: number };
+export type TurnOutcome = {
+  status: TurnStatus;
+  errorCode: string | null;
+  steps: number;
+  /** A task's answer, checked against its schema (spec §9.3). */
+  answer?: unknown;
+};
 
 export type TurnDeps = {
   api: RuntimeApi;
@@ -230,10 +237,44 @@ function sse(chunk: unknown): string {
 
 export type RunTurnInput = {
   claim: Claim;
-  /** The person's text (a chat), or the task's first message. */
-  text: string;
+  /**
+   * The person's text (a chat), or the task's first message. Null continues
+   * from the saved history without a new message: a task job delivered
+   * again resumes from its last saved step (spec §8.4, §9.3).
+   */
+  text: string | null;
   title?: string;
+  /** A task: its answer's schema, and whether its one repair turn is used (spec §9.3). */
+  task?: { outputSchema: AgentOutputSchema; repaired: boolean };
 };
+
+/** The message a task's repair turn sends when its answer doesn't fit the schema (spec §9.3). */
+export function repairMessage(problem: string): string {
+  return `Your answer doesn't match the required shape: ${problem}. Answer again with only the JSON the shape requires.`;
+}
+
+/** A task's answer from a finished segment: Mastra's structured object, or the text as JSON. */
+async function readAnswer(output: {
+  object?: PromiseLike<unknown>;
+  text?: PromiseLike<string>;
+}): Promise<{ value: unknown } | undefined> {
+  try {
+    const object = await output.object;
+    if (object !== undefined && object !== null) return { value: object };
+  } catch {
+    // The text below is the fallback.
+  }
+  try {
+    const text = (await output.text)?.trim() ?? '';
+    const json = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```$/, '')
+      .trim();
+    return json ? { value: JSON.parse(json) } : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export type RunningTurn = {
   /** The AI SDK UI message stream, SSE-framed. Starts once the message is saved. */
@@ -261,11 +302,14 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
   const logger = new ContentFreeLogger();
   const handle = createMastraStore({ connectionString: deps.mastraUrl, fence });
 
-  const closeTurn = async (status: TurnStatus, errorCode: string | null) => {
+  let taskRepaired = false;
+  const closeTurn = async (status: TurnStatus, errorCode: string | null, answer?: unknown) => {
     const body = {
       status,
       errorCode,
       durationMs: Date.now() - started,
+      ...(answer !== undefined ? { answer } : {}),
+      ...(input.task && taskRepaired ? { repaired: true } : {}),
     };
     for (let attempt = 0; attempt < 3 && Date.now() < fence; attempt++) {
       try {
@@ -306,11 +350,12 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
     const memory = await agent.getMemory();
     if (!memory) throw new Error('the agent has no memory');
     const thread = await memory.getThreadById({ threadId: sessionId });
+    if (!thread && input.text === null) throw new Error('nothing to continue from');
     if (!thread) {
       await memory.createThread({
         threadId: sessionId,
         resourceId: sessionId,
-        title: input.title ?? titleFrom(input.text),
+        title: input.title ?? titleFrom(input.text ?? ''),
         saveThread: true,
       });
     }
@@ -323,12 +368,12 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
       content: {
         format: 2,
         parts: [
-          { type: 'text', text: input.text },
+          { type: 'text', text: input.text ?? '' },
           ...claim.addedParts.map((text) => serverAddedTextPart(text)),
         ],
       },
     };
-    await memory.saveMessages({ messages: [message] });
+    if (input.text !== null) await memory.saveMessages({ messages: [message] });
   } catch (error) {
     logEvent('error', 'turn_setup_failed', {
       sessionId,
@@ -492,81 +537,121 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
     try {
       await send({ type: 'data-received', data: { messageId: message.id }, transient: true });
       let first = true;
-      let input: MastraDBMessage | MastraDBMessage[] = message;
-      // A turn continues across `pause_turn` within its limits (spec §3.4).
+      let next: MastraDBMessage | MastraDBMessage[] | string = input.text === null ? [] : message;
+      let repaired = input.task?.repaired ?? false;
+      let answer: { value: unknown } | undefined;
+      let lastOutput: { object?: PromiseLike<unknown>; text?: PromiseLike<string> } | undefined;
+      // A task gets one repair turn when its answer doesn't fit (spec §9.3).
       for (;;) {
-        segmentBase = stepIndex;
-        const output = await agent.stream(input as never, {
-          memory: { thread: sessionId, resource: sessionId },
-          runId: claim.runId,
-          savePerStep: true,
-          maxSteps: Math.max(1, claim.limits.maxSteps - stepIndex),
-          modelSettings: { maxOutputTokens: claim.limits.maxOutputTokens },
-          providerOptions: { anthropic: ANTHROPIC_PROVIDER_OPTIONS as never },
-          requestContext,
-          abortSignal: abort.signal,
-          onStepFinish: onStepFinish as never,
-          prepareStep: prepareStep as never,
-          hooks: {
-            beforeToolCall: () => {
-              toolCalls++;
-              if (toolCalls > claim.limits.maxToolCalls) {
-                return {
-                  proceed: false,
-                  output: {
-                    error: {
-                      code: 'tool_call_limit',
-                      message: 'This turn has made as many tool calls as it may.',
+        // A turn continues across `pause_turn` within its limits (spec §3.4).
+        for (;;) {
+          segmentBase = stepIndex;
+          const output = await agent.stream(
+            next as never,
+            {
+              memory: { thread: sessionId, resource: sessionId },
+              runId: claim.runId,
+              savePerStep: true,
+              maxSteps: Math.max(1, claim.limits.maxSteps - stepIndex),
+              modelSettings: { maxOutputTokens: claim.limits.maxOutputTokens },
+              providerOptions: { anthropic: ANTHROPIC_PROVIDER_OPTIONS as never },
+              // A task's typed answer: native structured output, never a forced
+              // tool, which Sonnet 5.5 refuses (spec §3.4).
+              ...(input.task
+                ? {
+                    structuredOutput: {
+                      schema: providerSchema(input.task.outputSchema) as never,
+                      // The runtime checks the answer itself, so a miss gets its
+                      // repair turn and a refusal reads as one (§9.3).
+                      errorStrategy: 'warn',
                     },
-                  },
-                };
+                  }
+                : {}),
+              requestContext,
+              abortSignal: abort.signal,
+              onStepFinish: onStepFinish as never,
+              prepareStep: prepareStep as never,
+              hooks: {
+                beforeToolCall: () => {
+                  toolCalls++;
+                  if (toolCalls > claim.limits.maxToolCalls) {
+                    return {
+                      proceed: false,
+                      output: {
+                        error: {
+                          code: 'tool_call_limit',
+                          message: 'This turn has made as many tool calls as it may.',
+                        },
+                      },
+                    };
+                  }
+                  return undefined;
+                },
+              },
+              // The options differ by overload once structuredOutput is set.
+            } as never,
+          );
+          const ui = toAISdkStream(
+            output as never,
+            {
+              from: 'agent',
+              version: UI_MESSAGE_VERSION,
+              sendReasoning: true,
+              sendSources: true,
+              sendStart: first,
+              sendFinish: false,
+              onError: (error: unknown) => classifyModelError(error).code,
+            } as never,
+          ) as ReadableStream<unknown>;
+          first = false;
+          const readFull = (async () => {
+            for await (const chunk of output.fullStream as AsyncIterable<{
+              type: string;
+              payload?: { stepResult?: { rawReason?: string }; error?: unknown };
+            }>) {
+              if (chunk.type === 'step-finish') {
+                recordRawReason(chunk.payload?.stepResult?.rawReason ?? null);
+              } else if (chunk.type === 'error') {
+                modelError ??= chunk.payload?.error;
               }
-              return undefined;
-            },
-          },
-        });
-        const ui = toAISdkStream(
-          output as never,
-          {
-            from: 'agent',
-            version: UI_MESSAGE_VERSION,
-            sendReasoning: true,
-            sendSources: true,
-            sendStart: first,
-            sendFinish: false,
-            onError: (error: unknown) => classifyModelError(error).code,
-          } as never,
-        ) as ReadableStream<unknown>;
-        first = false;
-        const readFull = (async () => {
-          for await (const chunk of output.fullStream as AsyncIterable<{
-            type: string;
-            payload?: { stepResult?: { rawReason?: string }; error?: unknown };
-          }>) {
-            if (chunk.type === 'step-finish') {
-              recordRawReason(chunk.payload?.stepResult?.rawReason ?? null);
-            } else if (chunk.type === 'error') {
-              modelError ??= chunk.payload?.error;
             }
+          })();
+          const readUi = (async () => {
+            for await (const chunk of ui as unknown as AsyncIterable<unknown>) await send(chunk);
+          })();
+          await Promise.all([readFull, readUi]);
+          await lastReport;
+          lastOutput = output as never;
+          const lastRaw = rawReasons.at(-1) ?? null;
+          if (
+            lastRaw === 'pause_turn' &&
+            !stopCause &&
+            !modelError &&
+            stepIndex < claim.limits.maxSteps &&
+            Date.now() < deadline
+          ) {
+            next = [];
+            continue;
           }
-        })();
-        const readUi = (async () => {
-          for await (const chunk of ui as unknown as AsyncIterable<unknown>) await send(chunk);
-        })();
-        await Promise.all([readFull, readUi]);
-        await lastReport;
-        const lastRaw = rawReasons.at(-1) ?? null;
-        if (
-          lastRaw === 'pause_turn' &&
-          !stopCause &&
-          !modelError &&
-          stepIndex < claim.limits.maxSteps &&
-          Date.now() < deadline
-        ) {
-          input = [];
-          continue;
+          break;
         }
-        break;
+        const ended = rawReasons.at(-1) ?? null;
+        if (
+          !input.task ||
+          stopCause ||
+          modelError ||
+          (ended !== 'end_turn' && ended !== 'stop_sequence')
+        )
+          break;
+        answer = lastOutput ? await readAnswer(lastOutput) : undefined;
+        const problem = answer
+          ? answerProblem(input.task.outputSchema, answer.value)
+          : 'the answer was not JSON';
+        if (!problem) break;
+        answer = undefined;
+        if (repaired || stepIndex >= claim.limits.maxSteps || Date.now() >= deadline) break;
+        repaired = true;
+        next = repairMessage(problem);
       }
 
       const lastRaw = rawReasons.at(-1) ?? null;
@@ -582,7 +667,20 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
       } else {
         ({ status, code } = statusFromStop(lastRaw, lastFinishReason));
       }
-      outcome = { status, errorCode: code, steps: stepIndex };
+      // A task finished without an answer that fits ends as `invalid_output`.
+      if (input.task && status === 'completed' && !answer) {
+        status = 'failed';
+        code = 'invalid_output';
+      }
+      outcome = {
+        status,
+        errorCode: code,
+        steps: stepIndex,
+        ...(input.task && answer && status === 'completed'
+          ? { answer: fitAnswer(input.task.outputSchema, answer.value) }
+          : {}),
+      };
+      taskRepaired = repaired;
     } catch (error) {
       // An abort lands here too: it ends the turn the way its cause says.
       const classified = stopCause ? statusFromStopCause(stopCause) : classifyModelError(error);
@@ -597,7 +695,7 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
     // frozen once its response ends, and a client may send its next message
     // as soon as it sees the end.
     await handle.close().catch(() => {});
-    await closeTurn(outcome.status, outcome.errorCode);
+    await closeTurn(outcome.status, outcome.errorCode, outcome.answer);
     if (outcome.status !== 'completed') {
       await send({
         type: 'data-turn-end',

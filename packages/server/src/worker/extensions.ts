@@ -175,6 +175,20 @@ export class ExtensionExecutor {
           row.bindings_revision,
         );
       });
+      // A child job of an agent task carries its answer (agent spec §9.2).
+      const agentResult = await inWorkspace(this.options.sql, job.workspaceId, async (tx) => {
+        const [task] = await tx<
+          { session_id: string; state: string; answer: unknown; code: string | null }[]
+        >`
+          select t.session_id, t.state, t.answer, t.code from extension_jobs j
+          join agent_tasks t on t.session_id = j.agent_task_id
+          where j.id = ${job.jobId} and j.dedupe_key = 'agent-result:' || t.session_id::text
+            and t.state in ('completed', 'failed')`;
+        if (!task) return undefined;
+        return task.state === 'completed'
+          ? { taskId: task.session_id, status: 'completed' as const, answer: task.answer ?? null }
+          : { taskId: task.session_id, status: 'failed' as const, code: task.code ?? 'failed' };
+      });
       const invocation = decodeInvocation(
         JSON.stringify({
           protocolVersion: 1,
@@ -189,6 +203,7 @@ export class ExtensionExecutor {
           runToken,
           deadline: job.deadline.toISOString(),
           ...(model ? { model } : {}),
+          ...(agentResult ? { agentResult } : {}),
         }),
       );
       // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.

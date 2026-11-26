@@ -72,9 +72,27 @@ export class ChangeCollector {
           { cause: string[]; cause_depth: number | null }[]
         >`select cause,cause_depth from extension_jobs where id=${caller.run.jobId}`
       : [];
-    const origin = caller.run?.installationId ?? caller.installation?.installationId ?? null;
-    let chain = job?.cause ?? [],
-      depth = job ? (job.cause_depth ?? job.cause.length) : 0;
+    // An agent task's writes keep its parent's cause chain (agent spec §7.2):
+    // a routine's like the routine's own, an extension's like its job's.
+    const task = caller.agent?.task;
+    const [taskRow] = task
+      ? await tx<{ cause: string[]; cause_depth: number }[]>`
+          select cause,cause_depth from agent_tasks where session_id=${caller.agent?.sessionId ?? ''}`
+      : [];
+    const origin =
+      caller.run?.installationId ??
+      caller.installation?.installationId ??
+      (task?.kind === 'extension' ? task.installationId : null);
+    let chain = job?.cause ?? taskRow?.cause ?? [],
+      depth = job
+        ? (job.cause_depth ?? job.cause.length)
+        : task?.kind === 'extension' && taskRow
+          ? taskRow.cause_depth
+          : 0;
+    if (task?.kind === 'routine' && taskRow) {
+      chain = taskRow.cause;
+      depth = taskRow.cause_depth;
+    }
     const causedBy = caller.installation?.causedBy;
     if (!caller.run && caller.installation && causedBy) {
       // A standalone app has no server-side job; it names the changes and
@@ -118,7 +136,9 @@ export class ChangeCollector {
       if (!chain.includes(self)) chain = [...chain, self];
     }
     if (origin && !chain.includes(origin)) chain = [...chain, origin];
-    if (origin) depth = causedBy && !caller.run ? 1 : depth + (job?.cause.includes(origin) ? 0 : 1);
+    if (origin)
+      depth =
+        causedBy && !caller.run ? 1 : depth + ((job ?? taskRow)?.cause.includes(origin) ? 0 : 1);
     const collector = new ChangeCollector(caller.workspaceId, schema, origin, chain, depth);
     return ChangeCollector.attach(tx, collector);
   }

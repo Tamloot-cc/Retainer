@@ -116,7 +116,7 @@ export async function eraseRoutineContent(tx: Tx, workspaceId: string) {
     where workspace_id=${workspaceId} and result is not null`;
   await tx`update routine_runs set output=null where workspace_id=${workspaceId} and output is not null`;
   await tx`update routine_runs r set status='erased',code='run_erased',fence=fence+1,finished_at=clock_timestamp(),
-    lease_owner=null,lease_until=null where r.workspace_id=${workspaceId} and (r.status='running'
+    lease_owner=null,lease_until=null where r.workspace_id=${workspaceId} and (r.status in ('running','waiting')
       or (r.status in ('queued','held') and (r.input ? 'triggerRecord'
         or exists(select 1 from routine_run_results x where x.run_id=r.id))))`;
   await tx`update routine_runs set input=nullif(input-'triggerRecord','{}'::jsonb)
