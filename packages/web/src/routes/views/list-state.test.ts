@@ -275,6 +275,11 @@ describe('many-to-many relations', () => {
 });
 
 describe('sort', () => {
+  it('sorts money columns when the field is filterable', () => {
+    expect(isSortable(field('amount', { type: 'money', isFilterable: true }))).toBe(true);
+    expect(isSortable(field('amount', { type: 'money', isFilterable: false }))).toBe(false);
+  });
+
   it('cycles ascending, descending, then off', () => {
     const asc = nextSort(undefined, 'name');
     expect(parseSort(asc)).toEqual({ field: 'name', direction: 'asc' });

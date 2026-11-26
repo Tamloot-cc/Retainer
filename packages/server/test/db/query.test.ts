@@ -45,7 +45,7 @@ beforeAll(async () => {
     {
       name: 'Globex pilot',
       stage: 'proposal',
-      amount: { amountMicros: 5_000_000_000, currency: 'USD' },
+      amount: { amountMicros: 9_000_000_000, currency: 'EUR' },
       closeDate: '2026-12-15',
     },
     { name: 'Acme expansion', stage: 'negotiation', closeDate: '2027-01-10' },
@@ -129,6 +129,19 @@ describe('query_records', () => {
     expect(second.nextCursor).toBeNull();
   });
 
+  it('sorts money by its numeric amount across currencies, with missing amounts last', async () => {
+    expect(await labels('deal', { sort: [{ field: 'amount', direction: 'asc' }] })).toEqual([
+      'Globex pilot',
+      'Acme renewal',
+      'Acme expansion',
+    ]);
+    expect(await labels('deal', { sort: [{ field: 'amount', direction: 'desc' }] })).toEqual([
+      'Acme renewal',
+      'Globex pilot',
+      'Acme expansion',
+    ]);
+  });
+
   it('explains what can be filtered and how', async () => {
     await expect(query('person', { filter: { address: { contains: 'x' } } })).rejects.toMatchObject(
       {
@@ -142,8 +155,9 @@ describe('query_records', () => {
     await expect(query('deal', { filter: { stage: 'closed' } })).rejects.toMatchObject({
       details: { allowed: ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] },
     });
-    await expect(query('deal', { sort: [{ field: 'amount' }] })).rejects.toMatchObject({
-      message: 'cannot sort by "amount"',
+    await expect(query('deal', { sort: [{ field: 'unknown' }] })).rejects.toMatchObject({
+      message: 'cannot sort by "unknown"',
+      details: { allowed: expect.arrayContaining(['amount', 'closeDate']) },
     });
   });
 

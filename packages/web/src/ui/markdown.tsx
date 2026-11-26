@@ -29,8 +29,30 @@ export function Markdown({ children, className }: { children: string; className?
           h5: ({ node: _, ...props }) => <h5 {...props} dir="auto" />,
           h6: ({ node: _, ...props }) => <h6 {...props} dir="auto" />,
           blockquote: ({ node: _, ...props }) => <blockquote {...props} dir="auto" />,
-          th: ({ node: _, ...props }) => <th {...props} dir="auto" />,
-          td: ({ node: _, ...props }) => <td {...props} dir="auto" />,
+          table: ({ node: _, ...props }) => (
+            <section
+              aria-label="Markdown table"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: lets keyboard users scroll a wide table.
+              tabIndex={0}
+              className="my-3 max-w-full overflow-x-auto rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <table
+                {...props}
+                className="w-full border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
+              />
+            </section>
+          ),
+          th: ({ node: _, ...props }) => (
+            <th
+              {...props}
+              scope="col"
+              dir="auto"
+              className="whitespace-nowrap border-b border-border bg-muted/50 px-3 py-2 text-start align-top text-xs font-medium text-muted-foreground"
+            />
+          ),
+          td: ({ node: _, ...props }) => (
+            <td {...props} dir="auto" className="border-b border-border px-3 py-2 align-top" />
+          ),
           pre: ({ node: _, ...props }) => <pre {...props} dir="ltr" />,
           a: ({ node: _, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
         }}

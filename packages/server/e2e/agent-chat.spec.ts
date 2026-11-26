@@ -65,6 +65,43 @@ test.describe('with the agent', () => {
     await expect(page.getByText('No chats yet')).toBeVisible();
   });
 
+  test('scrolls a wide Markdown table inside a narrow chat', async ({ page, retainer: r }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    r.anthropic?.enqueue({
+      blocks: [
+        {
+          type: 'text',
+          text: [
+            'Here are the companies in the demo workspace.',
+            '',
+            '| Company | Estimated revenue | Business stage | Headquarters | Next step |',
+            '| --- | --- | --- | --- | --- |',
+            '| Northstar Labs | $1.8M | Growth | Boston | Review the pilot |',
+            '| Cedar Works | $920K | Early stage | Portland | Schedule a call |',
+            '| Juniper Systems | — | Early stage | Denver | Confirm revenue |',
+            '',
+            '- Revenue is unavailable for Juniper Systems.',
+          ].join('\n'),
+        },
+      ],
+      stopReason: 'end_turn',
+    });
+    await signIn(page, r.url, r.keys.user);
+    await page.goto(`${r.url}/app/chat`);
+    await page.getByRole('textbox', { name: 'Message' }).fill('Compare the demo companies.');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    const messages = page.getByRole('list', { name: 'Messages' });
+    const region = messages.getByRole('region', { name: 'Markdown table' });
+    await expect(region.getByRole('columnheader', { name: 'Next step' })).toBeVisible();
+    await expect(messages.getByText('Revenue is unavailable for Juniper Systems.')).toBeVisible();
+    expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
+    await region.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  });
+
   test('stops a turn that is taking long', async ({ page, retainer: r }) => {
     r.anthropic?.enqueue({
       blocks: [{ type: 'text', text: 'This answer never arrives.' }],
