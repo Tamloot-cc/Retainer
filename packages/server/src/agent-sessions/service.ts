@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BASE_SYSTEM_PROMPT,
   createMastraStore,
+  DASHBOARD_PROMPT,
   type MastraStoreHandle,
   RETAINER_WRITE_TOOL_NAMES,
   readChatMessages,
@@ -245,7 +246,7 @@ export class AgentSessions {
         insert into agent_sessions (workspace_id, kind, owner, person_id, tools, extension_tools, system_blocks, limits)
         values (${caller.workspaceId}, 'chat', ${owned.owner}, ${owned.personId},
           ${tx.json(jsonValue(tools))}, ${tx.json(jsonValue(extensionTools))},
-          ${tx.json([BASE_SYSTEM_PROMPT])}, ${tx.json(jsonValue(CHAT_LIMITS))})
+          ${tx.json([BASE_SYSTEM_PROMPT, DASHBOARD_PROMPT])}, ${tx.json(jsonValue(CHAT_LIMITS))})
         returning *`;
       if (!row) throw new Error('chat insert returned no row');
       return { id: row.id, title: row.title, createdAt: row.created_at.toISOString() };

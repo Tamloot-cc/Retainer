@@ -1,4 +1,4 @@
-import { RETAINER_TOOL_NAMES } from '@retainer/agent';
+import { BASE_SYSTEM_PROMPT, DASHBOARD_PROMPT, RETAINER_TOOL_NAMES } from '@retainer/agent';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { maintainAgents } from '../../src/agent-sessions/maintenance.js';
 import { EXECUTOR_ROLE } from '../../src/config.js';
@@ -129,7 +129,8 @@ describe('chats', () => {
     expect(row?.owner).toBe('key:desk');
     expect(row?.tools.map((tool) => tool.name)).toEqual([...RETAINER_TOOL_NAMES, 'web_search']);
     expect(row?.tools.some((tool) => tool.kind === 'extension')).toBe(false);
-    expect(row?.system_blocks).toHaveLength(1);
+    // The base prompt, then how to answer with a dashboard (spike).
+    expect(row?.system_blocks).toEqual([BASE_SYSTEM_PROMPT, DASHBOARD_PROMPT]);
 
     const list = await t.request('/v1/agent/chats', { key: keys.writer });
     expect(list.body.chats.map((chat: { id: string }) => chat.id)).toContain(id);

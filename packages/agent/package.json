@@ -23,6 +23,7 @@
     "@mastra/core": "1.86.0",
     "@mastra/memory": "1.41.3",
     "@mastra/pg": "1.38.0",
+    "@openuidev/lang-core": "1.2.0",
     "@retainer/shared": "workspace:*",
     "hono": "^4.13.19",
     "pg": "^8.23.1",

@@ -13,8 +13,15 @@ import {
   Search,
   Wrench,
 } from 'lucide-react';
-import { memo, type ReactNode, useState } from 'react';
+import { lazy, memo, type ReactNode, Suspense, useState } from 'react';
 import remend from 'remend';
+import { applyPatch, hasProgram, programAfter, splitAnswer } from '../../ui/dashboard/program.js';
+
+/** The dashboard renderer loads only when an answer has a dashboard. */
+const DashboardView = lazy(() =>
+  import('../../ui/dashboard/dashboard.js').then((m) => ({ default: m.DashboardView })),
+);
+
 import {
   Button,
   CopyButton,
@@ -359,8 +366,63 @@ function CopyMessage({ text, label }: { text: string; label: string }) {
 }
 
 /** One assistant message: its steps, answer, endings and sources, in order. */
-function AssistantParts({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+/**
+ * An answer's text, with any dashboard in it shown live (spike). A program
+ * changes the dashboard before it in the chat (`base`): the agent writes
+ * only the statements that changed.
+ */
+function AnswerText({
+  text,
+  streaming,
+  base,
+}: {
+  text: string;
+  streaming: boolean;
+  base: string | null;
+}) {
+  if (!hasProgram(text))
+    return (
+      <Markdown className="text-sm leading-relaxed">
+        {/* Closes markdown cut off mid-stream (a bold, a link, a table) so it doesn't flicker. */}
+        {streaming ? remend(text) : text}
+      </Markdown>
+    );
+  let program = base;
+  const segments = splitAnswer(text);
+  return (
+    <>
+      {segments.map((segment, at) => {
+        if (segment.kind === 'text')
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+            <Markdown key={at} className="text-sm leading-relaxed">
+              {streaming && at === segments.length - 1 ? remend(segment.text) : segment.text}
+            </Markdown>
+          );
+        if (!segment.code.trim()) return null;
+        program = applyPatch(program, segment.code);
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
+          <Suspense key={at} fallback={null}>
+            <DashboardView program={program} streaming={streaming && !segment.complete} />
+          </Suspense>
+        );
+      })}
+    </>
+  );
+}
+
+function AssistantParts({
+  message,
+  streaming,
+  base,
+}: {
+  message: ChatMessage;
+  streaming: boolean;
+  base: string | null;
+}) {
   const segments = segmentParts(message.parts);
+  let program = base;
   return (
     <>
       {segments.map((segment, at) => {
@@ -369,13 +431,13 @@ function AssistantParts({ message, streaming }: { message: ChatMessage; streamin
         if (segment.kind === 'steps')
           return <Steps key={key} parts={segment.parts} live={streaming && last} />;
         const { part } = segment;
-        if (part.type === 'text')
+        if (part.type === 'text') {
+          const before = program;
+          program = programAfter(program, [part.text]);
           return (
-            <Markdown key={key} className="text-sm leading-relaxed">
-              {/* Closes markdown cut off mid-stream (a bold, a link, a table) so it doesn't flicker. */}
-              {streaming && last ? remend(part.text) : part.text}
-            </Markdown>
+            <AnswerText key={key} text={part.text} streaming={streaming && last} base={before} />
           );
+        }
         const ending = turnEnd(part);
         if (ending)
           return (
@@ -440,11 +502,14 @@ const AgentMessage = memo(function AgentMessage({
   actions,
   mood,
   onRetry,
+  base,
 }: {
   message: ChatMessage;
   answering: boolean;
   last: boolean;
   actions: boolean;
+  /** The chat's dashboard before this message, which its programs change. */
+  base: string | null;
   /** Set on the message that shows the mark. */
   mood?: LogoMood;
   onRetry?: () => void;
@@ -452,7 +517,7 @@ const AgentMessage = memo(function AgentMessage({
   const answer = answerText(message);
   return (
     <AgentTurn mark={mood ? <LogoMark mood={mood} size={32} className="shrink-0" /> : undefined}>
-      <AssistantParts message={message} streaming={answering} />
+      <AssistantParts message={message} streaming={answering} base={base} />
       {actions && !answering && (answer || onRetry) ? (
         <MessageFooter pinned={last}>
           {answer ? <CopyMessage text={answer} label="Copy answer" /> : null}
@@ -500,8 +565,15 @@ export function ChatMessages({
   /** Sends the last message again; offered under the last answer. */
   onRetry?: () => void;
 }) {
+  let program: string | null = null;
   const turns = messages.flatMap((message, index) => {
     const last = index === messages.length - 1;
+    const base = program;
+    if (message.role === 'assistant')
+      program = programAfter(
+        program,
+        message.parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])),
+      );
     if (message.role === 'user')
       return [
         {
@@ -523,6 +595,7 @@ export function ChatMessages({
             actions={mark}
             mood={last && mark && !waiting ? mood : undefined}
             onRetry={last ? onRetry : undefined}
+            base={base}
           />
         ),
       },

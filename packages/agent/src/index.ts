@@ -1,4 +1,5 @@
 export type { ToolAnswer } from './api-client.js';
+export { checkDashboard, DASHBOARD_PROMPT, mergeDashboard } from './dashboards.js';
 export {
   listSessionMessages,
   readChatMessages,
