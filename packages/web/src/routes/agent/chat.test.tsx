@@ -1,5 +1,5 @@
 import type { SchemaDescription, Session } from '@retainer/shared';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -65,17 +65,35 @@ const saved = [
   },
 ];
 
-function chat(
-  over: { running?: boolean; messages?: unknown[]; lastTurnStatus?: string | null } = {},
-) {
+function chat(over: { running?: boolean; messages?: unknown[] } = {}) {
   return vi.spyOn(api, 'agentChat').mockResolvedValue({
     id: 'chat-1',
     title: 'Who is Dana?',
     running: over.running ?? false,
-    lastTurnStatus: over.lastTurnStatus ?? 'completed',
     messages: (over.messages ?? saved) as never,
   });
 }
+
+/** A new chat, and the server's copy of it once a turn has ended. */
+function chatAfterTurn(messages: unknown[], title: string | null = 'Who is Dana?') {
+  return vi
+    .spyOn(api, 'agentChat')
+    .mockResolvedValueOnce({ id: 'chat-1', title, running: false, messages: [] })
+    .mockResolvedValue({
+      id: 'chat-1',
+      title: title ?? 'Tell me about Acme',
+      running: false,
+      messages: messages as never,
+    });
+}
+const asked = (text: string) => ({ id: 'u2', role: 'user', parts: [{ type: 'text', text }] });
+
+/** A turn's ending as the chat read places it: after the turn's messages. */
+const ended = (status: string) => ({
+  id: 'end',
+  role: 'assistant',
+  parts: [{ type: 'data-turn-end', data: { status, code: null } }],
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -99,7 +117,24 @@ describe('ChatPage', () => {
 
   it('sends exactly one text part to the stream URL with a fresh token, and streams the answer', async () => {
     router.params = { id: 'chat-1' };
-    chat({ messages: [] });
+    chatAfterTurn([
+      asked('Tell me about Acme'),
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-search',
+            toolCallId: 't2',
+            state: 'output-available',
+            input: { query: 'Acme' },
+            output: { results: [] },
+          },
+          { type: 'text', text: 'Acme is a customer.', state: 'done' },
+        ],
+      },
+    ]);
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
     const token = vi
       .spyOn(api, 'agentChatToken')
       .mockResolvedValue({ token: 'stream-token', expiresAt: '', streamUrl: STREAM_URL });
@@ -139,15 +174,13 @@ describe('ChatPage', () => {
 
   it("shows the chat's title once its first message has set it", async () => {
     router.params = { id: 'chat-1' };
-    const detail = vi
-      .spyOn(api, 'agentChat')
-      .mockResolvedValueOnce({ id: 'chat-1', title: null, running: false, messages: [] })
-      .mockResolvedValue({
-        id: 'chat-1',
-        title: 'Tell me about Acme',
-        running: false,
-        messages: [],
-      });
+    const detail = chatAfterTurn(
+      [
+        asked('Tell me about Acme'),
+        { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Acme is a customer.' }] },
+      ],
+      null,
+    );
     vi.spyOn(api, 'agentChatToken').mockResolvedValue({
       token: 'stream-token',
       expiresAt: '',
@@ -173,14 +206,15 @@ describe('ChatPage', () => {
       'Tell me about Acme{Enter}',
     );
     expect(await screen.findByRole('heading', { name: 'Tell me about Acme' })).toBeTruthy();
-    // The streamed answer stays: the refetch doesn't replace what was streamed.
-    expect(screen.getByText('Acme is a customer.')).toBeTruthy();
+    // The server's copy replaced what was streamed, answer included.
+    expect(await screen.findByText('Acme is a customer.')).toBeTruthy();
     expect(detail).toHaveBeenCalledTimes(2);
   });
 
   it('says in plain words how a turn ended, and offers a new chat when this one is over', async () => {
     router.params = { id: 'chat-1' };
-    chat({ messages: [] });
+    chatAfterTurn([asked('Hi'), ended('context_limit_reached')]);
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
     vi.spyOn(api, 'agentChatToken').mockResolvedValue({
       token: 't',
       expiresAt: '',
@@ -203,32 +237,101 @@ describe('ChatPage', () => {
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
   });
 
-  it('shows how the last turn ended after a reload, which the saved messages do not carry', async () => {
+  it("doesn't let a copy fetched mid-turn replace the stream, and takes the server's after", async () => {
     router.params = { id: 'chat-1' };
-    chat({ lastTurnStatus: 'context_limit_reached' });
+    const detail = vi
+      .spyOn(api, 'agentChat')
+      .mockResolvedValueOnce({ id: 'chat-1', title: 'Hi', running: false, messages: [] })
+      // Mid-turn: only the person's message is saved yet.
+      .mockResolvedValueOnce({
+        id: 'chat-1',
+        title: 'Hi',
+        running: true,
+        messages: [asked('Hi')] as never,
+      })
+      .mockResolvedValue({
+        id: 'chat-1',
+        title: 'Hi',
+        running: false,
+        messages: [
+          asked('Hi'),
+          { id: 'a2', role: 'assistant', parts: [{ type: 'text', text: 'Hello there.' }] },
+          ended('refused'),
+        ] as never,
+      });
+    vi.spyOn(api, 'agentChatToken').mockResolvedValue({
+      token: 't',
+      expiresAt: '',
+      streamUrl: STREAM_URL,
+    });
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    const encoder = new TextEncoder();
+    let finish = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                const write = (chunk: unknown) =>
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+                write({ type: 'start', messageId: 'a2' });
+                write({ type: 'text-start', id: 'x' });
+                write({ type: 'text-delta', id: 'x', delta: 'Hello there.' });
+                finish = () => {
+                  write({ type: 'text-end', id: 'x' });
+                  write({ type: 'data-turn-end', data: { status: 'refused', code: null } });
+                  write({ type: 'finish' });
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                  controller.close();
+                };
+              },
+            }),
+            {
+              headers: {
+                'content-type': 'text/event-stream',
+                'x-vercel-ai-ui-message-stream': 'v1',
+              },
+            },
+          ),
+      ),
+    );
+    show(<ChatPage />);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Message' }), 'Hi{Enter}');
+    expect(await screen.findByText('Hello there.')).toBeTruthy();
+    // The person leaves the tab and comes back: the chat is fetched mid-turn.
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Hello there.')).toBeTruthy();
+    finish();
+    // The turn ended: the server's copy, with its ending, is what shows.
+    expect(await screen.findByText('The agent declined to answer this.')).toBeTruthy();
+    await waitFor(() => expect(detail).toHaveBeenCalledTimes(3));
+    expect(screen.getByText('Hello there.')).toBeTruthy();
+    expect(screen.getByText('The agent declined to answer this.')).toBeTruthy();
+  });
+
+  it('shows how a turn ended after a reload, from the saved chat', async () => {
+    router.params = { id: 'chat-1' };
+    chat({ messages: [...saved, ended('context_limit_reached')] });
     show(<ChatPage />);
     expect(await screen.findByText(/too long to continue/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Start a new chat' })).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull();
   });
 
-  it('after Stop, says the turn was stopped and keeps what was shown', async () => {
+  it('after Stop, shows the saved chat, which says the turn was stopped', async () => {
     router.params = { id: 'chat-1' };
     const detail = vi
       .spyOn(api, 'agentChat')
-      .mockResolvedValueOnce({
-        id: 'chat-1',
-        title: 'Who is Dana?',
-        running: false,
-        lastTurnStatus: null,
-        messages: [],
-      })
+      .mockResolvedValueOnce({ id: 'chat-1', title: 'Who is Dana?', running: false, messages: [] })
       .mockResolvedValue({
         id: 'chat-1',
         title: 'Who is Dana?',
         running: false,
-        lastTurnStatus: 'cancelled',
-        messages: saved.slice(0, 1) as never,
+        messages: [...saved.slice(0, 1), ended('cancelled')] as never,
       });
     vi.spyOn(api, 'agentChatToken').mockResolvedValue({
       token: 't',

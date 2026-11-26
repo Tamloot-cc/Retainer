@@ -82,6 +82,7 @@ function noTaskText(call: AgentCall) {
   if (call.state === 'failed' && !AGENT_TASK_ERROR_CODES.includes(call.code as AgentTaskErrorCode))
     return `The routine’s call to the agent was refused${call.code ? `: ${call.code.replaceAll('_', ' ')}` : ''}. No task was started.`;
   if (call.state === 'started') return 'The agent hasn’t started on it yet.';
+  // Retention deletes the task with its session (§5.4), so only a missing task was erased.
   return ERASED;
 }
 
@@ -101,7 +102,11 @@ function AgentTask({ call, task }: { call: AgentCall; task?: RoutineRunAgentTask
       {!task ? (
         <Muted small>{noTaskText(call)}</Muted>
       ) : task.messages.length === 0 ? (
-        <Muted small>{task.finishedAt ? ERASED : 'The agent hasn’t started on it yet.'}</Muted>
+        <Muted small>
+          {task.finishedAt
+            ? 'It ended before the agent saved anything, so there are no messages to show.'
+            : 'The agent hasn’t started on it yet.'}
+        </Muted>
       ) : (
         <>
           <ChatMessages messages={task.messages as unknown as ChatMessage[]} mark={false} />

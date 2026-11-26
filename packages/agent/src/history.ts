@@ -43,3 +43,44 @@ export async function readChatMessages(
   const stored = withoutServerAddedParts(await listSessionMessages(handle, sessionId));
   return toAISdkMessages(stored, { version: UI_MESSAGE_VERSION });
 }
+
+/** A turn's ending for the chat read: the ID its person's message was saved under. */
+export type TurnEnding = { messageId: string; status: string; code: string | null };
+
+type UIMessageLike = { id: string; role: string; parts: unknown[] };
+
+/**
+ * Places each turn's ending after that turn's messages (spec §6.1), in the
+ * shape the stream sends it: a `data-turn-end` part on the turn's last
+ * assistant message, or on an assistant message of its own when the turn
+ * saved none. A turn's messages run from its person's message to the next
+ * person's message. An ending whose message was never saved (the turn died
+ * first) has nowhere to go and is left out. Nothing here is stored: Mastra's
+ * history stays as Mastra saved it.
+ */
+export function withTurnEndings<M extends UIMessageLike>(
+  messages: M[],
+  endings: TurnEnding[],
+): M[] {
+  const byMessage = new Map(endings.map((ending) => [ending.messageId, ending]));
+  const out: M[] = [];
+  let pending: TurnEnding | undefined;
+  const flush = () => {
+    if (!pending) return;
+    const part = { type: 'data-turn-end', data: { status: pending.status, code: pending.code } };
+    const last = out.at(-1);
+    if (last && last.role === 'assistant')
+      out[out.length - 1] = { ...last, parts: [...last.parts, part] };
+    else out.push({ id: `turn-end-${pending.messageId}`, role: 'assistant', parts: [part] } as M);
+    pending = undefined;
+  };
+  for (const message of messages) {
+    if (message.role === 'user') {
+      flush();
+      pending = byMessage.get(message.id);
+    }
+    out.push(message);
+  }
+  flush();
+  return out;
+}

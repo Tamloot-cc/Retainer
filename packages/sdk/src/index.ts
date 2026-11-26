@@ -1446,12 +1446,7 @@ export type AgentChatDetail = {
   id: string;
   title: string | null;
   running: boolean;
-  /**
-   * How the chat's last turn ended (`completed`, `cancelled`, `refused`,
-   * `context_limit_reached`, …), or null before its first turn. The ending isn't
-   * in the saved messages, so a reloaded chat reads it here.
-   */
-  lastTurnStatus?: string | null;
+  /** Oldest first; each turn that didn't complete ends with a `data-turn-end` part. */
   messages: Array<{ id: string; role: string; parts: Array<Record<string, unknown>> }>;
 };
 export type AgentStreamToken = { token: string; expiresAt: string; streamUrl: string };

@@ -2,8 +2,10 @@ export type { ToolAnswer } from './api-client.js';
 export {
   listSessionMessages,
   readChatMessages,
+  type TurnEnding,
   UI_MESSAGE_VERSION,
   withoutServerAddedParts,
+  withTurnEndings,
 } from './history.js';
 export { MAX_MESSAGE_CHARS, MAX_STREAM_BODY_BYTES } from './limits.js';
 export { isServerAddedPart, type ServerAddedTextPart, serverAddedTextPart } from './parts.js';

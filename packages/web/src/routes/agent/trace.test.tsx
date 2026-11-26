@@ -79,15 +79,18 @@ describe('AgentTrace', () => {
     expect(tasks).toHaveBeenCalledWith('routine-1', 'run-1', expect.anything());
   });
 
-  it('says plainly when retention has erased a task', async () => {
+  it('says plainly when retention has erased a task, and when one saved nothing', async () => {
     vi.spyOn(api, 'routineRunAgentTasks').mockResolvedValue({
-      tasks: [task({ position: 4, messages: [] })],
+      tasks: [task({ position: 4, state: 'cancelled', code: 'cancelled', messages: [] })],
     });
-    show([done(1), done(4)]);
+    show([done(1), { position: 4, state: 'failed', code: 'cancelled' }]);
+    // Retention deletes a task with its session: a call with no task was erased.
     const gone = await screen.findByRole('article', { name: "The agent's task for call 1" });
     expect(within(gone).getByText(/no longer kept/)).toBeTruthy();
-    const emptied = screen.getByRole('article', { name: "The agent's task for call 4" });
-    expect(within(emptied).getByText(/no longer kept/)).toBeTruthy();
+    // A task cancelled before it saved anything is still there, with no messages.
+    const empty = screen.getByRole('article', { name: "The agent's task for call 4" });
+    expect(within(empty).getByText(/ended before the agent saved anything/)).toBeTruthy();
+    expect(within(empty).queryByText(/no longer kept/)).toBeNull();
   });
 
   it('says a task that has not started yet is waiting', async () => {

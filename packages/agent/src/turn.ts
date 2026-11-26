@@ -360,7 +360,7 @@ export async function runTurn(deps: TurnDeps, input: RunTurnInput): Promise<Runn
       });
     }
     message = {
-      id: crypto.randomUUID(),
+      id: claim.messageId,
       role: 'user',
       threadId: sessionId,
       resourceId: sessionId,

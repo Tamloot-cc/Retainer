@@ -47,6 +47,55 @@ export async function saveChatHistory(url: string, sessionId: string, text: stri
   }
 }
 
+/**
+ * Saves one turn's messages as the runtime would: the person's message under
+ * the ID the claim issued, then the agent's answer if there is one.
+ */
+export async function saveTurnMessages(
+  url: string,
+  sessionId: string,
+  turn: { messageId: string; text: string; answer?: string },
+) {
+  const handle = createMastraStore({ connectionString: url, max: 1 });
+  try {
+    const memory = await handle.store.getStore('memory');
+    if (!memory) throw new Error('no memory domain');
+    const now = new Date();
+    if (!(await memory.getThreadById({ threadId: sessionId })))
+      await memory.saveThread({
+        thread: { id: sessionId, resourceId: sessionId, title: '', createdAt: now, updatedAt: now },
+      });
+    const base = { threadId: sessionId, resourceId: sessionId };
+    await memory.saveMessages({
+      messages: [
+        {
+          ...base,
+          id: turn.messageId,
+          role: 'user',
+          createdAt: now,
+          content: { format: 2, parts: [{ type: 'text', text: turn.text }] },
+        },
+        ...(turn.answer
+          ? [
+              {
+                ...base,
+                id: randomUUID(),
+                role: 'assistant' as const,
+                createdAt: new Date(now.getTime() + 1),
+                content: {
+                  format: 2 as const,
+                  parts: [{ type: 'text' as const, text: turn.answer }],
+                },
+              },
+            ]
+          : []),
+      ],
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
 /** A row in every Mastra table for a session and one of its runs, as the owner. */
 export async function seedMastra(owner: Sql, sessionId: string, runId: string) {
   const s = sessionId;

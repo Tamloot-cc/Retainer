@@ -5,6 +5,8 @@ import {
   type MastraStoreHandle,
   RETAINER_WRITE_TOOL_NAMES,
   readChatMessages,
+  type TurnEnding,
+  withTurnEndings,
 } from '@retainer/agent';
 import {
   AGENT_TASK_ERROR_CODES,
@@ -98,6 +100,9 @@ export type AgentConfig = {
   /** How long one tool request waits for an extension job; tests shorten it. */
   extensionWaitMs?: number | undefined;
 };
+
+/** A saved chat message as the read endpoint returns it. */
+type ChatUIMessage = { id: string; role: string; parts: unknown[] };
 
 const unavailable = () =>
   new AppError(503, 'agent_unavailable', 'the workspace agent is not set up on this server');
@@ -269,25 +274,34 @@ export class AgentSessions {
     });
   }
 
-  /** The chat and its messages, without the parts the server added (§6.1). */
+  /**
+   * The chat and its messages, without the parts the server added, with each
+   * finished turn's ending after its messages (§6.1). The runtime sends an
+   * ending after it closes the store, so it is never in Mastra's history; it
+   * comes from `agent_turns`, placed by the message ID the claim issued.
+   */
   async getChat(caller: Caller, id: string) {
     const owned = this.owner(caller);
     const chat = await inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const row = await this.session(tx, owned.owner, id);
-      // The last turn's status: how it ended is not in the saved messages, since the
-      // runtime sends its ending after it closes the store, so a reload reads it here.
-      const [turn] = await tx<{ status: string }[]>`
-        select status from agent_turns where session_id = ${id}
-        order by claimed_at desc, generation desc limit 1`;
-      return { row, lastTurn: turn?.status ?? null };
+      const turns = await tx<
+        { status: string; message_id: string | null; error_code: string | null }[]
+      >`
+        select status, message_id, error_code from agent_turns where session_id = ${id}
+        order by claimed_at, generation`;
+      return { row, turns };
     });
-    const messages = await readChatMessages(this.readStore(), id);
+    const endings: TurnEnding[] = chat.turns.flatMap((turn) =>
+      turn.message_id && turn.status !== 'completed' && turn.status !== 'running'
+        ? [{ messageId: turn.message_id, status: turn.status, code: turn.error_code }]
+        : [],
+    );
+    const saved = (await readChatMessages(this.readStore(), id)) as ChatUIMessage[];
     return {
       id: chat.row.id,
       title: chat.row.title,
-      running: chat.lastTurn === 'running',
-      lastTurnStatus: chat.lastTurn,
-      messages,
+      running: chat.turns.at(-1)?.status === 'running',
+      messages: withTurnEndings(saved, endings),
     };
   }
 
@@ -451,6 +465,7 @@ export class AgentSessions {
         turnId: claimed.turn.id,
         generation: claimed.turn.generation,
         runId: claimed.turn.run_id,
+        messageId: claimed.turn.message_id,
         deadline: claimed.turn.deadline.toISOString(),
         session: {
           id: session.id,
@@ -531,6 +546,7 @@ export class AgentSessions {
         turnId: claimed.turn.id,
         generation: claimed.turn.generation,
         runId: claimed.turn.run_id,
+        messageId: claimed.turn.message_id,
         deadline: claimed.turn.deadline.toISOString(),
         session: {
           id: session.id,

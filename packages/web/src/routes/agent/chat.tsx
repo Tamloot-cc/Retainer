@@ -23,7 +23,6 @@ import {
   type ChatMessage,
   MOOD_TEXT,
   sendErrorText,
-  TURN_ENDINGS,
   turnEnd,
 } from './model.js';
 import { chatTransport } from './transport.js';
@@ -200,10 +199,11 @@ export function ChatPage() {
         <Loading>Loading the chat…</Loading>
       </Page>
     );
-  return <Conversation key={id} chat={detail.data} />;
+  return <Conversation key={id} chat={detail.data} updatedAt={detail.dataUpdatedAt} />;
 }
 
-function Conversation({ chat }: { chat: AgentChatDetail }) {
+/** `updatedAt`: when `chat` was fetched. */
+function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: number }) {
   const { session } = useWorkspace();
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -212,12 +212,9 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
   const [ended, setEnded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
-  // This page streamed the last turn to its end, so the stream carried its ending.
-  const [streamed, setStreamed] = useState(false);
   const detailKey = [...agentKey(session.workspace.id), 'chat', chat.id];
-  // The list's titles and times, and this chat's title (set by its first message). The
-  // open chat keeps the messages it streamed: a refetch only replaces them for a turn
-  // that was running before this page opened.
+  // The list's titles and times, and this chat: its title (set by its first message)
+  // and its saved messages, which replace the streamed ones once a turn ends.
   const refresh = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: [...agentKey(session.workspace.id), 'chats'] }),
@@ -230,20 +227,26 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
       transport,
       onFinish: () => {
         setEnded(true);
-        void refresh();
+        turnSettled();
       },
     });
   const busy = status === 'submitted' || status === 'streaming';
   // A turn running from before this page opened: show what was saved, and its end once it lands.
   const runningBefore = chat.running && !busy;
-  const wasRunning = useRef(chat.running);
+  // The server's copy is the chat (agent spec §6.1): it has every turn's ending. It
+  // replaces what was streamed once fetched after the turn on this page ended (its end,
+  // or Stop); a copy fetched mid-turn (a focus refetch) never replaces the stream.
+  const staleBefore = useRef(0);
+  const turnSettled = () => {
+    staleBefore.current = Date.now();
+    void refresh();
+  };
   useEffect(() => {
-    if (wasRunning.current && !chat.running) setMessages(chat.messages as ChatMessage[]);
-    wasRunning.current = chat.running;
-  }, [chat.running, chat.messages, setMessages]);
+    if (!busy && updatedAt >= staleBefore.current) setMessages(chat.messages as ChatMessage[]);
+  }, [busy, updatedAt, chat.messages, setMessages]);
 
   const send = (text: string) => {
-    setStreamed(true);
+    staleBefore.current = Number.POSITIVE_INFINITY;
     clearError();
     setEnded(false);
     setStopError(null);
@@ -262,13 +265,11 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
   const cancel = useMutation({
     mutationFn: () => api.cancelAgentChat(chat.id),
     onError: () => setStopError("The agent couldn't be stopped. Try again."),
-    // Stop cut the stream that would have carried the turn's ending: the refreshed
-    // chat says how it ended. The streamed messages stay, since the saved copy has no
-    // earlier turns' endings; a step saved after the cancel shows on the next load.
-    onSettled: () => void refresh(),
+    // Stop cut the stream that would have carried the turn's ending: the saved chat,
+    // fetched once the cancel lands, has it.
+    onSettled: turnSettled,
   });
   const onStop = () => {
-    setStreamed(false);
     cancel.mutate();
     stop();
   };
@@ -280,14 +281,7 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
     },
   });
 
-  const streamedEnding = messages.at(-1)?.parts.map(turnEnd).findLast(Boolean);
-  // How the last turn ended when it wasn't streamed to this page (a reload, or Stop):
-  // the saved messages don't carry it, the chat's detail does.
-  const savedEnding =
-    !streamed && !busy && !chat.running && chat.lastTurnStatus !== 'completed'
-      ? (chat.lastTurnStatus ?? undefined)
-      : undefined;
-  const lastEnding = streamedEnding ?? savedEnding;
+  const lastEnding = messages.at(-1)?.parts.map(turnEnd).findLast(Boolean);
   const over = lastEnding !== undefined && CHAT_OVER.has(lastEnding);
   const mood = avatarMood({ status, messages, typing, ended, running: runningBefore });
   // Sent, and no part of the answer has arrived yet.
@@ -340,11 +334,6 @@ function Conversation({ chat }: { chat: AgentChatDetail }) {
               mood={awaitingAnswer ? 'idle' : mood}
             />
           )}
-          {savedEnding && TURN_ENDINGS[savedEnding] ? (
-            <Notice error={savedEnding !== 'cancelled'} announce={false}>
-              {TURN_ENDINGS[savedEnding]}
-            </Notice>
-          ) : null}
           {awaitingAnswer ? (
             <div className="flex items-center gap-3">
               <LogoMark mood="thinking" size={32} className="shrink-0" />

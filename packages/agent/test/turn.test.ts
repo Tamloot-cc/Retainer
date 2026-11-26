@@ -156,6 +156,8 @@ describe('a chat turn', () => {
     try {
       const stored = await listSessionMessages(handle, sessionId);
       expect(stored.filter((m) => m.role === 'user')).toHaveLength(1);
+      // Saved under the ID the claim issued, so the chat read can place the turn's ending.
+      expect(stored.find((m) => m.role === 'user')?.id).toBe(api.claimed.at(-1)?.messageId);
       const memory = await handle.store.getStore('memory');
       const thread = await memory!.getThreadById({ threadId: sessionId });
       expect(thread?.title).toBe('What do we know about Acme?');

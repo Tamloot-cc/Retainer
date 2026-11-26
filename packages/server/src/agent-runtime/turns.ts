@@ -52,6 +52,7 @@ export type TurnRow = {
   generation: number;
   status: TurnStatus;
   run_id: string;
+  message_id: string | null;
   token_hash: string;
   access: unknown;
   claimed_at: Date;
@@ -181,8 +182,8 @@ export async function claimTurn(
   const { token, hash } = mintToken(TURN_TOKEN_PREFIX, workspaceId, id);
   const cap = input.notAfter ?? null;
   const [turn] = await tx<TurnRow[]>`
-    insert into agent_turns (id, workspace_id, session_id, generation, run_id, token_hash, access, deadline)
-    values (${id}, ${workspaceId}, ${input.sessionId}, ${session.generation}, ${randomUUID()}, ${hash},
+    insert into agent_turns (id, workspace_id, session_id, generation, run_id, message_id, token_hash, access, deadline)
+    values (${id}, ${workspaceId}, ${input.sessionId}, ${session.generation}, ${randomUUID()}, ${randomUUID()}, ${hash},
       ${tx.json(input.access)},
       least(clock_timestamp() + make_interval(secs => ${TURN_MS / 1000}), coalesce(${cap}::timestamptz, 'infinity')))
     returning *`;

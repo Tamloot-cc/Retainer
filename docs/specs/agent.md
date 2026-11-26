@@ -597,7 +597,7 @@ Ours, in Drizzle's schema like every other table:
 | Table            | Holds                                                                                                                                                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent_sessions` | Workspace, kind (`chat` or `task`), caller, person (for a chat), title, status, the pinned tool list (§8.3) and system blocks (§3.5), the last date sent (§3.5), limits and use, created, last active       |
-| `agent_turns`    | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches, error code, durations, the Mastra run IDs the claim issued (§5.2). IDs and counts only |
+| `agent_turns`    | One row per turn: status, claim generation and deadline (§6.3), steps, tokens, tool calls, web searches, error code, durations, the Mastra run IDs the claim issued (§5.2), and the ID it issued for the person's message, which places the turn's ending on the chat read (§6.1). IDs and counts only |
 
 Mastra's, in the `mastra` schema, created by `@mastra/pg`:
 
@@ -768,17 +768,28 @@ On the API (person's session, or the CLI's login):
 ```
 POST   /v1/agent/chats                 create a chat → { id, agentOrigin }
 GET    /v1/agent/chats                 the person's chats
-GET    /v1/agent/chats/:id             the chat and its messages (UI message parts, server-added parts dropped, §3.5)
+GET    /v1/agent/chats/:id             the chat and its messages (UI message parts, server-added parts dropped, §3.5, each turn's ending placed after it)
 POST   /v1/agent/chats/:id/token       a stream token, 15 minutes (§7.3)
 POST   /v1/agent/chats/:id/cancel      stop a running turn
 DELETE /v1/agent/chats/:id             delete the chat
 ```
 
+**A turn's ending on the chat read.** The runtime sends a turn's ending
+(`data-turn-end`, for any status but `completed`) after it closes its turn,
+so the ending is never in Mastra's history, and Retainer doesn't put it
+there. The read endpoint adds it from `agent_turns`: the claim issues the ID
+the runtime saves the person's message under and records it on the turn, so
+each ending goes after its own turn's messages (on the turn's last assistant
+message, or an assistant item of its own when the turn saved no answer). A
+turn that died before saving its message has nowhere to go and shows none; a
+running turn has no ending yet. The web chat therefore takes the server's
+copy whenever a turn ends, after Stop and on a reload (`FRONTEND.md` §5.10).
+
 On the API, for the agent runtime only (a turn token, or the runtime
 credential to claim one, §7.3):
 
 ```
-POST /v1/agent/runtime/sessions/:id/claim          claim a turn → turn token, run ID, any date part (checks limits, takes the lease, §6.2, §10.2)
+POST /v1/agent/runtime/sessions/:id/claim          claim a turn → turn token, run ID, message ID, any date part (checks limits, takes the lease, §6.2, §10.2)
 POST /v1/agent/runtime/sessions/:id/tools/:name    one Retainer or extension tool call (§8.1)
 POST /v1/agent/runtime/sessions/:id/report         report one step's usage → continue or stop (§10.2)
 GET  /v1/agent/runtime/sessions/:id/turn           the turn's state, to notice a cancel (§6.5)
@@ -803,8 +814,7 @@ The request body has one shape, checked strictly:
 
 Anything else is refused with `400`: no history, no message IDs, no
 `runId`, `resumeData`, `trigger` or options, and no regenerate. History
-comes from Mastra's store, and the agent runtime assigns the message's
-ID. The answer is the AI SDK UI message stream over server-sent events.
+comes from Mastra's store, and the message's ID comes from the claim (§6.2). The answer is the AI SDK UI message stream over server-sent events.
 The web client sends this shape through `useChat`'s request hook (PR 3).
 
 ### 6.2 A turn

@@ -777,7 +777,10 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   first, with "Answering…" on one whose turn is still running. Chats are
   private to their person.
 - **Chat** (`/app/chat/:id`): the saved messages (`GET /v1/agent/chats/:id`),
-  then each new turn streamed with AI SDK `useChat`. Every turn takes a fresh
+  then each new turn streamed with AI SDK `useChat`. The server's copy is the
+  chat: it carries every turn's ending (spec §6.1), so once a turn ends, after
+  Stop and on a reload the page shows it in place of what it streamed. A copy
+  fetched mid-turn (a window refocus) never replaces the stream. Every turn takes a fresh
   stream token (`POST …/token`) and posts exactly one text part to its
   `streamUrl` with that token and no cookie (spec §6.1); the runtime refuses
   anything else.
@@ -793,7 +796,7 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   writes, working while the answer streams, done when the turn ends, error
   when it fails. A status line beside the message box says the same in words.
 - **Stop** cancels the turn on the server (`POST …/cancel`) and stops reading
-  the stream. **Delete** asks first, then erases the chat; what the agent
+  the stream; the saved chat then says "Stopped.". **Delete** asks first, then erases the chat; what the agent
   saved to the workspace stays.
 - **A turn still running** from an earlier visit (a reload, another tab) shows
   what was saved so far and "Still working on your last message…", checks back
@@ -805,7 +808,9 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   agent did" on its run page: each task's saved messages, read-only, in the
   chat's layout without the moving mark, with its state and how long the
   messages are kept (`GET /v1/routines/:id/runs/:run/agent-tasks`, for anyone
-  who may see the run). After 7 days the page says they are no longer kept.
+  who may see the run). After 7 days the page says they are no longer kept; a
+  task that ended before it saved anything says so, and a call refused before
+  it got a task says why.
 
 ### Not in v1
 

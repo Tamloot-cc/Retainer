@@ -76,6 +76,9 @@ export class FakeApi {
     await new Promise<void>((resolve) => this.#server?.close(() => resolve()));
   }
 
+  /** Every claim handed out, oldest first. */
+  readonly claimed: Claim[] = [];
+
   claimFor(sessionId: string): Claim {
     this.generation++;
     const claim: Claim = {
@@ -83,6 +86,7 @@ export class FakeApi {
       turnId: crypto.randomUUID(),
       generation: this.generation,
       runId: crypto.randomUUID(),
+      messageId: crypto.randomUUID(),
       deadline: new Date(Date.now() + this.deadlineMs).toISOString(),
       session: {
         id: sessionId,
@@ -95,6 +99,7 @@ export class FakeApi {
       limits: this.limits,
     };
     this.firstTurn = false;
+    this.claimed.push(claim);
     return claim;
   }
 
