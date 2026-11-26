@@ -102,17 +102,34 @@ afterEach(() => {
 });
 
 describe('ChatPage', () => {
-  it('shows saved messages: the question, the reasoning collapsed, tool lines and the answer', async () => {
+  it('shows saved messages: the question, the steps folded into one line, and the answer', async () => {
     router.params = { id: 'chat-1' };
     chat();
     show(<ChatPage />);
     expect(await screen.findByText('Who is Dana?', { selector: 'div' })).toBeTruthy();
-    expect(screen.getByText('Thought about it')).toBeTruthy();
-    expect(screen.getByText('Searched for “Dana”')).toBeTruthy();
     expect(screen.getByText('CTO').tagName).toBe('STRONG');
-    // Collapsed: the reasoning text is in a closed <details>.
-    const details = screen.getByText('Look her up first.').closest('details');
-    expect(details?.open).toBe(false);
+    // A finished run of steps is one line saying what the agent did.
+    const summary = screen.getByRole('button', { name: /Checked your workspace\s*2 steps/ });
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Searched for “Dana”')).toBeNull();
+    await userEvent.click(summary);
+    expect(screen.getByText('Searched for “Dana”')).toBeTruthy();
+    // The thinking is its own line inside, folded until opened.
+    const thought = screen.getByRole('button', { name: 'Thought' });
+    expect(screen.queryByText('Look her up first.')).toBeNull();
+    await userEvent.click(thought);
+    expect(screen.getByText('Look her up first.')).toBeTruthy();
+  });
+
+  it('puts a question back in the message box to edit, focused', async () => {
+    router.params = { id: 'chat-1' };
+    chat();
+    show(<ChatPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit and send again' }));
+    const box = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    expect(box.value).toBe('Who is Dana?');
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    expect(box.selectionStart).toBe('Who is Dana?'.length);
   });
 
   it('sends exactly one text part to the stream URL with a fresh token, and streams the answer', async () => {

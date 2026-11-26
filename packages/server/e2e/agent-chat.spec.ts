@@ -36,9 +36,9 @@ test.describe('with the agent', () => {
     await chatLink(page).click();
     await expect(page.getByRole('heading', { name: 'Chat', exact: true })).toBeVisible();
     await page.getByRole('textbox', { name: 'Message' }).fill('What do we know about Acme?');
-    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
 
-    const messages = page.getByRole('list', { name: 'Messages' });
+    const messages = page.getByRole('region', { name: 'Messages' });
     await expect(messages.getByText('What do we know about Acme?')).toBeVisible();
     await expect(messages.getByText('Searched for “Acme”')).toBeVisible();
     await expect(messages.getByText('Acme Robotics is a')).toBeVisible();
@@ -89,9 +89,9 @@ test.describe('with the agent', () => {
     await signIn(page, r.url, r.keys.user);
     await page.goto(`${r.url}/app/chat`);
     await page.getByRole('textbox', { name: 'Message' }).fill('Compare the demo companies.');
-    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
 
-    const messages = page.getByRole('list', { name: 'Messages' });
+    const messages = page.getByRole('region', { name: 'Messages' });
     const region = messages.getByRole('region', { name: 'Markdown table' });
     await expect(region.getByRole('columnheader', { name: 'Next step' })).toBeVisible();
     await expect(messages.getByText('Revenue is unavailable for Juniper Systems.')).toBeVisible();
@@ -146,32 +146,39 @@ test.describe('with the agent', () => {
     await signIn(page, r.url, r.keys.user);
     await chatLink(page).click();
     await page.getByRole('textbox', { name: 'Message' }).fill('Save the companies from my notes.');
-    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
 
-    const messages = page.getByRole('list', { name: 'Messages' });
-    const summary = messages.getByText('Saved 3 records', { exact: true });
-    const calls = messages.getByText('Saved a record', { exact: true });
-    await expect(summary).toBeVisible();
-    await expect(messages.getByText('Saved 1 record, 1 failed')).toBeVisible();
+    const messages = page.getByRole('region', { name: 'Messages' });
     await expect(messages.getByText('I saved four companies. One update failed.')).toBeVisible();
+    // Once the answer starts, the steps fold into one line saying what the agent did.
+    const steps = messages.getByRole('button', { name: /Saved 4 records\s*4 steps/ });
+    const group = messages.getByText('Saved 3 records', { exact: true });
+    const calls = messages.getByText('Saved a record', { exact: true });
+    await expect(steps).toBeVisible();
+    await expect(group).toBeHidden();
     // Exercise the saved trace after the streamed messages are reconciled.
     const id = new URL(page.url()).pathname.split('/').at(-1);
     await expect
       .poll(async () => (await r.request(`/agent/chats/${id}`, undefined, r.keys.user)).running)
       .toBe(false);
     await page.reload();
-    await expect(summary).toBeVisible();
-    await expect(calls.first()).toBeHidden();
+    await expect(steps).toBeVisible();
+    await expect(steps).toHaveAttribute('aria-expanded', 'false');
 
-    await summary.locator('..').press('Space');
+    // Opened, repeated writes are one line, and the bulk write says how many failed.
+    await steps.click();
+    await expect(group).toBeVisible();
+    await expect(messages.getByText('Saved 1 record, 1 failed')).toBeVisible();
+    await expect(calls.first()).toBeHidden();
+    await messages.getByRole('button', { name: 'Saved 3 records', exact: true }).press('Space');
     await expect(calls).toHaveCount(3);
     for (const call of await calls.all()) await expect(call).toBeVisible();
     await calls.first().click();
     await expect(messages.getByText('Maple Workshop', { exact: false }).first()).toBeVisible();
 
     await page.reload();
-    await expect(summary).toBeVisible();
-    await expect(calls.first()).toBeHidden();
+    await expect(steps).toBeVisible();
+    await expect(group).toBeHidden();
   });
 
   test('stops a turn that is taking long', async ({ page, retainer: r }) => {
@@ -186,7 +193,7 @@ test.describe('with the agent', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByRole('status').getByText('Thinking…')).toBeVisible();
     await page.getByRole('button', { name: 'Stop' }).click();
-    await expect(page.getByRole('button', { name: 'Send' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible();
     // The server stopped the turn too: the runtime noticed the cancel and closed it.
     const id = new URL(page.url()).pathname.split('/').at(-1);
     await expect

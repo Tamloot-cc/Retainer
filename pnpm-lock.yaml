@@ -191,16 +191,16 @@ importers:
         version: 2.1.11(hono@4.13.19)
       '@mastra/ai-sdk':
         specifier: 1.12.1
-        version: 1.12.1(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))(zod@4.6.7)
+        version: 1.12.1(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)
       '@mastra/core':
         specifier: 1.86.0
-        version: 1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7)
+        version: 1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7)
       '@mastra/memory':
         specifier: 1.41.3
-        version: 1.41.3(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))
+        version: 1.41.3(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))
       '@mastra/pg':
         specifier: 1.38.0
-        version: 1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))
+        version: 1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))
       '@retainer/shared':
         specifier: workspace:*
         version: link:../shared
@@ -400,6 +400,9 @@ importers:
       '@nangohq/frontend':
         specifier: 0.72.6
         version: 0.72.6(debug@4.4.3)
+      '@radix-ui/react-collapsible':
+        specifier: ^1.2.1
+        version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@radix-ui/react-dialog':
         specifier: ^1.3.1
         version: 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -427,6 +430,9 @@ importers:
       '@retainer/shared':
         specifier: workspace:*
         version: link:../shared
+      '@shadcn/react':
+        specifier: ^0.3.1
+        version: 0.3.1(@types/react@19.3.0)(react@19.3.1)
       '@simplewebauthn/browser':
         specifier: 13.3.0
         version: 13.3.0
@@ -472,6 +478,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remend:
+        specifier: ^1.5.1
+        version: 1.5.1
       tailwind-merge:
         specifier: ^3.7.1
         version: 3.7.1
@@ -1615,6 +1624,19 @@ packages:
       '@types/react-dom':
         optional: true
 
+  '@radix-ui/react-collapsible@1.2.1':
+    resolution: {integrity: sha512-fSzLb/qy1wuZSxQBcxpW0hNXYHDMWiIXDGyJGdA4+FSLknOWZsNRrTCUavxb4PI8b8lvHo/CysO6NVi5zLpo5g==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
   '@radix-ui/react-collection@1.2.0':
     resolution: {integrity: sha512-+yiQzqcc7Sy7/5s0jrMCjpPRFB3538VNrXPWdTLZhE/SCfgEws4aI6lHWN/vvcnyhHndROWBzqmqB4QBrITZ9Q==}
     peerDependencies:
@@ -2028,6 +2050,17 @@ packages:
     resolution: {integrity: sha512-oELmoyA6ML9jDRMV3kgcMQFKxUfBU0yFVn6yTctVaLT5ygXnxH52I3TZEgV9EhXJC68/uFvE5Daj1/25c0Xa/A==}
     peerDependencies:
       selderee: ~0.12.0
+
+  '@shadcn/react@0.3.1':
+    resolution: {integrity: sha512-2gOR0HDMtWeRsCZfNDaU0YDFdgH3zsDQ6lz67Fv/y/qjY9y+R8kJqAn6q56phqv7/zHi0wqURjntrNO9zL7vnQ==}
+    peerDependencies:
+      '@types/react': '>=19'
+      react: '>=19'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      react:
+        optional: true
 
   '@simplewebauthn/browser@13.3.0':
     resolution: {integrity: sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ==}
@@ -4985,12 +5018,12 @@ snapshots:
     dependencies:
       '@lukeed/csprng': 1.1.0
 
-  '@mastra/ai-sdk@1.12.1(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))(zod@4.6.7)':
+  '@mastra/ai-sdk@1.12.1(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)':
     dependencies:
-      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7)
+      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7)
       zod: 4.6.7
 
-  '@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7)':
+  '@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@a2a-js/sdk-v0_3': '@a2a-js/sdk@0.3.14'
       '@a2a-js/sdk-v1': '@a2a-js/sdk@1.0.1'
@@ -5003,7 +5036,7 @@ snapshots:
       '@lukeed/uuid': 2.0.1
       '@mastra/schema-compat': 1.4.1(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
-      chat: 4.45.0(zod@4.6.7)
+      chat: 4.45.0(ai@7.0.181(zod@4.6.7))(zod@4.6.7)
       croner: 10.0.1
       dotenv: 17.4.2
       execa: 9.6.1
@@ -5044,9 +5077,9 @@ snapshots:
       - zod-openapi
       - zod-to-json-schema
 
-  '@mastra/memory@1.41.3(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))':
+  '@mastra/memory@1.41.3(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))':
     dependencies:
-      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7)
+      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7)
       '@mastra/schema-compat': 1.4.1(zod@4.6.7)
       async-mutex: 0.5.0
       diff: 9.0.0
@@ -5058,9 +5091,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@mastra/pg@1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7))':
+  '@mastra/pg@1.38.0(@mastra/core@1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7))':
     dependencies:
-      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(zod@4.6.7)
+      '@mastra/core': 1.86.0(@opentelemetry/api@1.10.0)(ai@7.0.181(zod@4.6.7))(zod@4.6.7)
       async-mutex: 0.5.0
       pg: 8.23.1
       pg-connection-string: 2.14.1
@@ -5240,6 +5273,22 @@ snapshots:
   '@radix-ui/react-arrow@1.1.17(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@radix-ui/react-primitive': 2.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    optionalDependencies:
+      '@types/react': 19.3.0
+      '@types/react-dom': 19.3.0(@types/react@19.3.0)
+
+  '@radix-ui/react-collapsible@1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@radix-ui/primitive': 1.2.0
+      '@radix-ui/react-compose-refs': 1.1.5(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-context': 1.3.0(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-id': 1.1.4(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-presence': 1.1.11(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-primitive': 2.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-use-controllable-state': 1.3.0(@types/react@19.3.0)(react@19.3.1)
+      '@radix-ui/react-use-layout-effect': 1.1.4(@types/react@19.3.0)(react@19.3.1)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
     optionalDependencies:
@@ -5617,6 +5666,11 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
       selderee: 0.12.0
+
+  '@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1)':
+    optionalDependencies:
+      '@types/react': 19.3.0
+      react: 19.3.1
 
   '@simplewebauthn/browser@13.3.0': {}
 
@@ -6128,7 +6182,7 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
-  chat@4.45.0(zod@4.6.7):
+  chat@4.45.0(ai@7.0.181(zod@4.6.7))(zod@4.6.7):
     dependencies:
       '@chat-adapter/catalog': 4.45.0
       '@workflow/serde': 4.1.0-beta.2
@@ -6139,6 +6193,7 @@ snapshots:
       remend: 1.5.1
       unified: 11.0.5
     optionalDependencies:
+      ai: 7.0.181(zod@4.6.7)
       zod: 4.6.7
     transitivePeerDependencies:
       - supports-color

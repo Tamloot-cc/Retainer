@@ -3,7 +3,16 @@ import type { AgentChatDetail } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowUp, MessageSquarePlus, Square, Trash2 } from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type Ref,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, useWorkspace } from '../../api/client.js';
 import {
   Button,
@@ -15,6 +24,7 @@ import {
   Page,
   RelativeTime,
 } from '../../ui/index.js';
+import { MessageScroller, MessageScrollerItem } from '../../ui/message.js';
 import { QueryError } from '../state.js';
 import { ChatMessages } from './messages.js';
 import {
@@ -22,6 +32,8 @@ import {
   CHAT_OVER,
   type ChatMessage,
   MOOD_TEXT,
+  messageText,
+  RETRYABLE,
   sendErrorText,
   turnEnd,
 } from './model.js';
@@ -35,30 +47,69 @@ const firstMessages = new Map<string, string>();
 const ABOUT =
   'Ask the agent about your workspace. It reads your records, searches the web and saves what it learns, as an agent working for you. Its changes never outrank a person’s.';
 
-/** The box a message is typed in. Enter sends; Shift+Enter starts a new line. */
+/** The column a chat's thread and message box share. */
+const COLUMN = 'mx-auto w-full max-w-3xl px-4 md:px-8';
+
+/** One-click questions for an empty chat (shadcn/ui Suggestion). They work in any workspace. */
+const SUGGESTIONS = [
+  'What should I follow up on?',
+  'What happened in my recent conversations?',
+  'How is this workspace set up?',
+  'What do you remember about me?',
+];
+
+function Suggestions({ onSend, disabled }: { onSend: (text: string) => void; disabled?: boolean }) {
+  return (
+    <ul
+      aria-label="Suggestions"
+      className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+    >
+      {SUGGESTIONS.map((suggestion) => (
+        <li key={suggestion} className="shrink-0">
+          <Button
+            size="small"
+            disabled={disabled}
+            className="rounded-full px-3 font-normal md:h-7"
+            onClick={() => onSend(suggestion)}
+          >
+            {suggestion}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The box a message is typed in (shadcn/ui Prompt Input): the text on top, the
+ * send or stop button under it. Enter sends; Shift+Enter starts a new line.
+ */
 function Composer({
+  text,
+  onText,
   onSend,
   onStop,
-  onTyping,
   busy,
   disabled,
+  field,
   placeholder = 'Ask the agent…',
 }: {
+  /** The text box, for a parent that puts a message back to edit. */
+  field?: Ref<HTMLTextAreaElement>;
+  text: string;
+  onText: (text: string) => void;
   onSend: (text: string) => void;
   onStop?: () => void;
-  onTyping?: (typing: boolean) => void;
   busy: boolean;
   disabled?: boolean;
   placeholder?: string;
 }) {
-  const [text, setText] = useState('');
   const send = (e?: FormEvent) => {
     e?.preventDefault();
     const message = text.trim();
     if (!message || busy || disabled) return;
     onSend(message);
-    setText('');
-    onTyping?.(false);
+    onText('');
   };
   // IME-safe: Enter that confirms a composition (or Safari's late one, key code 229) never sends.
   const key = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -70,38 +121,49 @@ function Composer({
   return (
     <form
       onSubmit={send}
-      className="flex items-end gap-2 rounded-2xl border border-input bg-background p-2 focus-within:ring-2 focus-within:ring-ring"
+      className="flex flex-col rounded-2xl border border-border bg-background shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 has-disabled:opacity-60"
     >
       <textarea
+        ref={field}
         aria-label="Message"
         value={text}
         rows={1}
         disabled={disabled}
         placeholder={placeholder}
-        onChange={(e) => {
-          setText(e.target.value);
-          onTyping?.(e.target.value.trim() !== '');
-        }}
+        onChange={(e) => onText(e.target.value)}
         onKeyDown={key}
         dir="auto"
-        className="max-h-48 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none [field-sizing:content] placeholder:text-muted-foreground disabled:opacity-60"
+        className="max-h-48 min-h-11 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm outline-none [field-sizing:content] placeholder:text-muted-foreground"
       />
-      {busy && onStop ? (
-        <Button variant="outline" size="icon" aria-label="Stop" title="Stop" onClick={onStop}>
-          <Square size={14} />
-        </Button>
-      ) : (
-        <Button
-          type="submit"
-          variant="primary"
-          size="icon"
-          aria-label="Send"
-          title="Send"
-          disabled={busy || disabled || !text.trim()}
-        >
-          <ArrowUp size={16} />
-        </Button>
-      )}
+      <div className="flex items-center gap-2 px-2 pb-2">
+        <span className="hidden ps-1.5 text-xs text-muted-foreground/80 md:inline">
+          Shift+Enter for a new line
+        </span>
+        {busy && onStop ? (
+          <Button
+            variant="outline"
+            size="icon"
+            className="ms-auto rounded-full"
+            aria-label="Stop"
+            title="Stop"
+            onClick={onStop}
+          >
+            <Square size={12} className="fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            variant="primary"
+            size="icon"
+            className="ms-auto rounded-full"
+            aria-label="Send"
+            title="Send"
+            disabled={busy || disabled || !text.trim()}
+          >
+            <ArrowUp size={16} />
+          </Button>
+        )}
+      </div>
     </form>
   );
 }
@@ -122,6 +184,8 @@ export function ChatsPage() {
       void navigate({ to: '/chat/$id', params: { id: chat.id } });
     },
   });
+  const [draft, setDraft] = useState('');
+  const startChat = (text: string) => start.mutate(text);
   const list = [...(chats.data?.chats ?? [])].sort((a, b) =>
     (b.lastActiveAt ?? b.createdAt).localeCompare(a.lastActiveAt ?? a.createdAt),
   );
@@ -135,7 +199,10 @@ export function ChatsPage() {
         </Button>
       }
     >
-      <Composer busy={start.isPending} onSend={(text) => start.mutate(text)} />
+      <div className="flex flex-col gap-3">
+        <Composer text={draft} onText={setDraft} busy={start.isPending} onSend={startChat} />
+        <Suggestions disabled={start.isPending} onSend={startChat} />
+      </div>
       {start.error ? <Notice error>{sendErrorText(start.error)}</Notice> : null}
       {chats.error ? (
         <QueryError error={chats.error} retry={() => void chats.refetch()} />
@@ -210,7 +277,17 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
   const client = useQueryClient();
   const navigate = useNavigate();
   const transport = useMemo(() => chatTransport(chat.id), [chat.id]);
-  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState('');
+  const typing = draft.trim() !== '';
+  const field = useRef<HTMLTextAreaElement>(null);
+  // Puts one of the person's messages back in the box, focused with the cursor at its end.
+  const edit = useCallback((text: string) => {
+    setDraft(text);
+    requestAnimationFrame(() => {
+      field.current?.focus();
+      field.current?.setSelectionRange(text.length, text.length);
+    });
+  }, []);
   const [ended, setEnded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
@@ -300,18 +377,24 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
 
   const lastEnding = messages.at(-1)?.parts.map(turnEnd).findLast(Boolean);
   const over = lastEnding !== undefined && CHAT_OVER.has(lastEnding);
+  // A turn is going (this page's, or one running from before): nothing new can be sent.
+  const working = busy || runningBefore;
+  const locked = working || over;
   const mood = avatarMood({ status, messages, typing, ended, running: runningBefore });
   // Sent, and no part of the answer has arrived yet.
   const awaitingAnswer = status === 'submitted' && messages.at(-1)?.role === 'user';
   const moodText = runningBefore ? 'Still working on your last message…' : MOOD_TEXT[mood];
-  const scroller = useRef<HTMLDivElement>(null);
-  const lastPartCount = messages.at(-1)?.parts.length ?? 0;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: follows new messages and parts as they stream.
-  useEffect(() => {
-    const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, lastPartCount]);
-
+  // The last answer ended short of done and the chat can go on: offer to ask again.
+  const retryable =
+    !locked &&
+    lastEnding !== undefined &&
+    RETRYABLE.has(lastEnding) &&
+    messages.at(-1)?.role === 'assistant';
+  const lastQuestion = messageText(messages.findLast((m) => m.role === 'user') ?? { parts: [] });
+  // Stable, so the memoized last answer doesn't render again on every keystroke.
+  const again = useRef(() => {});
+  again.current = () => send(lastQuestion);
+  const retry = useCallback(() => again.current(), []);
   return (
     <Page
       layout="fill"
@@ -337,30 +420,38 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
         </>
       }
     >
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 md:px-8">
-          {messages.length === 0 && refused.length === 0 ? (
-            <div className="flex items-start gap-3">
-              <LogoMark mood={mood} size={32} className="shrink-0" />
-              <p className="pt-1.5 text-sm text-muted-foreground">{ABOUT}</p>
+      <MessageScroller label="Messages" className="flex-1" contentClassName={`${COLUMN} py-6`}>
+        {messages.length === 0 && refused.length === 0 && !awaitingAnswer ? (
+          <MessageScrollerItem messageId="intro">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-start gap-3">
+                <LogoMark mood={mood} size={32} className="shrink-0" />
+                <p className="pt-1.5 text-sm text-muted-foreground">{ABOUT}</p>
+              </div>
+              {locked ? null : (
+                <div className="ps-11">
+                  <Suggestions onSend={send} />
+                </div>
+              )}
             </div>
-          ) : (
-            <ChatMessages
-              messages={refused.length > 0 ? [...messages, ...refused] : messages}
-              streaming={status === 'streaming'}
-              mood={awaitingAnswer ? 'idle' : mood}
-            />
-          )}
-          {awaitingAnswer ? (
-            <div className="flex items-center gap-3">
-              <LogoMark mood="thinking" size={32} className="shrink-0" />
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="shrink-0 border-t border-border bg-background">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 py-3 md:px-8">
-          <p role="status" className="min-h-4 text-xs text-muted-foreground">
+          </MessageScrollerItem>
+        ) : (
+          <ChatMessages
+            scroller
+            messages={refused.length > 0 ? [...messages, ...refused] : messages}
+            streaming={status === 'streaming'}
+            waiting={awaitingAnswer}
+            mood={mood}
+            onEdit={locked ? undefined : edit}
+            onRetry={retryable && lastQuestion ? retry : undefined}
+          />
+        )}
+      </MessageScroller>
+      <div className="shrink-0 bg-background">
+        <div className={`${COLUMN} flex flex-col gap-2 pt-1 pb-4`}>
+          {/* The thread shows each step as it happens; this says it in words for screen readers, and
+              out loud for a turn that was already running when the page opened. */}
+          <p role="status" className={runningBefore ? 'text-xs text-muted-foreground' : 'sr-only'}>
             {moodText ?? ''}
           </p>
           {error ? (
@@ -383,10 +474,12 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
             </Notice>
           ) : (
             <Composer
-              busy={busy || runningBefore}
+              field={field}
+              text={draft}
+              onText={setDraft}
+              busy={working}
               onSend={send}
-              onStop={busy || runningBefore ? onStop : undefined}
-              onTyping={setTyping}
+              onStop={working ? onStop : undefined}
             />
           )}
         </div>
