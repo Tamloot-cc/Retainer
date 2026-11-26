@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { type Invocation, modelClient, RetryLater } from '@retainer/extension';
+import { type Invocation, RetryLater } from '@retainer/extension';
+import { modelClient } from '@retainer/extension/model';
 import type { z } from 'zod';
 import { retryAfterSeconds } from './outcome.js';
 

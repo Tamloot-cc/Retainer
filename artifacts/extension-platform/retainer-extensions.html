@@ -611,7 +611,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="two">
       <div class="panel">
         <h3>Extension code</h3>
-<pre><code>import { modelClient } from '@retainer/extension';
+<pre><code>import { modelClient } from '@retainer/extension/model';
 
 const anthropic = modelClient(invocation);
 const pick = await anthropic.messages.create({

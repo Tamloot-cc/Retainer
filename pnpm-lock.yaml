@@ -232,15 +232,16 @@ importers:
 
   packages/extension:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^1.12.0
-        version: 1.12.0(zod@4.6.7)
       '@retainer/shared':
         specifier: workspace:*
         version: link:../shared
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+    devDependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^1.12.0
+        version: 1.12.0(zod@4.6.7)
 
   packages/mcp:
     dependencies:
