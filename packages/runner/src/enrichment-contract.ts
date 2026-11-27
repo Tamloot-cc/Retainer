@@ -418,7 +418,7 @@ export const ENRICHMENT_BINDINGS: ExtensionBinding[] = [
         key: 'email',
         label: 'Email',
         description:
-          'Only the domain of a work email is used, to tell which company the person works at. The address itself is never sent.',
+          'The person’s email address, sent to Exa and the model with the rest of their record. A work email’s domain also tells which company they work at.',
         types: ['emails'],
         required: false,
         lookup: true,

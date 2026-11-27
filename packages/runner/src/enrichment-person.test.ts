@@ -589,6 +589,11 @@ describe('a person change run (spec 7.5)', () => {
         dealSize: { amountMicros: 5_000_000, currency: 'USD' },
         followers: 1200,
         address: { city: 'Lyon', country: 'France' },
+        otherEmails: { primary: 'ada@beta.example', additional: ['ada@gamma.example'] },
+        sites: {
+          primary: { url: 'https://ada.example' },
+          additional: [{ url: 'https://blog.ada.example', label: 'Blog' }],
+        },
       },
       { [schoolId]: { id: schoolId, object: 'school', label: 'Anvil Institute' } },
     );
@@ -603,6 +608,8 @@ describe('a person change run (spec 7.5)', () => {
         'Anvil Institute',
         '1200',
         'Lyon, France',
+        'ada@beta.example, ada@gamma.example',
+        'https://ada.example, https://blog.ada.example, Blog',
       ]),
       exaPeopleRequest(['Ada Example']),
     ]);

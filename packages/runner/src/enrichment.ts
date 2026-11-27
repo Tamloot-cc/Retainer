@@ -78,8 +78,8 @@ const DETAIL_CHARS = 500;
 const DETAILS_CHARS = 3000;
 
 /**
- * A field value as text: its text, number, list, name, email, link or the
- * parts of an address. A related record is its label, from the references
+ * A field value as text: its text, number, list, name, every email and link
+ * (with its label), or the parts of an address. A related record is its label, from the references
  * the record was read with; one it can't see is left out, not sent as an ID.
  */
 function textOf(value: unknown, references: PresentedRecord['relationReferences']): string | null {
@@ -99,10 +99,11 @@ function textOf(value: unknown, references: PresentedRecord['relationReferences'
     );
   // A boolean or an amount of money says nothing about who someone is.
   if (!value || typeof value !== 'object' || 'amountMicros' in value) return null;
-  const primary = (value as { primary?: unknown }).primary;
-  if (typeof primary === 'string') return primary.trim() || null;
+  // Emails and links: the primary value and the additional ones.
+  const { primary, additional } = value as { primary?: unknown; additional?: unknown };
+  if (primary !== undefined || Array.isArray(additional))
+    return textOf([primary, ...(Array.isArray(additional) ? additional : [])], references);
   const text =
-    primaryUrl(value) ??
     nameOf(value) ??
     Object.values(value)
       .filter((part): part is string => typeof part === 'string' && !!part.trim())
