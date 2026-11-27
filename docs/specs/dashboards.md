@@ -93,7 +93,8 @@ Decided with the product owner on 2026-11-27:
   same way: a person describes it in the chat, the agent drafts and checks
   it, the person sees it live and keeps it. Only the last step differs
   with the risk: a view is saved, a dashboard is pinned, a routine is
-  proposed and then approved. That shared design is not written yet. This
+  proposed and then approved. The shared design is
+  [chat-builds.md](chat-builds.md). This
   spec builds its dashboard parts in the core so that views and Routines
   can use them: the guide read on demand (§5.1), the check before
   answering (§5.3) and the draft shown in the chat (§8.1).

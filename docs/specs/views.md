@@ -3,7 +3,8 @@
 Status: **proposed**, 2026-11-27. Written after Dashboards shipped (#212),
 so it builds on the chat pieces that work made to share: chat blocks, the
 draft card, guides read on demand and a check before answering
-([dashboards.md](dashboards.md) §5, §8.1).
+([dashboards.md](dashboards.md) §5, §8.1). The pattern it shares with
+dashboards and Routines is [chat-builds.md](chat-builds.md).
 
 If accepted this spec amends:
 
