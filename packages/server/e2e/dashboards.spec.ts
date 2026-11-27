@@ -187,6 +187,28 @@ test.describe('saved dashboards', () => {
     await page.getByRole('button', { name: 'Edit with the agent' }).click();
     await expect(page.getByRole('region', { name: 'Clients tracked' })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(chat);
+    const id = chat.split('/').at(-1);
+    await expect
+      .poll(async () => (await retainer.request(`/agent/chats/${id}`, undefined, key)).running)
+      .toBe(false);
+    // The former schema name appears only in the historical draft.
+    // Loading the chat again must read the live dashboard, never the old one.
+    const queriedObjects: string[] = [];
+    page.on('request', (request) => {
+      const object = new URL(request.url()).pathname.match(
+        /\/v1\/objects\/([^/]+)\/aggregate$/,
+      )?.[1];
+      if (object) queriedObjects.push(object);
+    });
+    const liveRead = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/v1/objects/client/aggregate' && response.ok(),
+    );
+    await page.reload();
+    await liveRead;
+    await expect(page.getByText('Previous draft. Live data is paused.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Companies tracked' })).toBeVisible();
+    expect(queriedObjects).not.toContain('company');
     const updates = page.getByRole('button', { name: 'Update “Company snapshot”' });
     // The preview streams before its save actions appear.
     await expect(updates).toHaveCount(2);

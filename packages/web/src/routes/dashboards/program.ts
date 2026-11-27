@@ -4,6 +4,7 @@ import {
   parseExpression,
   split,
   tokenize,
+  walkAST,
 } from '@openuidev/lang-core';
 import {
   DASHBOARD_MAX_BYTES,
@@ -91,7 +92,11 @@ function isLiteral(node: ASTNode | undefined): boolean {
 }
 
 /** Enforce read and refresh limits on drafts as well as saved programs. */
-export function renderableProgram(program: string, savedIssues: DashboardIssue[], saved = false) {
+export function renderableProgram(
+  program: string,
+  savedIssues: DashboardIssue[],
+  { saved = false, live = true } = {},
+) {
   const issues = [...savedIssues];
   if (!saved && new TextEncoder().encode(program).length > DASHBOARD_MAX_BYTES)
     return {
@@ -103,7 +108,21 @@ export function renderableProgram(program: string, savedIssues: DashboardIssue[]
   const out: string[] = [];
   for (const { start = 0, end = program.length, id, tokens } of statements(program)) {
     const node = parseExpression(tokens);
+    let nestedQuery = false;
+    walkAST(node, (part) => {
+      if (part !== node && part.k === 'Comp' && part.name === 'Query') nestedQuery = true;
+    });
+    if (nestedQuery)
+      return {
+        program: '',
+        issues: [...issues, { statement: id, message: 'Query must be its own statement' }],
+      };
     if (node.k !== 'Comp' || node.name !== 'Query') continue;
+    if (!live) {
+      out.push(program.slice(at, start), `${id} = null`);
+      at = end;
+      continue;
+    }
     count++;
     const [tool, args, defaults, refresh] = node.args;
     const valid =

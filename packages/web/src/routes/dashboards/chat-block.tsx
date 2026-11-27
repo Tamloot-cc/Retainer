@@ -125,12 +125,14 @@ export default function DashboardChatBlock({
   previous,
   streaming,
   complete,
+  historical,
   chatId,
 }: {
   code: string;
   previous: string[];
   streaming: boolean;
   complete: boolean;
+  historical: boolean;
   chatId?: string | undefined;
 }) {
   const { session } = useWorkspace();
@@ -156,7 +158,15 @@ export default function DashboardChatBlock({
         ) : null
       }
     >
-      <DashboardView program={program} streaming={streaming && !complete} />
+      {historical ? (
+        <p className="text-xs text-muted-foreground">Previous draft. Live data is paused.</p>
+      ) : null}
+      <DashboardView
+        key={historical ? 'historical' : 'live'}
+        program={program}
+        streaming={streaming && !complete}
+        live={!historical}
+      />
     </DraftCard>
   );
 }

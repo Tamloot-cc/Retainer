@@ -23,7 +23,6 @@ valid = Query("aggregate_records", {object: "deal"}, {}, 60)`;
     'dynamic',
     'fast',
     'overflow',
-
     'removed',
   ]);
   expect(safe.program.match(/Query\("__unavailable"/g)).toHaveLength(4);
@@ -39,4 +38,24 @@ it('recognizes a persisted program after the API reformats its query arguments',
   expect(sameDashboardProgram(saved.replace('limit":10', 'limit":5'), EXAMPLE_DASHBOARD)).toBe(
     false,
   );
+});
+
+it('rejects a nested query before any part of the draft can run', () => {
+  const source = `root = Dashboard("Plan", [count])
+count = Metric("Count", Query("aggregate_records", {object: "deal"}, {total: 0}, 60).total)`;
+  expect(renderableProgram(source, [])).toEqual({
+    program: '',
+    issues: [{ statement: 'count', message: 'Query must be its own statement' }],
+  });
+});
+
+it('removes query calls and their refresh timers from historical previews', () => {
+  const source = `root = Dashboard("Plan", [count])
+rows = Query("aggregate_records", {object: "deal"}, {total: 0}, 60)
+count = Metric("Count", rows.total)`;
+  const safe = renderableProgram(source, [], { live: false });
+  expect(safe.issues).toEqual([]);
+  expect(safe.program).toContain('rows = null');
+  expect(safe.program).not.toContain('Query(');
+  expect(safe.program).toContain('count = Metric("Count", rows.total)');
 });

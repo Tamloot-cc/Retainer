@@ -8,6 +8,7 @@ type ChatBlockProps = {
   previous: string[];
   streaming: boolean;
   complete: boolean;
+  historical: boolean;
   chatId?: string | undefined;
 };
 
@@ -53,6 +54,20 @@ export function chatSegments(text: string): Segment[] {
   return result;
 }
 
+export function latestChatBlock(messages: ChatMessage[]) {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const message = messages[messageIndex];
+    if (message?.role !== 'assistant') continue;
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
+      const part = message.parts[partIndex];
+      if (part?.type !== 'text') continue;
+      const block = chatSegments(part.text).findLast((segment) => segment.type === 'block');
+      if (block) return { messageIndex, partIndex, offset: block.offset };
+    }
+  }
+  return undefined;
+}
+
 export type BlockHistory = Readonly<Record<string, string[]>>;
 
 export function extendBlockHistory(
@@ -92,11 +107,13 @@ export function ChatAnswer({
   history,
   chatId,
   streaming,
+  latestBlockOffset,
 }: {
   text: string;
   history: BlockHistory;
   chatId?: string;
   streaming: boolean;
+  latestBlockOffset?: number;
 }) {
   return chatSegments(text).map((segment) => {
     if (segment.type === 'markdown') {
@@ -122,6 +139,7 @@ export function ChatAnswer({
           chatId={chatId}
           streaming={streaming}
           complete={segment.complete}
+          historical={segment.offset !== latestBlockOffset}
         />
       </Suspense>
     );

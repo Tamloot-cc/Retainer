@@ -14,25 +14,27 @@ export function DashboardView({
   issues = NO_ISSUES,
   streaming = false,
   saved = false,
+  live = true,
 }: {
   program: string;
   issues?: DashboardIssue[];
   streaming?: boolean;
   saved?: boolean;
+  live?: boolean;
 }) {
   const { schema } = useWorkspace();
   const [errors, setErrors] = useState<OpenUIError[]>([]);
   const providers = useMemo(() => dashboardTools(api, schema), [schema]);
   const safe = useMemo(() => {
     try {
-      return renderableProgram(program, issues, saved);
+      return renderableProgram(program, issues, { saved, live });
     } catch {
       return {
         program: '',
         issues: [{ statement: 'root', message: 'Dashboard program could not be parsed' }],
       };
     }
-  }, [program, issues, saved]);
+  }, [program, issues, saved, live]);
   const messages = [
     ...new Set([
       ...safe.issues.map(({ message }) => message),
@@ -48,7 +50,7 @@ export function DashboardView({
           response={safe.program}
           library={dashboardLibrary}
           isStreaming={streaming}
-          toolProvider={providers}
+          toolProvider={live ? providers : undefined}
           onError={setErrors}
           publishObservability={false}
         >

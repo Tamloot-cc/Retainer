@@ -38,6 +38,7 @@ import {
   ChatAnswer,
   extendBlockHistory,
   extendMessageBlockHistory,
+  latestChatBlock,
 } from './chat-blocks.js';
 import {
   answerText,
@@ -65,6 +66,7 @@ import {
 } from './model.js';
 
 const EMPTY_BLOCK_HISTORY: BlockHistory = {};
+type LatestBlock = ReturnType<typeof latestChatBlock>;
 
 const KIND_ICONS: Record<ToolKind, typeof Search> = {
   search: Search,
@@ -404,11 +406,13 @@ function AssistantParts({
   stopping,
   history,
   chatId,
+  latestBlock,
   hasMark,
 }: {
   message: ChatMessage;
   history: BlockHistory;
   chatId?: string;
+  latestBlock: LatestBlock;
   streaming: boolean;
   stopping: boolean;
   hasMark: boolean;
@@ -438,6 +442,9 @@ function AssistantParts({
               text={part.text}
               history={previous}
               chatId={chatId}
+              latestBlockOffset={
+                latestBlock?.partIndex === segment.index ? latestBlock.offset : undefined
+              }
               streaming={streaming && last}
             />
           );
@@ -510,10 +517,12 @@ const AgentMessage = memo(function AgentMessage({
   onRetry,
   history,
   chatId,
+  latestBlock,
 }: {
   message: ChatMessage;
   history: BlockHistory;
   chatId?: string;
+  latestBlock: LatestBlock;
   answering: boolean;
   last: boolean;
   actions: boolean;
@@ -531,6 +540,7 @@ const AgentMessage = memo(function AgentMessage({
         stopping={stopping}
         history={history}
         chatId={chatId}
+        latestBlock={latestBlock}
         hasMark={Boolean(mood)}
       />
       {actions && !answering && (answer || onRetry) ? (
@@ -593,6 +603,7 @@ export function ChatMessages({
       return previous;
     });
   }, [messages]);
+  const latestBlock = useMemo(() => latestChatBlock(messages), [messages]);
   const turns = messages.flatMap((message, index) => {
     const last = index === messages.length - 1;
     if (message.role === 'user') {
@@ -614,6 +625,7 @@ export function ChatMessages({
             message={message}
             history={histories[index] ?? EMPTY_BLOCK_HISTORY}
             chatId={chatId}
+            latestBlock={latestBlock?.messageIndex === index ? latestBlock : undefined}
             answering={streaming && last}
             last={last}
             actions={mark}
