@@ -16,7 +16,9 @@ import {
   RelativeTime,
 } from '../../ui/index.js';
 import { Menu, MenuAction } from '../../ui/menu.js';
+import { type BlockHistory, extendMessageBlockHistory } from '../agent/chat-blocks.js';
 import { firstMessages } from '../agent/first-message.js';
+import type { ChatMessage } from '../agent/model.js';
 import { QueryError } from '../state.js';
 import { dashboardKey } from './keys.js';
 
@@ -102,34 +104,35 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
   const [renameRevision, setRenameRevision] = useState('');
   const openChat = useMutation({
     mutationFn: async () => {
-      if (dashboard.chatId && !dashboard.issues.length) {
+      // The detail cache can still contain a program read before a schema rename.
+      const current = await api.dashboard(dashboard.id);
+      client.setQueryData(detail, current);
+      if (current.chatId && !current.issues.length) {
         try {
-          const [, linked] = await Promise.all([
-            api.agentChat(dashboard.chatId),
-            api.dashboards(dashboard.chatId),
-          ]);
-          if (
-            linked.dashboards.some(
-              (other) => other.id !== dashboard.id && other.updatedAt >= dashboard.updatedAt,
-            )
-          )
-            firstMessages.set(dashboard.chatId, firstDashboardMessage(dashboard));
-          return dashboard.chatId;
+          const chat = await api.agentChat(current.chatId);
+          const { matchesDashboardHistory } = await import('./program.js');
+          const history = (chat.messages as ChatMessage[]).reduce<BlockHistory>(
+            (blocks, message) => extendMessageBlockHistory(blocks, message),
+            {},
+          );
+          if (!matchesDashboardHistory(history['openui-lang'] ?? [], current.program))
+            firstMessages.set(chat.id, firstDashboardMessage(current));
+          return { chatId: chat.id, current };
         } catch (error) {
           if (!(error instanceof RetainerApiError) || error.status !== 404) throw error;
         }
       }
       const chat = await api.createAgentChat(undefined, 'web');
-      firstMessages.set(chat.id, firstDashboardMessage(dashboard));
-      return chat.id;
+      firstMessages.set(chat.id, firstDashboardMessage(current));
+      return { chatId: chat.id, current };
     },
-    onSuccess: (id) => {
+    onSuccess: ({ chatId, current }) => {
       void navigate({
         to: '/chat/$id',
-        params: { id },
+        params: { id: chatId },
         search: {
-          dashboard: dashboard.id,
-          dashboardRevision: dashboard.updatedAt,
+          dashboard: current.id,
+          dashboardRevision: current.updatedAt,
         },
       });
     },

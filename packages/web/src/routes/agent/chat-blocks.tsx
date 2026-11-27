@@ -1,6 +1,7 @@
 import { type ComponentType, lazy, Suspense } from 'react';
 import remend from 'remend';
 import { Markdown } from '../../ui/index.js';
+import { type ChatMessage, messageText } from './model.js';
 
 type ChatBlockProps = {
   code: string;
@@ -72,6 +73,18 @@ export function extendBlockHistory(
     }
   }
   return next;
+}
+
+export function extendMessageBlockHistory(
+  history: BlockHistory,
+  message: ChatMessage,
+): BlockHistory {
+  if (message.role === 'user') return extendBlockHistory(history, messageText(message), true);
+  if (message.role !== 'assistant') return history;
+  for (const part of message.parts) {
+    if (part.type === 'text') history = extendBlockHistory(history, part.text);
+  }
+  return history;
 }
 
 export function ChatAnswer({

@@ -359,11 +359,11 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
   // biome-ignore lint/correctness/useExhaustiveDependencies: sends the handed-over message once.
   useEffect(() => {
     const text = first.current;
-    if (!text) return;
+    if (!text || runningBefore || chat.stopping) return;
     first.current = undefined;
     firstMessages.delete(chat.id);
     send(text);
-  }, [chat.id]);
+  }, [chat.id, runningBefore, chat.stopping]);
 
   const cancel = useMutation({
     mutationFn: () => api.cancelAgentChat(chat.id),

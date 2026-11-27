@@ -60,6 +60,14 @@ export function mergeDashboardBlocks(previous: string[], current: string): strin
   return program;
 }
 
+export function matchesDashboardHistory(blocks: string[], program: string): boolean {
+  try {
+    return sameDashboardProgram(mergeDashboardBlocks(blocks, ''), program);
+  } catch {
+    return false;
+  }
+}
+
 function isLiteral(node: ASTNode | undefined): boolean {
   switch (node?.k) {
     case 'Str':

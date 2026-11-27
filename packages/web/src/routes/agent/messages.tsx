@@ -33,7 +33,12 @@ import {
   type TraceStatus,
   TraceTitle,
 } from '../../ui/trace.js';
-import { type BlockHistory, ChatAnswer, extendBlockHistory } from './chat-blocks.js';
+import {
+  type BlockHistory,
+  ChatAnswer,
+  extendBlockHistory,
+  extendMessageBlockHistory,
+} from './chat-blocks.js';
 import {
   answerText,
   type ChatMessage,
@@ -584,13 +589,7 @@ export function ChatMessages({
     let history = EMPTY_BLOCK_HISTORY;
     return messages.map((message) => {
       const previous = history;
-      if (message.role === 'user')
-        history = extendBlockHistory(history, messageText(message), true);
-      if (message.role === 'assistant') {
-        for (const part of message.parts) {
-          if (part.type === 'text') history = extendBlockHistory(history, part.text);
-        }
-      }
+      history = extendMessageBlockHistory(history, message);
       return previous;
     });
   }, [messages]);

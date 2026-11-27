@@ -148,4 +148,49 @@ test.describe('saved dashboards', () => {
     expect(changed.program).toContain('Companies in CRM');
     expect(untouched.updatedAt).toBe(latest.updatedAt);
   });
+  test('continues an existing dashboard chat after its queried object is renamed', async ({
+    page,
+    retainer,
+  }) => {
+    const key = retainer.keys.user;
+    retainer.anthropic?.enqueue({
+      blocks: [{ type: 'text', text: `\`\`\`openui-lang\n${program}\n\`\`\`` }],
+      stopReason: 'end_turn',
+    });
+    await signIn(page, retainer.url, key);
+    await page.getByRole('link', { name: 'Chat', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Message' }).fill('Show a company dashboard.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page.getByRole('button', { name: 'Pin to Dashboards' }).click();
+    const saved = page.getByRole('link', { name: 'Saved' });
+    await expect(saved).toBeVisible();
+    const chat = new URL(page.url()).pathname;
+    await retainer.request(
+      '/schema/changes',
+      {
+        operations: [
+          { op: 'rename_object', object: 'company', nameSingular: 'client', namePlural: 'clients' },
+        ],
+      },
+      key,
+    );
+    await saved.click();
+    retainer.anthropic?.enqueue({
+      blocks: [
+        {
+          type: 'text',
+          text: '```openui-lang\ncount = Metric("Clients tracked", companies.total)\n```',
+        },
+      ],
+      stopReason: 'end_turn',
+    });
+    await page.getByRole('button', { name: 'Edit with the agent' }).click();
+    await expect(page.getByRole('region', { name: 'Clients tracked' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(chat);
+    await page.getByRole('button', { name: 'Update “Company snapshot”' }).last().click();
+    const lastSaved = page.getByRole('link', { name: 'Saved' }).last();
+    await expect(lastSaved).toBeVisible();
+    await lastSaved.click();
+    await expect(page.getByRole('region', { name: 'Clients tracked' })).toBeVisible();
+  });
 });
