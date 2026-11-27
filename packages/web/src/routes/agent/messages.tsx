@@ -95,15 +95,17 @@ function StepIcon({ status, icon: Icon }: { status?: TraceStatus; icon: typeof S
 function StepLine({
   status,
   icon,
+  hideSpinner,
   children,
 }: {
   status?: TraceStatus;
   icon: typeof Search;
+  hideSpinner?: boolean;
   children: ReactNode;
 }) {
   return (
     <TraceLine status={status}>
-      <StepIcon status={status} icon={icon} />
+      {hideSpinner && status === 'running' ? null : <StepIcon status={status} icon={icon} />}
       {children}
     </TraceLine>
   );
@@ -119,10 +121,18 @@ function useLiveOpen(live: boolean) {
   return { open: open ?? live, onOpenChange: setOpen };
 }
 
-function ReasoningStep({ text, running }: { text: string; running: boolean }) {
+function ReasoningStep({
+  text,
+  running,
+  hideSpinner,
+}: {
+  text: string;
+  running: boolean;
+  hideSpinner?: boolean;
+}) {
   const openState = useLiveOpen(running);
   const line = (
-    <StepLine status={running ? 'running' : undefined} icon={Brain}>
+    <StepLine status={running ? 'running' : undefined} icon={Brain} hideSpinner={hideSpinner}>
       <TraceTitle>{running ? 'Thinking' : 'Thought'}</TraceTitle>
     </StepLine>
   );
@@ -160,7 +170,15 @@ function WebResults({ results }: { results: { url: string; title?: string }[] })
   );
 }
 
-function ToolStep({ part, streaming }: { part: ToolPart; streaming: boolean }) {
+function ToolStep({
+  part,
+  streaming,
+  hideSpinner,
+}: {
+  part: ToolPart;
+  streaming: boolean;
+  hideSpinner?: boolean;
+}) {
   const finished = toolFinished(part);
   const error = toolError(part);
   const failed = toolHasFailures(part);
@@ -174,7 +192,7 @@ function ToolStep({ part, streaming }: { part: ToolPart; streaming: boolean }) {
       ? 'error'
       : undefined;
   const title = (
-    <StepLine status={status} icon={KIND_ICONS[toolKind(part)]}>
+    <StepLine status={status} icon={KIND_ICONS[toolKind(part)]} hideSpinner={hideSpinner}>
       <TraceTitle>{error ? `${line}, but ${toolErrorText(error)}` : line}</TraceTitle>
     </StepLine>
   );
@@ -207,10 +225,12 @@ function StepLines({
   parts,
   lines,
   streaming,
+  hideSpinner,
 }: {
   parts: ChatPart[];
   lines: ReturnType<typeof groupTraceParts>;
   streaming: boolean;
+  hideSpinner?: boolean;
 }) {
   return (
     <Trace>
@@ -219,7 +239,14 @@ function StepLines({
           const { calls } = entry;
           const [first] = calls;
           if (calls.length === 1)
-            return <ToolStep key={entry.index} part={first} streaming={streaming} />;
+            return (
+              <ToolStep
+                key={entry.index}
+                part={first}
+                streaming={streaming}
+                hideSpinner={hideSpinner}
+              />
+            );
           const status = toolHasFailures(first) ? 'error' : undefined;
           return (
             <TraceCollapsible key={entry.index}>
@@ -245,9 +272,13 @@ function StepLines({
               key={index}
               text={part.text}
               running={streaming && index === parts.length - 1 && part.state !== 'done'}
+              hideSpinner={hideSpinner}
             />
           );
-        if (isToolPart(part)) return <ToolStep key={index} part={part} streaming={streaming} />;
+        if (isToolPart(part))
+          return (
+            <ToolStep key={index} part={part} streaming={streaming} hideSpinner={hideSpinner} />
+          );
         return null;
       })}
     </Trace>
@@ -266,10 +297,19 @@ function currentStep(parts: ChatPart[]) {
  * While it runs, its line says what the agent is doing now and the steps
  * show under it; once done, it folds into one line saying what it did.
  */
-function Steps({ parts, live }: { parts: ChatPart[]; live: boolean }) {
+function Steps({
+  parts,
+  live,
+  hideSpinner,
+}: {
+  parts: ChatPart[];
+  live: boolean;
+  hideSpinner: boolean;
+}) {
   const openState = useLiveOpen(live);
   const lines = groupTraceParts(parts);
-  if (lines.length === 1) return <StepLines parts={parts} lines={lines} streaming={live} />;
+  if (lines.length === 1)
+    return <StepLines parts={parts} lines={lines} streaming={live} hideSpinner={hideSpinner} />;
   const failed = parts.some((part) => isToolPart(part) && toolHasFailures(part));
   const now = currentStep(parts);
   const status: TraceStatus | undefined = live ? 'running' : failed ? 'error' : undefined;
@@ -277,7 +317,7 @@ function Steps({ parts, live }: { parts: ChatPart[]; live: boolean }) {
     <Trace>
       <TraceCollapsible {...openState}>
         <TraceCollapsibleTrigger>
-          <StepLine status={status} icon={live ? now.icon : CircleCheck}>
+          <StepLine status={status} icon={live ? now.icon : CircleCheck} hideSpinner={hideSpinner}>
             <TraceTitle>{live ? now.title : stepsSummary(parts)}</TraceTitle>
             <TraceDescription>
               {parts.length} {parts.length === 1 ? 'step' : 'steps'}
@@ -363,10 +403,12 @@ function AssistantParts({
   message,
   streaming,
   stopping,
+  hasMark,
 }: {
   message: ChatMessage;
   streaming: boolean;
   stopping: boolean;
+  hasMark: boolean;
 }) {
   const segments = segmentParts(message.parts);
   return (
@@ -375,7 +417,14 @@ function AssistantParts({
         const key = `${message.id}-${segment.index}`;
         const last = at === segments.length - 1;
         if (segment.kind === 'steps')
-          return <Steps key={key} parts={segment.parts} live={streaming && last} />;
+          return (
+            <Steps
+              key={key}
+              parts={segment.parts}
+              live={streaming && last}
+              hideSpinner={hasMark && at === 0}
+            />
+          );
         const { part } = segment;
         if (part.type === 'text')
           return (
@@ -463,7 +512,12 @@ const AgentMessage = memo(function AgentMessage({
   const answer = answerText(message);
   return (
     <AgentTurn mark={mood ? <LogoMark mood={mood} size={32} className="shrink-0" /> : undefined}>
-      <AssistantParts message={message} streaming={answering} stopping={stopping} />
+      <AssistantParts
+        message={message}
+        streaming={answering}
+        stopping={stopping}
+        hasMark={Boolean(mood)}
+      />
       {actions && !answering && (answer || onRetry) ? (
         <MessageFooter pinned={last}>
           {answer ? <CopyMessage text={answer} label="Copy answer" /> : null}
