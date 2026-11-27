@@ -84,6 +84,7 @@ export const installInputSchema = z.strictObject({
   accessOnly: z.boolean().optional(),
   turnOn: z.boolean().optional(),
   installationId: z.uuid().optional(),
+  retainBindings: z.boolean().optional(),
   reconnect: z.boolean().optional(),
   replaceSourceAccount: z.boolean().optional(),
   grantChange: z.boolean().optional(),
@@ -609,6 +610,20 @@ export class Extensions {
     const configure = manifest.functions.find((fn) => fn.trigger.kind === 'configure');
     const accessOnly =
       input.accessOnly === true || (!input.installationId && !input.manualSetup && !!configure);
+    if (
+      input.retainBindings &&
+      (!input.installationId || input.turnOn || accessOnly || input.reconnect || input.bindings)
+    )
+      throw new AppError(400, 'invalid_request', 'retaining destinations requires an upgrade');
+    if (input.retainBindings && existing) {
+      if (approval)
+        throw conflict('setup_review_required', 'continue the upgrade review already in progress');
+      const retainedSettings = Object.fromEntries(
+        Object.entries(existing.settings).filter(([key]) => Object.hasOwn(manifest.settings, key)),
+      );
+      if (hash(input.settings) !== hash(retainedSettings))
+        throw conflict('setup_review_required', 'review the changed extension settings');
+    }
     // A regular upgrade or settings edit carries the admin's model choice forward.
     const withholdModel =
       optionalModel &&
@@ -793,12 +808,12 @@ export class Extensions {
           hash(releaseContract(installedRelease)) !== hash(releaseContract(manifest)))
       : !!existing?.bindings?.declarations.length;
     const [proposal] =
-      hasBindings && replan
+      hasBindings && replan && !input.retainBindings
         ? await tx<{ choices: ExtensionBindingChoices }[]>`
       select choices from extension_binding_proposals where release_digest = ${release.digest}`
         : [];
     const [configured] =
-      existing && hasBindings && replan && !input.manualSetup
+      existing && hasBindings && replan && !input.manualSetup && !input.retainBindings
         ? await tx<{ bindings: ExtensionBindingChoices | null }[]>`
       select s.bindings from extension_suggestions s join extension_jobs j on j.id = s.job_id
       where s.installation_id = ${existing.id} and s.release_digest = ${release.digest}
@@ -809,6 +824,14 @@ export class Extensions {
       ? resolveBindingPlan(current, manifest, choices, existing?.bindings, people)
       : undefined;
     const operations = bound?.operations ?? [];
+    if (
+      input.retainBindings &&
+      (operations.length > 0 ||
+        hash(existing?.bindings?.declarations ?? []) !== hash(manifest.bindings ?? []) ||
+        hash(existing?.bindings?.destinations ?? {}) !== hash(bound?.plan.destinations ?? {}) ||
+        (!!existing?.bindings && existing.bindings.createPeople !== people))
+    )
+      throw conflict('setup_review_required', 'review the changes to the approved destinations');
     if (
       undescribed &&
       operations.some((op) => op.op === 'create_object' || op.op === 'create_field')
@@ -927,6 +950,7 @@ export class Extensions {
         bindings: bound?.plan,
         runtimeReady: this.ready(manifest, release.digest),
         reconnect: input.reconnect === true,
+        ...(input.retainBindings ? { retainBindings: true } : {}),
         replaceSourceAccount: input.replaceSourceAccount === true,
         grantChange: input.grantChange === true,
         // Whether a contributed view was edited decides how it is applied.
@@ -983,7 +1007,7 @@ export class Extensions {
       warnings: [
         ...bindingNotices,
         ...viewNotices,
-        ...(replan && existing?.bindings
+        ...(replan && existing?.bindings && !input.retainBindings
           ? [
               'Imported history stays in its original objects.',
               ...(typeof manifest.source?.tasks === 'string' &&

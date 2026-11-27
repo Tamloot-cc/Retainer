@@ -1205,6 +1205,8 @@ export type ExtensionInstallInput = {
   turnOn?: boolean;
   /** Set for an upgrade preview and commit. */
   installationId?: string;
+  /** Upgrade only if the approved destinations can be carried forward as-is. */
+  retainBindings?: boolean;
   /** Explicitly review a new credential/account connection on the current release. */
   reconnect?: boolean;
   /** Retire the old source binding and callback addresses; retained evidence keeps its namespace. */

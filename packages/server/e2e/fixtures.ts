@@ -185,6 +185,36 @@ const browserConfigurePrevious = manifestFixture({
     fields: binding.fields.filter((field) => field.key !== 'headquarters'),
   })),
 });
+const browserSharingConsent = {
+  type: 'boolean',
+  label: 'Share names and websites',
+  description: 'Company names and websites are shared for lookups.',
+  required: true,
+  default: false,
+  consent: true,
+  secret: false,
+  reconnect: true,
+} as const;
+const browserSharingPrevious = manifestFixture({
+  ...browserMappingManifest,
+  universalId: 'b71975ca-f2f4-4544-b577-5ca5aa9000d2',
+  name: 'browser-sharing',
+  settings: { shareLookups: browserSharingConsent },
+});
+const browserSharingUpgrade = manifestFixture({
+  ...browserSharingPrevious,
+  version: '2.0.0',
+  settings: {
+    shareLookups: {
+      ...browserSharingConsent,
+      description: 'Company names may be shared without a website.',
+    },
+  },
+  functions: browserConfigureManifest.functions.map((fn) => ({
+    ...fn,
+    universalId: 'c083d71b-e17e-4f16-86d5-003ab27112e1',
+  })),
+});
 export const browserMemberManifest = manifestFixture({
   universalId: 'd76ad98b-ac74-4fe5-82ac-0947165f8780',
   name: 'member-browser',
@@ -313,7 +343,7 @@ export const test = base.extend<
       finishConfigure: (setup?: boolean) => Promise<void>;
       /** Saves the suggestions Tamloot's model would make for the starter workspace. */
       suggestTamloot: () => Promise<void>;
-      previousConfiguration: () => Promise<string>;
+      previousConfiguration: (sharingOnly?: boolean) => Promise<string>;
       installRecordButton: () => Promise<string>;
       finishRecordButton: (
         installationId: string,
@@ -482,6 +512,7 @@ export const test = base.extend<
             [
               browserConfigurePrevious,
               configureSecretFixture ? browserSecretConfigureManifest : browserConfigureManifest,
+              ...(configureFixture ? [browserSharingPrevious, browserSharingUpgrade] : []),
             ].map((manifest) => ({
               manifest,
               actorCeiling: 'agent',
@@ -757,12 +788,12 @@ export const test = base.extend<
       );
       await queue.complete(job, { status: 'succeeded', code: 'suggestions_ready' });
     }
-    async function previousConfiguration() {
-      const manifest = browserConfigurePrevious;
+    async function previousConfiguration(sharingOnly = false) {
+      const manifest = sharingOnly ? browserSharingPrevious : browserConfigurePrevious;
       return install({
         registrationId: manifest.universalId,
         version: manifest.version,
-        settings: {},
+        settings: sharingOnly ? { shareLookups: true } : {},
         bindings: { company: { action: 'existing', objects: ['company'] } },
       });
     }

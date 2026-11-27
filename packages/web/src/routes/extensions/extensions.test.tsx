@@ -1,4 +1,5 @@
 import { MODEL_USE_NOTICE } from '@retainer/extension';
+import { RetainerApiError } from '@retainer/sdk';
 import type { SchemaDescription, Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
@@ -446,7 +447,6 @@ describe('extension pages and human approval', () => {
         onDone={() => {}}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Review upgrade' }));
     expect(await screen.findByText(/Access changes from read as an agent/)).toBeTruthy();
     expect(upgrade).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Approve access and upgrade' }));
@@ -486,7 +486,12 @@ describe('extension pages and human approval', () => {
       lastError: 'handler_failed',
     };
     const suggestions = vi.spyOn(api, 'extensionSuggestions');
-    const plan = vi.spyOn(api, 'previewExtension').mockResolvedValue(preview);
+    const plan = vi
+      .spyOn(api, 'previewExtension')
+      .mockRejectedValueOnce(
+        new RetainerApiError(409, 'setup_review_required', 'Review the changed settings.'),
+      )
+      .mockResolvedValue(preview);
     const upgrade = vi
       .spyOn(api, 'upgradeExtension')
       .mockResolvedValue({ ...disabled, version: '1.1.0' });
@@ -503,8 +508,12 @@ describe('extension pages and human approval', () => {
     await userEvent.click(await screen.findByRole('button', { name: /upgrade$/i }));
     await vi.waitFor(() => expect(upgrade).toHaveBeenCalledTimes(1));
     expect(suggestions).not.toHaveBeenCalled();
-    expect(plan.mock.calls[0]?.[0]).toMatchObject({ installationId: disabled.id });
-    expect(plan.mock.calls[0]?.[0]).not.toHaveProperty('accessOnly');
+    expect(plan.mock.calls[0]?.[0]).toMatchObject({
+      installationId: disabled.id,
+      retainBindings: true,
+    });
+    expect(plan.mock.calls[1]?.[0]).toMatchObject({ installationId: disabled.id });
+    expect(plan.mock.calls[1]?.[0]).not.toHaveProperty('accessOnly');
   });
 
   it('treats an upgrade that adds model use as more access, and shows model use on the approval', async () => {
@@ -542,7 +551,6 @@ describe('extension pages and human approval', () => {
         onDone={() => {}}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Review upgrade' }));
     expect(
       await screen.findByText(
         /Access changes from read and write as an integration to read and write with model use as an integration/,

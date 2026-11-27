@@ -75,3 +75,22 @@ test('keeps the old release active while suggesting upgrade bindings', async ({
   await expect(page).toHaveURL(new RegExp(`/extensions/${id}$`));
   expect((await r.request(`/extensions/${id}`, undefined, r.keys.user)).version).toBe('2.0.0');
 });
+
+test('reviews new sharing terms in one step and keeps the approved destinations', async ({
+  page,
+  retainer: r,
+}) => {
+  const id = await r.previousConfiguration(true);
+  const prior = await r.request(`/extensions/${id}`, undefined, r.keys.user);
+  await signIn(page, r.url, r.keys.user);
+  await page.goto(`${r.url}/app/extensions/${id}/upgrade`);
+
+  await expect(page.getByText('Company names may be shared without a website.')).toBeVisible();
+  await expect(page.getByText('Choose destinations', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Approve access', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Approve upgrade', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/extensions/${id}$`));
+  const upgraded = await r.request(`/extensions/${id}`, undefined, r.keys.user);
+  expect(upgraded.version).toBe('2.0.0');
+  expect(upgraded.bindingChoices).toEqual(prior.bindingChoices);
+});
