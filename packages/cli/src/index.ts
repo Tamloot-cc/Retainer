@@ -632,7 +632,7 @@ async function execute(ctx: CommandContext, command: string, args: string[]): Pr
       return wrap({ url: pinnedMcpAddress(server, workspace.id) });
     case 'agent chat': {
       const json = options.json === true || !process.stdout.isTTY;
-      const chatId = args[0] ?? (await api.createAgentChat()).id;
+      const chatId = args[0] ?? (await api.createAgentChat(undefined, 'cli')).id;
       const io = {
         write: (text: string) => process.stdout.write(text),
         color: process.stdout.isTTY && !process.env.NO_COLOR,

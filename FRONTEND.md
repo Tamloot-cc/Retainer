@@ -821,10 +821,24 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   task that ended before it saved anything says so, and a call refused before
   it got a task says why.
 
+### 5.11 Dashboards — `/app/dashboards`
+
+Available alongside Chat. The agent can stream an `openui-lang` block as a
+live draft. Its queries run through the API using the viewer's session. Pin
+keeps the draft, and a later draft can update the dashboard or be saved
+separately. The chart library loads when a chart is displayed. Charts offer
+the same data in a table.
+
+The list links to `/app/dashboards/:id`. The detail page shows current data
+and provides rename, sharing and deletion controls according to the
+viewer's access. **Edit with the agent** resumes the viewer's source chat
+or starts a chat using the saved program. **Fix with the agent** includes
+the issues that the API found. See the [dashboards spec](docs/specs/dashboards.md).
+
 ### Not in v1
 
 Creating or editing objects and fields in the UI, manual card order on
-boards, week and day calendars, dashboards, bulk record actions other than
+boards, week and day calendars, bulk record actions other than
 delete and merge, and context packs (`GET /v1/records/:id/context`, which
 serves agents). Workspace, member and key management is in the web app in
 accounts mode (ARCHITECTURE 7.3); in key mode it stays with the operator CLI

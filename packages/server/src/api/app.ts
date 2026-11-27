@@ -34,6 +34,7 @@ import { admitRestrictedApi, admitRestrictedCredential } from './restricted.js';
 import { agentChatRoutes, agentRuntimeRoutes, agentStreamForward } from './routes/agent.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
+import { dashboardRoutes } from './routes/dashboards.js';
 import { extensionDataRoutes } from './routes/extension-data.js';
 import { runtimeRoutes } from './routes/extension-runtime.js';
 import { extensionRoutes } from './routes/extensions.js';
@@ -229,6 +230,7 @@ export function createApp(deps: AppDeps) {
   commentRoutes(v1, deps.sql);
   retrievalRoutes(v1, deps.sql);
   viewRoutes(v1, deps.sql);
+  dashboardRoutes(v1, deps.sql);
   agentChatRoutes(v1, agent, publicOrigin);
   const extensions = new Extensions(
     deps.sql,

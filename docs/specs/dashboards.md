@@ -410,9 +410,10 @@ invalid_dashboard`, listing every problem, when:
 - a `refresh` interval is under 60 seconds;
 - it has more than 20 queries, or is over 20 KB.
 
-It also refuses an object or field the schema lacks, since the program could
-not be stored by key (§6.4). A field removed after saving does not stop a
-dashboard from loading.
+It also refuses an unknown object or field and applies the records API's
+schema-aware rules for filters, sorting, aggregate operations, grouping and
+date granularity. These checks compile the query without fetching records.
+A field removed after saving does not stop a dashboard from loading (§6.4).
 
 ### 6.4 Fields by key, as views
 
@@ -443,8 +444,11 @@ names nothing. `GET /v1/dashboards/:id` lists it in `issues` ("deal has no
 field amount any more"), the tile whose query uses it shows a plain note
 ("This part uses a field that was removed"), and the dashboard offers **Fix
 with the agent**, which opens it in a chat with the issues in the message
-(§8.3). A query that fails for another reason (no access, an invalid
-filter) shows the API's error in the tile.
+(§8.3). Recreating a field with the same name does not restore the original
+reference. A schema change that makes a saved query invalid, such as turning
+off filtering for its sort field, also produces a tile issue without
+rewriting the saved program. A runtime failure, such as a viewer lacking
+read access, shows the API's error in the tile.
 
 ### 6.5 Deletion and privacy
 
@@ -482,8 +486,9 @@ one record would count in several groups.
 
 ### 7.3 Many groups
 
-At most 50 groups come back by default (`limit`, at most 200, so that a
-chart can show a quarter by day). Past the limit, the response sets
+Date and relation groupings return at most 50 groups by default (`limit`,
+at most 200, so that a chart can show a quarter by day); a select grouping
+returns all its options unless `limit` is set. Past the limit, the response sets
 `tooManyGroups: true` and the tile says how many it shows. Which groups
 stay depends on the grouping: for options and relations, the largest; for
 dates, the latest periods, still shown oldest first, since a chart over
@@ -644,7 +649,10 @@ which lists copied source; plain dependencies need none.
   filling and time zones, by a field and by `createdAt` and `occurredAt`;
   relation grouping with labels; the group limit, keeping the largest
   groups and, for dates, the latest periods; the dashboard reads in
-  restricted mode; `aggregate_records` and `check_dashboard` over MCP and
+  restricted mode; invalid query options are rejected by both dashboard
+  saves and direct queries; schema drift is reported per query without
+  rebinding removed fields or writing back to the saved program;
+  `aggregate_records` and `check_dashboard` over MCP and
   as agent tools with the person's access; a web chat's first message
   names the guide and a terminal chat's does not.
 - **End to end (Playwright)**: with a stubbed agent stream, a chat answer

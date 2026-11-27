@@ -27,7 +27,9 @@ let salesAdminKey: string;
 const clients: McpTestClient[] = [];
 
 const TOOLS = [
+  'aggregate_records',
   'apply_template',
+  'check_dashboard',
   'create_file_upload',
   'describe_schema',
   'download_file',
@@ -364,7 +366,7 @@ describe('the discover_schema guide', () => {
         ...cardinalities,
       ]);
       const named = new Set(res.body.match(/\b[a-z]+(?:_[a-z]+)+\b/g));
-      expect(named).toContain('log_event');
+      expect(named).toContain(name === 'dashboards' ? 'check_dashboard' : 'log_event');
       expect([...named].filter((word) => !known.has(word))).toEqual([]);
     },
   );

@@ -320,6 +320,8 @@ endpoint({
   operationId: 'aggregate-records',
   summary: 'Aggregate matching records',
   access: 'read',
+  description:
+    'Group by a select, a date or a single relation. Date groups use the workspace time zone and fill gaps. Use object event to count across event types.',
   request: {
     example: { aggregates: [{ field: 'amount', op: 'sum' }] },
   },
@@ -729,6 +731,63 @@ endpoint({
     query('to', 'End of the time range.', timestamp),
   ],
   response: { schema: ref('TimelinePage') },
+});
+
+endpoint({
+  tag: 'Dashboards',
+  method: 'get',
+  path: '/v1/dashboards',
+  operationId: 'list-dashboards',
+  summary: 'List visible dashboards',
+  access: 'read',
+  parameters: [query('chatId', 'Limit to dashboards saved from an open chat you own.', id)],
+  response: { schema: object({ dashboards: array(ref('DashboardSummary')) }) },
+});
+endpoint({
+  tag: 'Dashboards',
+  method: 'post',
+  path: '/v1/dashboards',
+  operationId: 'create-dashboard',
+  summary: 'Pin a dashboard',
+  access: 'write',
+  description:
+    'Save a read-only OpenUI Lang program. Its queries run with the viewer’s credential when opened.',
+  request: { example: { name: 'Pipeline', program: 'root = Dashboard("Pipeline", [])' } },
+  response: { status: 201, schema: ref('SavedDashboard') },
+  additionalResponses: { '422': response('Invalid dashboard program or chat.', ref('Error')) },
+});
+endpoint({
+  tag: 'Dashboards',
+  method: 'get',
+  path: '/v1/dashboards/{id}',
+  operationId: 'get-dashboard',
+  summary: 'Read a saved dashboard',
+  access: 'read',
+  response: { schema: ref('SavedDashboard') },
+});
+endpoint({
+  tag: 'Dashboards',
+  method: 'patch',
+  path: '/v1/dashboards/{id}',
+  operationId: 'update-dashboard',
+  summary: 'Update a saved dashboard',
+  access: 'write',
+  description: 'Send the last updatedAt as expectedUpdatedAt. The creator can change visibility.',
+  request: { example: { name: 'Open pipeline', expectedUpdatedAt: date } },
+  response: { schema: ref('SavedDashboard') },
+  additionalResponses: {
+    '409': response('Dashboard changed since it was read.', ref('Error')),
+    '422': response('Invalid dashboard program or chat.', ref('Error')),
+  },
+});
+endpoint({
+  tag: 'Dashboards',
+  method: 'delete',
+  path: '/v1/dashboards/{id}',
+  operationId: 'delete-dashboard',
+  summary: 'Delete a saved dashboard',
+  access: 'write',
+  response: { status: 204, description: 'Dashboard deleted.' },
 });
 
 endpoint({

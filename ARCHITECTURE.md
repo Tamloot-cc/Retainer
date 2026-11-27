@@ -595,7 +595,7 @@ the events are leaving. The moved events are also locked `FOR UPDATE`, in ID
 order. Moving every event of a type is one transaction: all of them move or
 none do. Once a type has no live events, deleting it deletes nothing.
 
-### 1.4 Views
+### 1.4 Views and dashboards
 
 A view is a saved way of looking at one object's records: a table, a board
 grouped by a select field, or a calendar on a date field. Views are display
@@ -657,6 +657,15 @@ Deleting a view removes its row; there is nothing to retract. Deleting an
 object deletes its views with it.
 
 ---
+
+**Dashboards** are display settings that can query several objects. The
+`dashboards` table holds an OpenUI Lang program, name, visibility, position,
+creator and updater, timestamps, and an optional source chat. Query arguments
+store object IDs and field keys, then resolve to current API names on read.
+Workspace dashboards follow view visibility. The API only returns the source
+chat to its owner, and deleting a chat clears the link. A dashboard opens by
+running its reads with the viewer's credential in the browser. See the
+[dashboards spec](docs/specs/dashboards.md).
 
 ## 2. Write rules
 
@@ -1360,6 +1369,7 @@ side-effect audit and a read-only transaction for each supported path.
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `describe_schema`                  | The workspace (ID, name, applied templates, `initialized`), its objects and fields, and `builtIns`                                                 |
 | `query_records`                    | Structured filter, sort and pagination over one object; for an event type, its built-in columns and `linked`; `event` for every type at once (1.3) |
+| `aggregate_records`                | Count and calculate totals over matching records, optionally grouped by select, date or a single relation                  |
 | `get_record`                       | One record with its fields and links; an event also with its built-in columns, participants and `about`                                            |
 | `search`                           | Keyword search (Postgres full-text) across records, events and facts                                                                               |
 | `get_context(record, tokenBudget)` | A ready-to-use pack: current fields, linked records, facts and recent events, fitted to the budget                                                 |
@@ -1384,6 +1394,12 @@ source and validity dates; exact `as_of` snapshots are deferred. Context
 packs distinguish stated facts from current field values and show who wrote
 each. They are assembled by rules (recency, precedence, the token budget),
 not summarized by a model; summarizing is the agent's job.
+
+Aggregates can group by built-in record timestamps or filterable date fields.
+Calendar periods use the workspace time zone, fill gaps, and return the latest
+periods in chronological order. Select and single-relation groups use the option
+or record label and return the largest groups first. An aggregate returns up
+to 50 groups by default, configurable to 200, and flags truncation.
 
 ### 5.1 Search
 
@@ -1508,6 +1524,8 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `POST /v1/objects/:object/records`                | Create a record                                                                                                                         |
 | `POST /v1/objects/:object/query`                  | Filter, sort and page records; optional object-scoped keyword lookup                                                                    |
 | `POST /v1/objects/:object/aggregate`              | Count and per-field totals (empty, unique, sum, average, min, max) over a filter, optionally per option of a `select` field (`groupBy`) |
+| `GET` · `POST /v1/dashboards`                     | List visible dashboards or pin a validated program                                                                                     |
+| `GET` · `PATCH` · `DELETE /v1/dashboards/:id`     | Read, update or delete a dashboard (1.4)                                                                                                |
 | `GET` · `POST /v1/objects/:object/views`          | The object's saved views (1.4), or save a new one                                                                                       |
 | `GET` · `PATCH` · `DELETE /v1/views/:id`          | One saved view                                                                                                                          |
 | `POST /v1/objects/:object/upsert`                 | Update or create a record found by `id` or `match`, with `ifMissing` (6.2)                                                              |
@@ -2159,7 +2177,7 @@ from its own layer and the ones below it:
 | Entry      | `index`, `cli`, `migrate`, `lambda`, `egress-proxy`, `extension-launcher`, `file-server`                                                                              | Starting the server, the CLI and the Lambda functions                             |
 | Interfaces | `api`, `mcp`, `worker`, `operator`, `auth`, `http`, `accounts`, `egress`, `model`, `launcher`, `extension-control`, `webhooks`                                        | The ways in: REST, MCP, jobs, operators, people signing in, and handling requests |
 | Admin      | `schema-engine`, `templates`, `workspaces`, `extensions`, `routines`, `agent-sessions`                                                                                | Changing a schema, creating workspaces, extensions and routines; agent sessions   |
-| Features   | `views`, `comments`, `retrieval`, `reads`                                                                                                                             | Built on records and memory                                                       |
+| Features   | `views`, `dashboards`, `comments`, `retrieval`, `reads`                                                                                                                             | Built on records and memory                                                       |
 | Core       | `records`, `memory`, `privacy`, `files`, `sources`, `changes`                                                                                                         | The write rules                                                                   |
 | Foundation | `db`, `schema`, `caller`, `idempotency`, `stable-json`, `config`, `errors`, `log`, `version`, `extension-runtime`, `routine-runtime`, `agent-runtime`, `file-storage` | The database and reading a schema                                                 |
 

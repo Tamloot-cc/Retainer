@@ -98,6 +98,14 @@ test.describe('with the agent', () => {
     // Layout can settle after the text is visible: poll the measurements.
     await expect.poll(() => region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     await expect.poll(() => page.locator('html').evaluate((el) => el.scrollWidth)).toBe(390);
+    // Check keyboard scrolling after the stored answer has replaced the
+    // streaming one. Reconciliation can remount the focusable region.
+    const id = new URL(page.url()).pathname.split('/').at(-1);
+    await expect
+      .poll(async () => (await r.request(`/agent/chats/${id}`, undefined, r.keys.user)).running)
+      .toBe(false);
+    await page.reload();
+    await expect(region.getByRole('columnheader', { name: 'Next step' })).toBeVisible();
     await region.focus();
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);

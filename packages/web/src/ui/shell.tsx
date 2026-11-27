@@ -11,6 +11,7 @@ import {
   FileText,
   House,
   Inbox,
+  LayoutDashboard,
   LogOut,
   type LucideIcon,
   Mail,
@@ -387,13 +388,22 @@ function Sidebar({
           onNavigate={onNavigate}
         />
         {agentAvailable ? (
-          <NavLink
-            to="/chat"
-            icon={MessageCircle}
-            label="Chat"
-            collapsed={collapsed}
-            onNavigate={onNavigate}
-          />
+          <>
+            <NavLink
+              to="/chat"
+              icon={MessageCircle}
+              label="Chat"
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+            <NavLink
+              to="/dashboards"
+              icon={LayoutDashboard}
+              label="Dashboards"
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+          </>
         ) : null}
         <button
           type="button"
@@ -612,6 +622,7 @@ function NavLink({
     | '/extensions'
     | '/routines'
     | '/chat'
+    | '/dashboards'
     | '/settings';
   params?: { object: string };
   icon: LucideIcon;

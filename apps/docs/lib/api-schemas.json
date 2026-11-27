@@ -51,6 +51,9 @@
                   "min",
                   "max"
                 ]
+              },
+              "as": {
+                "type": "string"
               }
             },
             "required": ["field", "op"],
@@ -58,10 +61,51 @@
           }
         },
         "groupBy": {
-          "description": "A filterable select field: also compute the total and aggregates per option.",
+          "description": "Group by a filterable select, date or single relation, or by createdAt, updatedAt or occurredAt.",
           "type": "string"
+        },
+        "granularity": {
+          "type": "string",
+          "enum": ["day", "week", "month", "quarter", "year"]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
         }
       },
+      "additionalProperties": false
+    },
+    "create-dashboard": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "program": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "private",
+          "type": "string",
+          "enum": ["workspace", "private"]
+        },
+        "chatId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["name", "program"],
       "additionalProperties": false
     },
     "create-comment": {
@@ -1541,6 +1585,45 @@
         }
       },
       "required": ["query"],
+      "additionalProperties": false
+    },
+    "update-dashboard": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "program": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["workspace", "private"]
+        },
+        "chatId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "type": "number"
+        },
+        "expectedUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": ["expectedUpdatedAt"],
       "additionalProperties": false
     },
     "update-comment": {
@@ -5580,6 +5663,140 @@
         "reviewedAt"
       ]
     },
+    "DashboardSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["workspace", "private"]
+        },
+        "position": {
+          "type": "number"
+        },
+        "chatId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdBy": {
+          "$ref": "#/components/schemas/Actor"
+        },
+        "updatedBy": {
+          "$ref": "#/components/schemas/Actor"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "visibility",
+        "position",
+        "chatId",
+        "createdBy",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedDashboard": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["workspace", "private"]
+        },
+        "position": {
+          "type": "number"
+        },
+        "chatId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdBy": {
+          "$ref": "#/components/schemas/Actor"
+        },
+        "updatedBy": {
+          "$ref": "#/components/schemas/Actor"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "program": {
+          "type": "string"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "statement": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["statement", "message"]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "visibility",
+        "position",
+        "chatId",
+        "createdBy",
+        "updatedBy",
+        "createdAt",
+        "updatedAt",
+        "program",
+        "issues"
+      ]
+    },
     "AggregateResult": {
       "type": "object",
       "properties": {
@@ -5594,6 +5811,9 @@
             "type": "object",
             "properties": {
               "field": {
+                "type": "string"
+              },
+              "as": {
                 "type": "string"
               },
               "op": {
@@ -5647,6 +5867,10 @@
             "required": ["field", "op", "value"]
           }
         },
+        "tooManyGroups": {
+          "type": "boolean",
+          "const": true
+        },
         "groups": {
           "type": "array",
           "items": {
@@ -5654,6 +5878,9 @@
             "properties": {
               "value": {
                 "type": ["string", "null"]
+              },
+              "label": {
+                "type": "string"
               },
               "total": {
                 "type": "integer",
@@ -5666,6 +5893,9 @@
                   "type": "object",
                   "properties": {
                     "field": {
+                      "type": "string"
+                    },
+                    "as": {
                       "type": "string"
                     },
                     "op": {
@@ -5720,7 +5950,7 @@
                 }
               }
             },
-            "required": ["value", "total", "values"]
+            "required": ["value", "label", "total", "values"]
           }
         }
       },

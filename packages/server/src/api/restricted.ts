@@ -9,6 +9,7 @@ const record = new RegExp(
 );
 const memory = /^\/v1\/records\/(me|workspace)\/(context|timeline)$/;
 const view = new RegExp(`^/v1/(?:views/${uuid}|objects/[a-z0-9_-]+/views)$`);
+const dashboard = new RegExp(`^/v1/dashboards(?:/${uuid})?$`);
 const recordQuery = /^\/v1\/objects\/[a-z0-9_-]+\/(query|aggregate)$/;
 const mcp = new RegExp(`^/mcp(?:/w/${uuid})?$`);
 const restReads = new Set(['/v1/me', '/v1/schema', '/v1/review', '/v1/schema/changes']);
@@ -18,6 +19,8 @@ const mcpMethods = new Set(['initialize', 'notifications/initialized', 'ping', '
 const mcpTools = new Set([
   'describe_schema',
   'query_records',
+  'aggregate_records',
+  'check_dashboard',
   'get_record',
   'search',
   'list_comments',
@@ -37,6 +40,7 @@ export const admitRestrictedApi = createMiddleware<AppEnv>(async (c, next) => {
       record.test(path) ||
       memory.test(path) ||
       view.test(path) ||
+      dashboard.test(path) ||
       event.test(path)
     )
       return next();

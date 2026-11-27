@@ -26,8 +26,10 @@ import {
 } from '../../ui/index.js';
 import { MessageScroller, MessageScrollerItem } from '../../ui/message.js';
 import { QueryError } from '../state.js';
+import { firstMessages } from './first-message.js';
 import { ChatMessages } from './messages.js';
 import {
+  agentKey,
   avatarMood,
   CHAT_OVER,
   type ChatMessage,
@@ -38,11 +40,6 @@ import {
   turnEnd,
 } from './model.js';
 import { chatTransport } from './transport.js';
-
-export const agentKey = (workspace: string) => [workspace, 'agent'] as const;
-
-/** A first message typed on the chat list, handed to the new chat's page to send. */
-const firstMessages = new Map<string, string>();
 
 const ABOUT =
   'Ask the agent about your workspace. It reads your records, searches the web and saves what it learns, as an agent working for you. Its changes never outrank a person’s.';
@@ -178,7 +175,7 @@ export function ChatsPage() {
   });
   const start = useMutation({
     mutationFn: (text: string | undefined) =>
-      api.createAgentChat().then((chat) => ({ chat, text })),
+      api.createAgentChat(undefined, 'web').then((chat) => ({ chat, text })),
     onSuccess: ({ chat, text }) => {
       if (text) firstMessages.set(chat.id, text);
       void navigate({ to: '/chat/$id', params: { id: chat.id } });
@@ -361,11 +358,11 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
   // biome-ignore lint/correctness/useExhaustiveDependencies: sends the handed-over message once.
   useEffect(() => {
     const text = first.current;
-    if (!text) return;
+    if (!text || runningBefore || chat.stopping) return;
     first.current = undefined;
     firstMessages.delete(chat.id);
     send(text);
-  }, [chat.id]);
+  }, [chat.id, runningBefore, chat.stopping]);
 
   const cancel = useMutation({
     mutationFn: () => api.cancelAgentChat(chat.id),
@@ -461,6 +458,7 @@ function Conversation({ chat, updatedAt }: { chat: AgentChatDetail; updatedAt: n
         ) : (
           <ChatMessages
             scroller
+            chatId={chat.id}
             messages={refused.length > 0 ? [...messages, ...refused] : messages}
             streaming={status === 'streaming'}
             waiting={awaitingAnswer}

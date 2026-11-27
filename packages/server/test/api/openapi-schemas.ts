@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { fileErasureStatusInput } from '../../src/api/routes/files.js';
 import { createRecordInput, mergeSuggestionInput } from '../../src/api/routes/records.js';
 import { commentInputSchema } from '../../src/comments/service.js';
+import { createDashboardSchema, updateDashboardSchema } from '../../src/dashboards/service.js';
 import { fileIntentSchema } from '../../src/files/service.js';
 import { upsertRecordInput, upsertRecordsInput } from '../../src/http/record-upserts.js';
 import { deleteBindingsInput } from '../../src/http/request.js';
@@ -58,6 +59,7 @@ const batchRecordInput = upsertRecordInput.extend({ match: uniqueMatch }).meta({
 export const requestValidators = {
   'accept-merge': mergeSuggestionInput,
   'aggregate-records': aggregateInputSchema,
+  'create-dashboard': createDashboardSchema,
   'create-comment': commentInputSchema,
   'create-file-intent': fileIntentSchema,
   'create-record': createRecordInput,
@@ -80,6 +82,7 @@ export const requestValidators = {
   'remember-fact': rememberInputSchema,
   'request-schema-change': schemaChangeRequestSchema,
   search: searchInputSchema,
+  'update-dashboard': updateDashboardSchema,
   'update-comment': commentInputSchema,
   'update-record': patchInputSchema,
   'update-view': updateViewSchema,

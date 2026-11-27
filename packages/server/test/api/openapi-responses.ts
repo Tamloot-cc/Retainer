@@ -9,6 +9,7 @@ import {
   CORE_ROLES,
   type CommentPage,
   type ContextPack,
+  type DashboardSummary,
   type DeleteImpact,
   type DeleteRecordResult,
   EVENT_COLUMNS,
@@ -41,6 +42,7 @@ import {
   type ReviewQueue,
   SAVED_VIEW_KINDS,
   SAVED_VIEW_VISIBILITIES,
+  type SavedDashboard,
   type SavedView,
   SCHEMA_CHANGE_STATUSES,
   SCHEMA_OWNERS,
@@ -252,8 +254,23 @@ const retraction = z.object({
   hiddenFactIds: z.array(id),
 });
 
+const dashboardSummary = response<DashboardSummary>()(
+  z.object({
+    id,
+    name: text,
+    visibility: z.enum(['workspace', 'private']),
+    position: z.number(),
+    chatId: id.nullable(),
+    createdBy: actorSchema,
+    updatedBy: actorSchema,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }),
+);
+
 const aggregateValue = z.object({
   field: text,
+  as: text.optional(),
   op: aggregateOp,
   value: z.union([z.number(), text, moneyValueSchema, z.null()]),
   mixedCurrencies: z.literal(true).optional(),
@@ -596,13 +613,26 @@ const responses = {
     }),
   ),
   Assertion: assertion,
+  DashboardSummary: dashboardSummary,
+  SavedDashboard: response<SavedDashboard>()(
+    dashboardSummary.extend({
+      program: text,
+      issues: z.array(z.object({ statement: text, message: text })),
+    }),
+  ),
   AggregateResult: response<AggregateResult>()(
     z.object({
       total: z.int(),
       values: z.array(aggregateValue),
+      tooManyGroups: z.literal(true).optional(),
       groups: z
         .array(
-          z.object({ value: text.nullable(), total: z.int(), values: z.array(aggregateValue) }),
+          z.object({
+            value: text.nullable(),
+            label: text,
+            total: z.int(),
+            values: z.array(aggregateValue),
+          }),
         )
         .optional(),
     }),
