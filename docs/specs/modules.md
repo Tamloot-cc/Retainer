@@ -1,23 +1,65 @@
 # Modules: spec
 
-Status: **proposed**, 2026-11-26. Turns level 3 of
+Status: **parked**, 2026-11-27. No module is planned, and nothing here is
+built. The design is kept ready for the first experiment that needs it.
+
+Proposed on 2026-11-26. Turns level 3 of
 [extension-levels.md](../research/extension-levels.md) ("core modules") into
-a design. One module is planned: Dashboards. Revised the same day after a
-review against the code and against modules that may come later (§4), so
-the design fits more than its first module without building for the others
-yet. Revised again after a second review, on who owns each piece, who
-enforces the switch and what goes with the last module that uses it.
-Section 2 lists what is decided and what is only proposed.
+a design. Revised the same day after a review against the code and against
+modules that may come later (§4), so the design fits more than its first
+module without building for the others yet. Revised again after a second
+review, on who owns each piece, who enforces the switch and what goes with
+the last module that uses it. Section 2 lists what is decided and what is
+only proposed.
 
-Already changed with this spec:
+## Parked
 
-- [dashboards.md](dashboards.md): Dashboards is built as the first module
-  (§11).
+The spec was written with Dashboards as its first module. On 2026-11-27
+the product owner decided that Dashboards is a core feature
+([dashboards.md](dashboards.md)), which leaves the module system with no
+module. Three reasons:
+
+1. **Dashboards is a sibling of views and Routines.** The product owner
+   wants all three made the same way: describe it to the agent, look at a
+   live draft, keep it. Routines already have a free-text builder, and
+   views are next. The pieces they would share (the draft in the chat, the
+   guide, the check) must be in the core, because views and Routines are
+   core and the core never imports a module. As a module, Dashboards would
+   hold half of a feature whose other half is core.
+2. **A module system with one module is mostly overhead**: registries, two
+   switches, Settings → Experiments, a new layer, clash checks and a
+   removal rehearsal, all for one feature. That breaks this spec's own
+   rule, "built only as far as needed" (§2).
+3. **The risk in Dashboards is technical, not demand.** The open question
+   is whether OpenUI Lang holds up, and the answer to that is swapping the
+   language (dashboards.md §2), not deleting the feature.
+
+Dashboards still passes the test in §3. Passing it says a feature can be a
+module, not that it should be one (§3, "Passing is not enough").
+
+What brings this spec back: a real experiment that passes §3 and that
+nothing else builds on, such as one of the examples in §4. Its PR builds
+the module system as §13 describes.
+
+Reading the rest: sections 5 to 13 still use Dashboards as the worked
+example, because the example is complete and was checked against the code.
+Read "Dashboards" there as "the first module, whichever it is". Section 11
+shows how Dashboards would have been split, and is not a plan.
+
+Changed with this spec, and kept:
+
 - `ARCHITECTURE.md` §8 and `CLAUDE.md` used to call each folder in
   `packages/server/src` a "module". They now say "folder", so that "module"
   has one meaning (§2).
 
-Changes that land with the code, in the Dashboards PR:
+Changed with this spec on 2026-11-26, and undone on 2026-11-27:
+
+- [dashboards.md](dashboards.md) was rewritten as the first module. It is a
+  core feature again. It keeps three improvements the module work found
+  (§11): `client` on chat creation, the foreign key on `chat_id`, and
+  `aggregate_records` as a tool every agent has.
+
+Changes that land with the code, in the first module's PR:
 
 - `ARCHITECTURE.md` §8: a new `modules` layer (§6.3). The layer table must
   match `scripts/check-layers.mjs`, so the two change together. The
@@ -67,6 +109,12 @@ without building them.
 
 ## 2. Decided and proposed
 
+Decided with the product owner on 2026-11-27:
+
+- **The module system is parked**, and **Dashboards is a core feature**
+  (see "Parked" above). This replaces "Dashboards is the first module"
+  below. Everything else below stands, for the day a module is built.
+
 Decided with the product owner on 2026-11-26:
 
 - **Experimental features are modules**, at level 3 of
@@ -79,9 +127,10 @@ Decided with the product owner on 2026-11-26:
 - **Built only as far as needed.** The first module brings the registry and
   the extension points it uses. The rest arrive with the module that needs
   them.
-- **Dashboards is the first module**, and the only one planned today.
-  Recording and Booking, which the first draft planned as modules, are now
-  examples in §4.
+- **Dashboards is the first module**, and the only one planned.
+  Superseded on 2026-11-27: Dashboards is a core feature and no module is
+  planned. Recording and Booking, which the first draft planned as
+  modules, are examples in §4.
 
 Decided later the same day, after the review in §4:
 
@@ -121,8 +170,8 @@ Decided after the second review, the same day:
 - **A module owns its folders across packages by its id** (§6.3). Its
   shared folder is the subpath export `@retainer/shared/modules/<id>`, so
   adding or removing one edits no shared file.
-- **Removal is rehearsed**, not only an empty registry tested: the
-  Dashboards PR removes Dashboards in a throwaway worktree and builds and
+- **Removal is rehearsed**, not only an empty registry tested: the first
+  module's PR removes that module in a throwaway worktree and builds and
   tests what is left (§13.1).
 
 Proposed in this document, open to change: the test for what is a module
@@ -147,6 +196,19 @@ A feature is a module when all four hold:
 4. **The core would not miss it.** Nothing in the core reads its tables,
    and no core table points at them.
 
+**Passing is not enough.** The four tests say a feature can be a module.
+Two more questions say whether it should be:
+
+- **Does it plug into other features, or do they plug into it?** A module
+  sits at the edge: it uses records, reads and the agent, and nothing uses
+  it. A feature other features build on is core, however new it is. Views
+  are how every object page shows records. Routines are an engine that
+  extensions give tools to. Neither could be a module, and a feature that
+  shares its main pieces with them, as Dashboards does, belongs with them.
+- **Is the doubt about demand?** A module is for "will anyone use this?".
+  If people will clearly want the feature and the doubt is how to build
+  it, a module's easy removal buys nothing.
+
 One rule keeps modules removable and small:
 
 > **Knowledge goes in records. A module's tables hold the feature's own
@@ -163,9 +225,9 @@ belongs to which event.
 
 ## 4. Modules that may come
 
-Only Dashboards is planned. To keep the design from fitting only
-Dashboards, it was read against features Retainer might try later. None of
-these is planned.
+No module is planned. To keep the design from fitting only Dashboards,
+its first example, it was read against features Retainer might try later.
+None of these is planned.
 
 | Module that may come | What it would be                                          | Needs beyond the first extension points                   |
 | -------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
@@ -444,7 +506,7 @@ and tools come into the API's promise, the SDK and `docs/rest-api.md`, and
 ## 8. Extension points built first
 
 Each extension point is a field of `defineModule` or `defineWebModule`.
-These are the ones Dashboards needs.
+These are the ones Dashboards would have needed.
 
 ### 8.1 Tables
 
@@ -607,29 +669,38 @@ switch and Settings → Experiments are the system itself and always stay.
 Without this rule, every failed experiment would leave hooks in the core
 after its folders were gone.
 
-## 11. Dashboards, the first module
+## 11. Dashboards as a module: the worked example
 
-As [dashboards.md](dashboards.md), with its pieces in the module's folders:
+Not a plan: Dashboards is a core feature (see "Parked"). This section is
+kept because it shows, on a real feature, what moves into a module's
+folders and what stays in the core.
+
+As a module, Dashboards would be [dashboards.md](dashboards.md) with its
+pieces in the module's folders:
 the `dashboards` table, its routes, `check_dashboard`, the guide, the chat
 context line, the Dashboards screens and the `openui-lang` chat renderer.
 
-Dashboards brings the module system with it: `defineModule`,
+The first module brings the module system with it: `defineModule`,
 `defineWebModule`, the registries, the switch, the layer rules, the fixture
 modules, and the extension points in §8.
 
-[dashboards.md](dashboards.md) was changed with this spec:
+On 2026-11-26 [dashboards.md](dashboards.md) was changed this way. The
+first three points found real improvements, and dashboards.md keeps them
+as a core feature. The last three were module-only and are undone:
 
 - **§5.1.** The web app doesn't send `{ "dashboards": true }` when it
   creates a chat. It sends `client: 'web'`, and the module's `chatContext`
-  adds the line (§8.4).
+  adds the line (§8.4). Kept: `client`. As a core feature, the core adds
+  the line.
 - **§5.3.** `aggregate_records` and grouping by date and relation (its §7)
   stay in the core: they serve views and every agent, and stay if
   Dashboards is removed. `aggregate_records` joins the agent's fixed list
   of read tools. `check_dashboard` is the module's tool and is pinned
-  through the registry (§8.3).
+  through the registry (§8.3). Kept: `aggregate_records` as a tool every
+  agent has. `check_dashboard` is a core tool too.
 - **§6.1.** `chat_id` is a foreign key to the agent's sessions with
   `on delete set null`: a module table pointing at a core table, which
-  rule 3 allows.
+  rule 3 allows. Kept: the foreign key.
 - **§8.2.** "Shown when the agent is available" becomes
   `requires: ['agent']`.
 - **§6.2.** Its routes answer `404` where the module is off, and are
@@ -680,9 +751,9 @@ module's files, dependencies and tables are still there. The rehearsal in
 
 ## 13. Delivery and tests
 
-**Dashboards** lands in one PR, in line with landing a feature whole: the
-core aggregate additions, the module system with §8, and the Dashboards
-module. If the PR grows too large, the aggregate additions go first on
+**The first module** lands in one PR, in line with landing a feature
+whole: the core additions it needs, the module system with §8, and the
+module itself. If the PR grows too large, the core additions go first on
 their own.
 
 Modules built in parallel touch only their own folders, each registry's
@@ -708,14 +779,14 @@ one line, and the extension points they add.
   fixture for each rule in §6.3, including a module importing its own
   shared folder (passes) and another module's (fails).
 - **Empty registry**: the server and web test suites pass with no modules.
-- **Removal rehearsal**, once, in the Dashboards PR: in a throwaway
-  worktree with a migrated database holding dashboards, follow §12 to
-  remove Dashboards, generate and apply the drop migration, build the
+- **Removal rehearsal**, once, in the first module's PR: in a throwaway
+  worktree with a migrated database holding the module's rows, follow §12
+  to remove it, generate and apply the drop migration, build the
   server and the web app, and run the tests with the fixture modules. Any
   shared file that also needed an edit is a gap in §12, fixed in the same
   PR. A rehearsal with two real modules, removing one and keeping the
   other, waits for the second real module.
-- **End to end (Playwright)**: switching Dashboards on in Settings →
+- **End to end (Playwright)**: switching the first module on in Settings →
   Experiments shows its sidebar item; switching it off hides it.
 
 ## 14. Left out on purpose

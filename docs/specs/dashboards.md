@@ -4,25 +4,24 @@ Status: **proposed**, 2026-11-26. A local spike (branch `spike/dashboards`)
 proved the approach end to end (§11). Revised the same day after a look at
 Twenty's dashboards: dashboards are stored by key and survive renames
 (§6.4), the agent reads a guide only when asked for a dashboard (§5.1), and
-it checks its program before answering (§5.3). Revised again for
-[modules.md](modules.md): Dashboards is built as the first module, so its
-code lives in module folders, it is switched on per workspace, and its
-routes and its tool are experimental (§10). Section 2 lists what is decided
-and what is only proposed.
+it checks its program before answering (§5.3). For one day it was rewritten
+as the first module of [modules.md](modules.md). On 2026-11-27 the product
+owner decided it is a core feature, like views and Routines, and the
+module system is parked (§2). Section 2 lists what is decided and what is
+only proposed.
 
 Builds on the workspace agent in [agent.md](agent.md). If accepted this spec
 amends:
 
-- `ARCHITECTURE.md` §5 (the aggregate read groups by dates and relations,
-  §7).
-- `agent.md` §6.6 (creating a chat takes its `client`, §5.1) and §8.1 (a
-  new read tool, `aggregate_records`, and the tools of modules that are on,
-  §5.3).
-
-The `dashboards` table, its routes, the `dashboards` guide, `check_dashboard`
-and the Dashboards screens belong to the module. While it is an experiment
-they are not added to `ARCHITECTURE.md`, `FRONTEND.md` or
-`docs/rest-api.md` ([modules.md](modules.md) §6.4).
+- `ARCHITECTURE.md` §1.4 (a new table, `dashboards`, beside `views`), §5
+  (the aggregate read groups by dates and relations, §7), §6.1 (new
+  routes, §6.2) and §8 (a `dashboards` folder beside `views`).
+- `agent.md` §6.6 (creating a chat takes its `client`, and web chats tell
+  the agent it can answer with a dashboard, §5.1) and §8.1 (new read tools,
+  `aggregate_records` and `check_dashboard`, §5.3).
+- The MCP guides (a new `dashboards` guide, §5.1).
+- `FRONTEND.md` §5 (a Dashboards screen, and dashboards in the chat, §8).
+- `docs/rest-api.md` (the new routes).
 
 The write rules, the actor types and the rule that Retainer's core never calls
 a model do not change. The agent writes a dashboard; the person saves it;
@@ -77,9 +76,23 @@ Decided with the product owner on 2026-11-26:
 - **From Twenty**: the agent reads how to build a dashboard only when one is
   asked for (a guide, §5.1), and checks its program and gets the problems
   back before answering (§5.3).
-- **Dashboards is a module**, the first one ([modules.md](modules.md)). It
-  needs the workspace agent (`requires: ['agent']`), and a workspace `admin`
-  switches it on in Settings → Experiments.
+
+Decided with the product owner on 2026-11-27:
+
+- **Dashboards is a core feature**, beside views and Routines. This
+  replaces "Dashboards is a module", decided the day before
+  ([modules.md](modules.md), now parked, gives the reasons). It has no
+  switch of its own: it shows wherever the workspace agent is available,
+  as the chat does. Its code still sits in its own `dashboards` folders
+  (§10), so removing it stays one ordinary PR.
+- **One experience for dashboards, views and Routines.** Each is made the
+  same way: a person describes it in the chat, the agent drafts and checks
+  it, the person sees it live and keeps it. Only the last step differs
+  with the risk: a view is saved, a dashboard is pinned, a routine is
+  proposed and then approved. That shared design is not written yet. This
+  spec builds its dashboard parts in the core so that views and Routines
+  can use them: the guide read on demand (§5.1), the check before
+  answering (§5.3) and the draft shown in the chat (§8.1).
 
 Proposed in this document, open to change: the storage and routes (§6), the
 aggregate additions (§7), the chart library (§8.4), the limits (§9) and the
@@ -173,8 +186,9 @@ alias `amount`; only the query's argument changes (§6.4).
 
 ### 4.2 Components
 
-One list, in `packages/shared/src/modules/dashboards/` (MIT), with each
-component's props as a zod schema and a one-line description. `shared` takes
+One list, in `@retainer/shared` (MIT, `packages/shared/src/dashboards/`),
+with each component's props as a zod schema and a one-line description.
+`shared` takes
 no OpenUI dependency: the server builds the library with `lang-core`'s
 `defineComponent` to generate the guide (§5.1), and the web app builds it
 with `react-lang`'s and its own renderers. The guide and the renderers
@@ -260,11 +274,11 @@ tokens. One that does pays one extra step the first time.
 **Web chats only.** Only the web app can show a dashboard, so only the agent
 in a web chat is told about the guide. `POST /v1/agent/chats` takes the
 chat's `client`: the web app sends `web`, the terminal client `cli`, and a
-task is `task`. It is a core field that names no module. In a web chat, in
-a workspace where Dashboards is on, the module adds one line to the chat
-context the server puts in the first message (`agent.md` §6.6,
-[modules.md](modules.md) §8.4): "This chat is in Retainer's web app, which
-can show dashboards; read get_guide("dashboards") before writing one." The
+task is `task`. The field says where the chat is shown, not which features
+it has, so later features can use it too. In a web chat, the server adds
+one line to the chat context it puts in the first message (`agent.md`
+§6.6): "This chat is in Retainer's web app, which can show dashboards;
+read get_guide("dashboards") before writing one." The
 base prompt stays the same for every chat, so its cache is shared. An agent
 connected over MCP can read the guide too, but its client won't draw the
 result; the guide's description says so.
@@ -283,12 +297,9 @@ the agent or pasted by the person (§8.3).
 
 ### 5.3 New read tools
 
-Two tools join the MCP server and the agent, keeping the rule that the
-agent's Retainer tools match the MCP tools (`agent.md` §8.1).
-`aggregate_records` is a core tool: it joins the agent's fixed list of read
-tools and stays if Dashboards is removed. `check_dashboard` is the module's
-tool: it is listed over MCP and pinned on new chats only where Dashboards is
-on ([modules.md](modules.md) §8.3).
+Two tools join the agent's `retainer.read` group and the MCP server, keeping
+the rule that the agent's Retainer tools match the MCP tools (`agent.md`
+§8.1). `aggregate_records` serves every agent, not only dashboards.
 
 **`aggregate_records`** matches `POST /v1/objects/:object/aggregate`, with
 the additions in §7 and an optional `as` on each aggregate, echoed on its
@@ -317,9 +328,8 @@ person opens a saved one in a chat (§8.3).
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dashboards` | Name, `program` (text, at most 20 KB), `visibility` (`workspace`, `private`), `position`, `chat_id` (the chat it was last saved from, nullable), actors, timestamps |
 
-The table is the module's own, in its `schema.ts`. `chat_id` is a foreign
-key to the agent's sessions with `on delete set null`: a module table
-pointing at a core table, never the reverse.
+`chat_id` is a foreign key to the agent's sessions with
+`on delete set null`.
 
 A dashboard is display settings, like a view (`ARCHITECTURE.md` §1.4): no
 provenance, no assertions, not through the schema engine, and saving one
@@ -344,10 +354,6 @@ makes it `workspace`.
 
 `PATCH` with a stale `expectedUpdatedAt` returns `409`, so two people saving
 over each other's edit find out.
-
-In a workspace where Dashboards is off, every route answers `404`. While
-Dashboards is an experiment its routes are outside the API's compatibility
-promise, and not in the SDK or `docs/rest-api.md`.
 
 ### 6.3 Checked on save
 
@@ -454,8 +460,8 @@ the spike, outside the main bundle.
 
 ### 8.2 Dashboards — `/app/dashboards`
 
-An item in the sidebar's top group, after the core items, shown where
-Dashboards is on. The page lists the dashboards the person can see, each opening at
+An item in the sidebar's top group, after Chat, shown when the agent is
+available. The page lists the dashboards the person can see, each opening at
 `/app/dashboards/:id`, which shows the dashboard full width with its name,
 who made it, **Edit with the agent**, **Share with workspace** or **Make
 private**, **Rename** and **Delete**. Empty state: "No dashboards yet. Ask
@@ -512,29 +518,32 @@ chunk loads.
 
 ## 10. Delivery
 
-One PR, in line with landing a feature whole. It brings the module system
-with it ([modules.md](modules.md) §13). The pieces, by where they live:
+One PR, in line with landing a feature whole. Dashboards is a core
+feature, kept in its own folders so that it reads as one thing and can be
+taken out in one PR:
 
-1. **Core**, staying if Dashboards is removed: `aggregate_records` as an MCP
-   tool and in the agent's fixed list of read tools, date and relation
-   grouping (§7), and `client` on chat creation (§5.1).
-2. **`packages/shared/src/modules/dashboards/`**: the component list and
+1. **Useful beyond dashboards**: `aggregate_records` as an MCP tool and in
+   the agent's read tools, date and relation grouping (§7), and `client`
+   on chat creation (§5.1).
+2. **shared** (`packages/shared/src/dashboards/`): the component list and
    the data tool descriptions.
-3. **`packages/server/src/modules/dashboards/`**: the `dashboards` table and
-   routes, the save and read checks, the name-and-key translation, the
-   `dashboards` guide, `check_dashboard` and the chat context line.
-4. **`packages/web/src/modules/dashboards/`**: rendering in the chat, pin
-   and update, the Dashboards screens, the chart components.
+3. **server**: the `dashboards` table in `db/schema.ts`; a `dashboards`
+   folder beside `views`, in the same layer, with the save and read checks
+   and the name-and-key translation; the routes in `api/routes/`; the
+   `dashboards` guide and `check_dashboard` with the MCP tools; the chat
+   context line in the agent's session code.
+4. **web** (`packages/web/src/routes/dashboards/` and a chat block):
+   rendering in the chat, pin and update, the Dashboards screens, the
+   chart components.
 
-It is large mostly in the web app. Splitting the core part into a first PR
+It is large mostly in the web app. Splitting the first part into its own PR
 is the one split that would make sense, since it stands on its own; the
 rest only works together.
 
 The hosted service needs no infrastructure change: a migration, new routes,
-a new agent tool and web assets all ship with the normal deploy, and
-`RETAINER_MODULES=dashboards` offers the module. The module adds
-`@openuidev/lang-core` to the server, and `@openuidev/react-lang` and
-Recharts to the web app, with their notes in
+a new agent tool and web assets all ship with the normal deploy.
+Dashboards adds `@openuidev/lang-core` to the server, and
+`@openuidev/react-lang` and Recharts to the web app, with their notes in
 `packages/web/THIRD_PARTY.md`.
 
 ### 10.1 Acceptance tests
@@ -550,16 +559,14 @@ Recharts to the web app, with their notes in
   gap filling and time zones; relation grouping with labels; the 50-group
   cap; `aggregate_records` and `check_dashboard` over MCP and as agent
   tools with the person's access; a web chat's first message names the
-  guide and a terminal chat's does not; with Dashboards off, its routes
-  answer `404` and `check_dashboard` is not listed.
+  guide and a terminal chat's does not.
 - **End to end (Playwright)**: with a stubbed agent stream, a chat answer
   renders a dashboard; Pin saves it; the Dashboards page shows it with live
   numbers; a record change shows after reload; a viewer without access to
   an object sees that tile's error and the rest of the dashboard.
-- **Model eval (manual)**:
-  `packages/server/scripts/modules/dashboards/eval.ts`, from the spike's
-  `dashboard-eval.ts`, runs the agent's model over a fake workspace and
-  checks every program it writes. Update it to read the guide and answer
+- **Model eval (manual)**: `packages/server/scripts/dashboard-eval.ts`, from
+  the spike, runs the agent's model over a fake workspace and checks every
+  program it writes. Update it to read the guide and answer
   `check_dashboard`, and run it when the guide changes. It costs a few
   cents.
 

@@ -37,7 +37,7 @@ hold the design, the data model, the write rules and the web app's design.
 | [Personal and workspace memory](specs/user-and-workspace-memory.md) | Implemented: private memory about each person, shared memory about the workspace           |
 | [Duplicate record classification](specs/duplicate-record-classifier.md) | Proposed: API spike, OpenAI Decisions classifier and sourced merge explanations          |
 | [Dashboards](specs/dashboards.md)                                   | Proposed: live dashboards the agent writes in OpenUI Lang, pinned by people               |
-| [Modules](specs/modules.md)                                         | Proposed: experimental features as switchable core modules; Dashboards first              |
+| [Modules](specs/modules.md)                                         | Parked: experimental features as switchable core modules; no module is planned            |
 
 ## Research
 
