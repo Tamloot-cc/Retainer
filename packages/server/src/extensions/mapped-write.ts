@@ -22,6 +22,7 @@ export const mappedWriteSchema = z.strictObject({
   binding: bindingKeySchema,
   /** The normalized lookup value the run used, checked against the record's current one. */
   lookup: z.string().min(1).max(2048).optional(),
+  expectedUpdatedAt: z.iso.datetime({ offset: true }).optional(),
   /** Only outputs the run has a valid value for. */
   values: z.record(bindingKeySchema, z.json()),
   observedAt: z.iso.datetime({ offset: true }).optional(),
@@ -193,6 +194,7 @@ export async function mappedWrite(
       const writes = prepareValues(object as CompiledObject, values, 'update');
       const statuses = await writeFields(tx, context, object, record, writes, {
         confidence,
+        ...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
         ...(input.observedAt ? { observedAt: new Date(input.observedAt) } : {}),
       });
       for (const [name, status] of Object.entries(statuses)) {

@@ -44,9 +44,20 @@ function RecordButton({
       report(`Couldn’t check the status of “${button.label}”.`);
     } else if (run.data && !inProgress(run.data.status)) {
       if (run.data.status === 'succeeded') {
-        const reason =
-          run.data.code === 'nothing_to_fill' ? ' All mapped fields already have values.' : '';
-        report(`“${button.label}” finished.${reason}`);
+        switch (run.data.code) {
+          case 'no_domain':
+            report('Enrichment skipped. Add a company domain and try again.');
+            break;
+          case 'no_match':
+          case 'no_match_model':
+            report('Enrichment skipped. No confident match was found.');
+            break;
+          case 'nothing_to_fill':
+            report(`“${button.label}” finished. All mapped fields already have values.`);
+            break;
+          default:
+            report(`“${button.label}” finished.`);
+        }
       } else {
         report(`“${button.label}” ended with status: ${stateLabel(run.data.status)}.`);
       }

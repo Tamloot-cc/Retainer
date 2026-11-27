@@ -37,6 +37,7 @@ import {
   candidateValues,
   ExaError,
   ExaProvider,
+  normalizeCompanyName,
   shortcut,
 } from './enrichment-provider.js';
 import { ModelRequestFailed, runModel } from './model-call.js';
@@ -87,11 +88,18 @@ type Run = {
  */
 export async function lookUp(
   run: Pick<Run, 'exa' | 'model' | 'signal'>,
-  record: { name: string | null; domain: string; context: Record<string, unknown> },
+  record: { name: string | null; domain: string | null; context: Record<string, unknown> },
 ): Promise<Found> {
   const candidates = await run.exa.search(record.domain, record.name);
   if (!candidates.length) return { status: 'no_match', code: 'no_match' };
-  const direct = shortcut(record.domain, candidates);
+  if (!record.domain) {
+    const name = record.name ? normalizeCompanyName(record.name) : '';
+    const matches = candidates.filter(
+      (candidate) => candidate.name && normalizeCompanyName(candidate.name) === name,
+    );
+    if (!name || matches.length !== 1) return { status: 'no_match', code: 'no_match' };
+  }
+  const direct = record.domain ? shortcut(record.domain, candidates) : undefined;
   if (direct)
     return {
       status: 'match',
@@ -184,18 +192,24 @@ async function linkedCompany(ctx: Context, mapping: Mapping, record: PresentedRe
  * fill-only mapped write, which decides what is written. Returns the run
  * code: how it matched when something was written, otherwise why not.
  */
-async function enrichRecord(ctx: Context, mapping: Mapping, record: PresentedRecord) {
+async function enrichRecord(
+  ctx: Context,
+  mapping: Mapping,
+  record: PresentedRecord,
+  manual = false,
+) {
   const open = mapping.outputs.filter(({ field }) => !Object.hasOwn(record.fields, field));
   let found: Found;
   let lookup: string | undefined;
   if (mapping.key === 'company') {
     const domain = companyDomain(mapping, record);
-    if (!domain) return 'no_domain';
+    const name = companyName(mapping, record);
+    if (!domain && (!manual || !name)) return 'no_domain';
     // Advisory: the mapped write decides under the record lock.
     if (!open.length) return 'nothing_to_fill';
-    lookup = domain;
+    lookup = domain ?? undefined;
     found = await lookUp(ctx, {
-      name: companyName(mapping, record),
+      name,
       domain,
       context: mappedContext(mapping, record),
     });
@@ -212,7 +226,7 @@ async function enrichRecord(ctx: Context, mapping: Mapping, record: PresentedRec
     // The company is read only when the lookup can use it.
     if (person.name || person.linkedin) person.company = await linkedCompany(ctx, mapping, record);
     lookup = email ?? undefined;
-    found = await lookUpPerson(ctx, person);
+    found = await lookUpPerson(ctx, person, manual);
   }
   if (found.status === 'no_match') return found.code;
   const wanted = new Set(open.map(({ output }) => output));
@@ -222,6 +236,7 @@ async function enrichRecord(ctx: Context, mapping: Mapping, record: PresentedRec
   if (!Object.keys(values).length) return 'no_usable_values';
   const written = await ctx.sdk.extensionMappedWrite(ctx.installationId, {
     recordId: record.id,
+    ...(manual ? { expectedUpdatedAt: record.updatedAt } : {}),
     ...(lookup ? { lookup } : {}),
     binding: mapping.key,
     values,
@@ -461,7 +476,8 @@ export async function executeEnrichment(
     }
 
     let recordId: string;
-    if (invocation.functionId === FUNCTIONS[key].button) {
+    const manual = invocation.functionId === FUNCTIONS[key].button;
+    if (manual) {
       const input = buttonInput.safeParse(invocation.input);
       if (!input.success) return { status: 'failed', code: 'invalid_input' };
       recordId = input.data.recordId;
@@ -477,8 +493,10 @@ export async function executeEnrichment(
     if (!mapping.usable) return { status: 'failed', code: 'schema_binding_conflict' };
     const record = await readRecord(sdk, recordId, signal);
     if (!record) return done('record_gone');
-    return done(await enrichRecord(ctx(), mapping, record));
+    return done(await enrichRecord(ctx(), mapping, record, manual));
   } catch (error) {
+    if (error instanceof RetainerApiError && error.code === 'stale_write')
+      return done('lookup_changed');
     if (error instanceof ExaError) {
       // Exa's credential belongs to the deployment, so workspace reconnect cannot fix it.
       const code =

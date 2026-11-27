@@ -642,6 +642,52 @@ describe('Exa enrichment through a fake Exa', () => {
     expect((await h.fields(blank)).employeeCount).toBe(12);
   });
 
+  it('fills a company by name from Enrich now only after a high-confidence match', async () => {
+    const h = await setup();
+    await h.drain();
+    const id = await h.company({ name: 'Fixture Co', employeeCount: 42 });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_domain' }]);
+    h.exa.search = () => Response.json(exaCompany('https://fixture.example/'));
+    const press = () =>
+      h.app.request(`/v1/extensions/${h.id}/record-buttons/${ENRICHMENT.enrichCompanyNow}`, {
+        key: h.keys.writer,
+        body: { recordId: id },
+      });
+
+    upstream.respond(structured({ index: 0, certainty: 'medium' }));
+    expect((await press()).status).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_match_model' }]);
+    expect((await h.fields(id)).headquarters).toBeUndefined();
+
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    expect((await press()).status).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    expect(h.exa.requests.at(-1)?.body).toMatchObject({ category: 'company', query: 'Fixture Co' });
+    expect(await h.fields(id)).toMatchObject({
+      employeeCount: 42,
+      headquarters: { city: 'Springfield' },
+    });
+  });
+
+  it('skips a name-only result if the record was renamed during the lookup', async () => {
+    const h = await setup();
+    await h.drain();
+    const id = await h.company({ name: 'Fixture Co' });
+    await h.drain();
+    h.exa.search = () => Response.json(exaCompany('https://fixture.example/'));
+    upstream.respond(async (request, res) => {
+      expect((await h.patch(id, { name: 'Another Company' })).status).toBe(200);
+      structured({ index: 0, certainty: 'high' })(request, res);
+    });
+    const started = await h.app.request(
+      `/v1/extensions/${h.id}/record-buttons/${ENRICHMENT.enrichCompanyNow}`,
+      { key: h.keys.writer, body: { recordId: id } },
+    );
+    expect(started.status).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'lookup_changed' }]);
+    expect((await h.fields(id)).employeeCount).toBeUndefined();
+  });
+
   it('keeps values people set and skips a company whose fields are all set', async () => {
     const h = await setup();
     await h.drain();
@@ -1193,6 +1239,22 @@ describe('people enrichment (enrichment spec 7)', () => {
     });
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_company' }]);
     expect(h.exa.requests).toHaveLength(before);
+  });
+
+  it('fills a person by name from Enrich now with no company, work email, or LinkedIn', async () => {
+    const h = await setup({ person: people });
+    await h.drain();
+    const id = await h.person({ name: { first: 'Ada', last: 'Example' } });
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'no_company' }]);
+    upstream.respond(structured({ index: 0, certainty: 'high' }));
+    const started = await h.app.request(
+      `/v1/extensions/${h.id}/record-buttons/${ENRICHMENT.enrichPersonNow}`,
+      { key: h.keys.writer, body: { recordId: id } },
+    );
+    expect(started.status).toBe(202);
+    expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'matched_model_high' }]);
+    expect(h.exa.requests.at(-1)?.body).toMatchObject({ category: 'people', query: 'Ada Example' });
+    expect(await h.fields(id)).toMatchObject({ seniority: 'C-Level' });
   });
 
   it('fills a company’s new details from the same search', async () => {

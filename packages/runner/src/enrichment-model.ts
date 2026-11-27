@@ -24,6 +24,8 @@ Pick the profile that describes the same company as the record: the same organiz
 
 ${answerWith('company')}
 
+If the record gives only a name, pick only when one profile fits and the name matches. Return null if multiple organizations could be the match.
+
 ${UNTRUSTED}`;
 
 const PICK_PERSON_SYSTEM = `You match one person record from a CRM to the professional profiles a web search returned for it.
@@ -31,6 +33,8 @@ const PICK_PERSON_SYSTEM = `You match one person record from a CRM to the profes
 Pick the profile that describes the same person as the record: the same human, not a namesake, a colleague, or someone who only shares a first or last name. The record gives the person's name and their company's name, website domain, or both. The strongest evidence is the same full name with a current role at that company. A shortened first name (Bob for Robert) can be the same person; a different last name is not. A past role at the company is weaker evidence than a current one.
 
 ${answerWith('person')}
+
+If the record gives only a name, pick only when one profile fits and the name matches. Return null if multiple people could be the match.
 
 ${UNTRUSTED}`;
 
@@ -79,7 +83,7 @@ function pick(
  */
 export const pickCandidate = (
   client: Anthropic | null,
-  record: { name: string | null; domain: string; context: Record<string, unknown> },
+  record: { name: string | null; domain: string | null; context: Record<string, unknown> },
   candidates: Candidate[],
   signal: AbortSignal,
 ) =>

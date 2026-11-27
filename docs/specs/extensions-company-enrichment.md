@@ -158,8 +158,11 @@ A person search costs about $0.007 and a LinkedIn read $0.001, plus a model pick
 
 An active Exa Enrichment installation adds **Enrich now** to records in its
 approved Companies and People destinations. Existing installations get the
-button after an admin approves the upgrade. Clicking it runs the same
-lookup and fill-only writes as automatic enrichment, under the existing
-sharing consent. Each click targets the open record, including records
-created before the extension was installed. A skipped People destination
-has no button.
+button after an admin approves the upgrade. Clicking it uses the same
+sharing consent and fill-only writes as automatic enrichment. It can also
+search by name alone when the company has no usable domain or the person
+has neither a LinkedIn profile nor a company signal. A name-only search
+requires one matching name among the results and a high-confidence model
+pick. The button applies that result directly to the open record, including
+records created before the extension was installed. A skipped People
+destination has no button.

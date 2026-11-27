@@ -1079,6 +1079,7 @@ export class RetainerClient {
       recordId: string;
       binding: string;
       lookup?: string;
+      expectedUpdatedAt?: string;
       values: Record<string, unknown>;
       observedAt?: string;
       confidence?: number;

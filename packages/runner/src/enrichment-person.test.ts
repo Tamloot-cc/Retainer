@@ -424,6 +424,16 @@ describe('the people lookup (spec 7.3)', () => {
     });
   });
 
+  it('skips a name-only search with multiple matching people before calling the model', async () => {
+    const f = fakes([person(), person({ url: 'https://linkedin.com/in/ada-other-profile' })]);
+    expect(await lookUpPerson(f.run, record({ company: null, email: null }), true)).toEqual({
+      status: 'no_match',
+      code: 'no_match',
+    });
+    expect(f.calls.exa[0]?.body).toMatchObject({ query: 'Ada Example' });
+    expect(f.calls.model).toEqual([]);
+  });
+
   it('is no match when the LinkedIn profile has no person', async () => {
     const f = fakes([]);
     expect(await lookUpPerson(f.run, record({ linkedin: 'https://linkedin.com/in/ada' }))).toEqual({
