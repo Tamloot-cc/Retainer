@@ -37,6 +37,7 @@ test('shows an extension button in the record sheet and full page and runs it on
 for (const [label, code, message] of [
   ['Enrich now', 'no_domain', 'Enrichment skipped. Add a company domain and try again.'],
   ['Enrich now', 'no_match', 'Enrichment skipped. No confident match was found.'],
+  ['Enrich now', 'no_match_model_unavailable', 'Enrichment skipped. No confident match was found.'],
   ['Check company', 'no_match', '“Check company” finished.'],
 ] as const) {
   test(`shows the ${code} outcome for ${label}`, async ({ page, retainer: r }) => {

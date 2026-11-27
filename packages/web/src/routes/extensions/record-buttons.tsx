@@ -54,7 +54,7 @@ function RecordButton({
         const code = run.data.code;
         if (isExa && code === 'no_domain') {
           report('Enrichment skipped. Add a company domain and try again.');
-        } else if (isExa && (code === 'no_match' || code === 'no_match_model')) {
+        } else if (isExa && (code === 'no_match' || code?.startsWith('no_match_'))) {
           report('Enrichment skipped. No confident match was found.');
         } else {
           const reason =
