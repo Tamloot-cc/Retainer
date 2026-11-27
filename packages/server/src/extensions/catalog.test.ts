@@ -1,5 +1,6 @@
 import { defineExtension } from '@retainer/extension';
 import { describe, expect, it } from 'vitest';
+import { VERSION } from '../version.js';
 import { ExtensionCatalog, hash, parseExtensionCatalog } from './catalog.js';
 
 const manifest = () =>
@@ -10,7 +11,7 @@ const manifest = () =>
     version: '1.0.0',
     description: 'Catalog fixture',
     packageDigest: 'a'.repeat(64),
-    serverVersions: ['0.1.0'],
+    serverVersions: [VERSION],
     runtimeVersion: 'node24',
     protocolVersion: 1,
     execution: 'standalone',

@@ -4,6 +4,39 @@ All notable changes to Retainer are listed here. Versions follow
 [semantic versioning](https://semver.org); before 1.0, a minor version may
 include breaking changes.
 
+## 0.1.1
+
+### Workspace agent and dashboards
+
+- Chat with the workspace agent in Retainer or run `retainer agent chat`.
+  CLI chats can read within the signed-in account's permissions. Writes
+  require an active elevation for the workspace.
+- Ask the workspace agent to build a live dashboard. Save dashboards to
+  the workspace and reopen them with fresh results from Retainer.
+- Routines and extensions can give the workspace agent a task. Routine
+  run history shows the resulting agent conversations.
+
+### API, SDK, and docs
+
+- Upsert multiple records in a single request with
+  `POST /v1/records/upsert`, `RetainerClient.upsertRecords()`, or the
+  `upsert_records` MCP tool. The response includes a result for each input.
+- The documentation site includes setup guides, the REST reference with
+  an OpenAPI contract, and dedicated CLI and TypeScript SDK documentation.
+
+### Extensions and hosted operations
+
+- Extensions can add record buttons, including on-demand company and
+  person enrichment. Upgrade previews preserve valid destinations, and
+  run history shows inputs and outputs.
+- **Extension SDK import change:** import `modelClient` from
+  `@retainer/extension/model` and add `@anthropic-ai/sdk` to bundles that
+  use it. Existing deployed first-party extension releases with a
+  compatibility range covering `0.1.1` can continue to run.
+- Hosted upgrades can apply reviewed independent migrations while
+  serving traffic. Preflight checks all admitted builds before online DDL,
+  and the schema-lock path keeps supported session reads available.
+
 ## 0.1.0
 
 The first release.

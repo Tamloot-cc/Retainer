@@ -3,6 +3,7 @@ import { defineExtension } from '@retainer/extension';
 import { RetainerClient } from '@retainer/sdk';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionCatalog } from '../../src/extensions/catalog.js';
+import { VERSION } from '../../src/version.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 import { ownedTestFields } from '../helpers/extensions.js';
@@ -18,7 +19,7 @@ const manifest = defineExtension({
   version: '1.0.0',
   description: 'Test fixture',
   packageDigest: 'a'.repeat(64),
-  serverVersions: ['0.1.0'],
+  serverVersions: [VERSION],
   runtimeVersion: 'node24',
   protocolVersion: 1,
   execution: 'hosted',

@@ -1,6 +1,6 @@
 {
   "name": "@retainer/shared",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared types for Retainer: field types, composite value shapes, actors and schema definitions.",
   "keywords": [
     "retainer",
