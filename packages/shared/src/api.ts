@@ -1110,6 +1110,8 @@ export type WorkspaceFeedItem = {
   record: PresentedRecord;
   /** Assertions from one transaction and source, not before/after diffs. */
   changes: Extract<TimelineItem, { kind: 'field_change' }>[];
+  /** A writable person can retract all of the assertions on this update card. */
+  canRevert?: true;
 };
 export type WorkspaceFeedPage = {
   items: WorkspaceFeedItem[];

@@ -486,6 +486,12 @@ entity field writes; it never turns record changes into stored events.
   initially, with the rest expandable. Superseded values say **Not the
   current value**. Pending proposals stay in Review. Original reviewed
   proposals are omitted because acceptance creates a new user assertion.
+- **Revert update** on an Updated card asks for confirmation. A person with
+  write access can retract the card's field assertions together when all its
+  fields are editable. Retainer recalculates the affected fields from the
+  remaining eligible assertions,
+  and the reverted card drops out of the feed. Other recorded changes and
+  the source conversation remain available.
 - `field_assertions.write_at` preserves transaction grouping independently
   of assertion ranking timestamps. It is nullable for historical assertions:
   grouped update cards start with writes after this migration; existing

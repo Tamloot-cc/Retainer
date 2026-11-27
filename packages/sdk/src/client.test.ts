@@ -172,3 +172,20 @@ it('reads Home through the versioned API and preserves its filters and abort sig
   expect(JSON.parse(seenInit?.body as string)).toEqual(input);
   expect(seenInit?.signal).toBe(controller.signal);
 });
+
+it('reverts a Home card with the record and exact assertion IDs shown', async () => {
+  const input = { recordId: 'record', assertionIds: ['card/id', 'second-assertion'] };
+  const client = new RetainerClient({
+    baseUrl: 'http://localhost',
+    fetch: async (url, init) => {
+      expect(String(url)).toBe('http://localhost/v1/feed/card%2Fid/revert');
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(init?.body as string)).toEqual(input);
+      return Response.json({ id: 'card/id', retractedAssertions: 2 });
+    },
+  });
+  expect(await client.revertFeedUpdate('card/id', input)).toEqual({
+    id: 'card/id',
+    retractedAssertions: 2,
+  });
+});

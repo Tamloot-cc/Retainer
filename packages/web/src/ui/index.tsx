@@ -675,6 +675,7 @@ export function Dialog({
   layout = 'default',
   icon,
   closeDisabled,
+  onOpenAutoFocus,
   onCloseAutoFocus,
   children,
 }: {
@@ -685,6 +686,7 @@ export function Dialog({
   layout?: 'default' | 'composer';
   icon?: ReactNode;
   closeDisabled?: boolean;
+  onOpenAutoFocus?: ComponentProps<typeof DialogPrimitive.Content>['onOpenAutoFocus'];
   onCloseAutoFocus?: ComponentProps<typeof DialogPrimitive.Content>['onCloseAutoFocus'];
   children: ReactNode;
 }) {
@@ -694,6 +696,7 @@ export function Dialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-xs" />
         <DialogPrimitive.Content
+          onOpenAutoFocus={onOpenAutoFocus}
           onCloseAutoFocus={onCloseAutoFocus}
           className={cn(
             'fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col border border-border shadow-xl',

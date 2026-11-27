@@ -573,6 +573,21 @@ describe('installation-owned fields', () => {
     });
     expect((await patch(s.keys.admin, { note: 'Bring the contract' })).status).toBe(200);
     expect((await patch(key, { title: 'Intro call (moved)' })).status).toBe(200);
+    const feed = await s.app.request('/v1/feed/query', {
+      key: s.keys.admin,
+      body: { linked: first },
+    });
+    expect(feed.status).toBe(200);
+    const [appUpdate, userUpdate] = feed.body.items;
+    expect(appUpdate.changes[0]?.field).toBe('title');
+    expect(appUpdate.canRevert).toBeUndefined();
+    expect(userUpdate.canRevert).toBe(true);
+    const revert = await s.app.request(`/v1/feed/${appUpdate.id}/revert`, {
+      key: s.keys.admin,
+      body: { recordId: first, assertionIds: [appUpdate.changes[0].id] },
+    });
+    expect(revert.status).toBe(403);
+    expect(revert.body.error.code).toBe('installation_owned');
     const upserted = await s.app.request('/v1/objects/order/upsert', {
       key: s.keys.admin,
       body: { match: { orderId: randomUUID() }, ifMissing: 'create', values: { note: 'x' } },

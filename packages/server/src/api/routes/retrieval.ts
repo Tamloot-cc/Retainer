@@ -1,10 +1,15 @@
 import type { Hono } from 'hono';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
-import { readBody, recordParam, zodError } from '../../http/request.js';
+import { idParam, readBody, recordParam, zodError } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { contextInputSchema } from '../../retrieval/context.js';
-import { feedInputSchema, workspaceFeed } from '../../retrieval/feed.js';
+import {
+  feedInputSchema,
+  revertFeedUpdate,
+  revertFeedUpdateInput,
+  workspaceFeed,
+} from '../../retrieval/feed.js';
 import { searchInputSchema } from '../../retrieval/search.js';
 import { contextFor, searchFor, timelineFor } from '../../retrieval/service.js';
 import { timelineInputSchema } from '../../retrieval/timeline.js';
@@ -17,6 +22,10 @@ export function retrievalRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.post('/feed/query', requireScope('read'), async (c) => {
     const input = await readBody(c, feedInputSchema);
     return c.json(await workspaceFeed(sql, c.get('caller'), input));
+  });
+  app.post('/feed/:id/revert', requireScope('read'), requireScope('write'), async (c) => {
+    const input = await readBody(c, revertFeedUpdateInput);
+    return c.json(await revertFeedUpdate(sql, c.get('caller'), idParam(c), input));
   });
 
   app.post('/search', requireScope('read'), async (c) => {
