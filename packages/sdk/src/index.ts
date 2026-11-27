@@ -526,6 +526,13 @@ export class RetainerClient {
   workspaceFeed(input: WorkspaceFeedInput = {}, signal?: AbortSignal): Promise<WorkspaceFeedPage> {
     return this.post<WorkspaceFeedPage>('/v1/feed/query', input, signal);
   }
+  /** Withdraws the field assertions on a Home update card and recomputes affected fields. */
+  revertFeedUpdate(id: string, input: { recordId: string; assertionIds: string[] }) {
+    return this.post<{ id: string; retractedAssertions: number }>(
+      `/v1/feed/${encodeURIComponent(id)}/revert`,
+      input,
+    );
+  }
 
   /**
    * Events of every event type in one page, newest first (`POST /v1/events/query`).

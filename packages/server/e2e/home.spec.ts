@@ -107,6 +107,40 @@ test('Home combines conversations and grouped record updates, preserves filters,
     await page.screenshot({ path: '/tmp/retainer-home-mobile.png', animations: 'disabled' });
 });
 
+test('a person can cancel or revert an Updated card from Home', async ({ page, retainer: r }) => {
+  const { record } = await r.request('/objects/person/records', {
+    values: { name: 'Dana Cohen', jobTitle: 'Founder' },
+  });
+  await r.request(`/records/${record.id}`, { values: { jobTitle: 'CEO' } }, r.keys.user, 'PATCH');
+  await signIn(page, r.url, r.keys.user);
+
+  const cards = page.getByRole('article');
+  const updated = cards.filter({ hasText: 'Person · Updated' });
+  const added = cards.filter({ hasText: 'Person · Added' });
+  const trigger = updated.getByRole('button', { name: 'Revert update' });
+  await expect(added).toContainText('CEO');
+  await expect(added.getByRole('button', { name: 'Revert update' })).toHaveCount(0);
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Revert this update?' });
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(trigger).toBeFocused();
+  await expect(added).toContainText('CEO');
+
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Revert update' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Update reverted.')).toBeVisible();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Update reverted.' }).locator('..'),
+  ).toBeFocused();
+  await expect(updated).toHaveCount(0);
+  await expect(added).toContainText('Founder');
+  await page.reload();
+  await expect(added).toContainText('Founder');
+  await expect(updated).toHaveCount(0);
+});
+
 test('the Home feed and sidebar scroll independently of the document', async ({
   page,
   retainer: r,
