@@ -11,9 +11,9 @@ Read `ARCHITECTURE.md` first; this document uses its section numbers.
 
 Retainer is used by agents through REST and MCP. The web app is for the
 people those agents work for. It does the jobs only a person can do and lets
-them see what the agents remembered and why. It is not a CRM front end and
-has no dashboards. Email comes in through extensions (Gmail), not the web
-app. People can chat with the workspace agent (5.10), whose avatar is the
+them see what the agents remembered and why. It is not a CRM front end:
+its only dashboards are ones the agent drafts and a person pins (5.11).
+Email comes in through extensions (Gmail), not the web app. People can chat with the workspace agent (5.10), whose avatar is the
 Retainer mark ([assistant avatar spec](docs/specs/assistant-avatar.md)).
 
 ---

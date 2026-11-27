@@ -1596,7 +1596,7 @@ Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
 
 `describe_schema`, `list_templates`, `apply_template`, `get_guide`,
-`query_records`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`, `upsert_records`,
+`query_records`, `aggregate_records`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`, `upsert_records`,
 `log_event`, `remember`, `propose_schema_change`, `move_events`. Events are listed with
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
@@ -1607,7 +1607,8 @@ feed; `create_file_upload`, `finalize_file`, `get_file` and `download_file`
 handle files (docs/files.md); `list_extensions`, `get_extension`,
 `list_extension_connections`, `list_extension_runs` and `preview_extension`
 inspect extensions; `get_event_content` reads the full text behind an event
-(1.3); and, when routines are available, `list_routines`, `get_routine`,
+(1.3); `check_dashboard` checks a dashboard program and runs its queries
+without saving it (1.4); and, when routines are available, `list_routines`, `get_routine`,
 `get_routine_capabilities`, `validate_routine`, `preview_routine`,
 `get_routine_preview`, `propose_routine` and `get_routine_job` build and
 inspect routines (4.7).
@@ -1631,7 +1632,9 @@ the user's approval, then apply them with `apply_template` and
 importing data is a separate step. Guides are static text in
 `packages/server/src/mcp/guides.ts`: Retainer reads none of the user's
 sources and calls no model (4.3). The server instructions point an agent
-at `discover_schema` when the workspace is not initialized.
+at `discover_schema` when the workspace is not initialized. `dashboards` teaches
+the dashboard language; a web chat's first message tells the workspace agent
+to read it before drafting a dashboard (1.4).
 
 `schema_design` holds the rules for growing or reviewing a schema in use;
 `discover_schema` includes the same rules. Agents change the schema

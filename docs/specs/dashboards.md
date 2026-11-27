@@ -1,7 +1,8 @@
 # Dashboards: spec
 
-Status: **proposed**, 2026-11-26. A local spike (branch `spike/dashboards`)
-proved the approach end to end (§11). Revised the same day after a look at
+Status: **shipped** in #212, live on 2026-11-27. Proposed 2026-11-26. A
+local spike (branch `spike/dashboards`) proved the approach end to end
+(§11). Revised the same day after a look at
 Twenty's dashboards: dashboards are stored by key and survive renames
 (§6.4), the agent reads a guide only when asked for a dashboard (§5.1), and
 it checks its program before answering (§5.3). For one day it was rewritten
@@ -708,9 +709,13 @@ on the server, issues on read, editing a saved dashboard.
 3. **Layout.** Tiles flow top to bottom in rows. A drag-and-resize grid
    (Twenty uses a 12-column grid) is left for later; the agent can reorder
    tiles on request today.
-4. **Chart library.** Recommended: shadcn/ui charts on Recharts 3, for the
-   app's existing shadcn patterns. The alternative is hand-drawn SVG, with
-   no dependency but more code to own.
+4. **Chart library.** Decided by the build: shadcn/ui charts on Recharts 3
+   (§8.4).
+5. **Relative dates.** A pinned "deals this quarter" stores fixed dates and
+   goes stale; so does a saved view. The query filter needs relative ranges
+   ("this quarter", "last 30 days") resolved when the query runs, in the
+   workspace's time zone. It belongs in the shared query layer, so views and
+   dashboards get it together; the views spec takes it up.
 
 ## 13. Prior art
 
