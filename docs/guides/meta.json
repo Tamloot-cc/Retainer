@@ -11,9 +11,7 @@
     "---Operate Retainer---",
     "../self-hosting",
     "upgrades-and-backups",
-    "../cli",
     "---Build integrations---",
-    "../sdk",
     "../standalone-apps",
     "../files",
     "../extensions-execution"

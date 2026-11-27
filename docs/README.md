@@ -15,7 +15,8 @@ extensions may, through Retainer's model proxy.
 | ------------------------------- | --------------------------------------------------------------- |
 | [Self-hosting](self-hosting.md) | Running the server, workspaces and API keys, configuration      |
 | [Connecting agents](agents.md)  | MCP over HTTP or stdio, the tools, how an agent should write    |
-| [TypeScript SDK](sdk.md)        | `@retainer/sdk`: calling the REST API from your own code        |
+| [TypeScript SDK](sdk.mdx)        | `@retainer/sdk`: calling the REST API from your own code        |
+| [Retainer CLI](cli/index.mdx)   | Sign in from a terminal and administer or review a workspace    |
 | [REST API](rest-api.md)         | Authentication, errors, pagination, idempotency and every route |
 | [Releasing](releasing.md)       | How maintainers cut a release                                   |
 

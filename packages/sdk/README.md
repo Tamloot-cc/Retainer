@@ -17,7 +17,7 @@ const hits = await retainer.search({ query: 'renewal' });
 const pack = await retainer.context(hits.records[0].id, { tokenBudget: 1500 });
 ```
 
-See the [SDK guide](https://github.com/Tamloot-cc/Retainer/blob/main/docs/sdk.md)
+See the [SDK guide](https://github.com/Tamloot-cc/Retainer/blob/main/docs/sdk.mdx)
 and the [REST API reference](https://github.com/Tamloot-cc/Retainer/blob/main/docs/rest-api.md).
 
 MIT licensed.

@@ -2,12 +2,15 @@ import { relative, resolve } from 'node:path';
 import { replaceSource } from 'fumadocs-core/mdx-plugins/stringifier';
 import { pageSchema } from 'fumadocs-core/source/schema';
 import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
+import { createGenerator, remarkAutoTypeTable } from 'fumadocs-typescript';
 import type { Root } from 'mdast';
 import { visit } from 'unist-util-visit';
+import { remarkCliReference } from './lib/cli-reference';
 import { resolveGuideLink } from './lib/guide-links';
 import { guideSlugs, guideUrl } from './lib/guides';
 
 const dir = '../../docs';
+const typeGenerator = createGenerator();
 type VFile = Parameters<typeof replaceSource>[0];
 
 export const docs = defineDocs({
@@ -18,7 +21,17 @@ export const docs = defineDocs({
       includeProcessedMarkdown: {
         output: 'string',
         headingIds: false,
-        mdxAsPlaceholder: ['Card', 'Cards', 'Tab', 'Tabs', 'Step', 'Steps'],
+        mdxAsPlaceholder: [
+          'Card',
+          'Cards',
+          'Tab',
+          'Tabs',
+          'Step',
+          'Steps',
+          'Callout',
+          'Accordion',
+          'Accordions',
+        ],
       },
     },
     schema({ source }) {
@@ -28,12 +41,17 @@ export const docs = defineDocs({
         : pageSchema;
     },
   },
-  meta: { files: ['meta.json', 'guides/meta.json', 'mcp/meta.json', 'api/meta.json'] },
+  meta: {
+    files: ['meta.json', 'guides/meta.json', 'mcp/meta.json', 'cli/meta.json', 'api/meta.json'],
+  },
 });
 
 export default defineConfig({
   mdxOptions: {
-    remarkPlugins: [
+    remarkPlugins: (defaults) => [
+      remarkCliReference,
+      ...defaults,
+      [remarkAutoTypeTable, { generator: typeGenerator }],
       () => (tree: Root, file: VFile) => {
         // DocsTitle renders the title on the website, while GitHub uses the first heading.
         const first = tree.children[0];

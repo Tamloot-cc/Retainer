@@ -2,10 +2,22 @@ name: Docs site
 
 on:
   pull_request:
-    paths: ["apps/docs/**", "docs/**", ".github/workflows/docs.yml", ".nvmrc"]
+    paths:
+      - "apps/docs/**"
+      - "docs/**"
+      - "packages/cli/src/commands.ts"
+      - "packages/sdk/src/index.ts"
+      - ".github/workflows/docs.yml"
+      - ".nvmrc"
   push:
     branches: [main]
-    paths: ["apps/docs/**", "docs/**", ".github/workflows/docs.yml", ".nvmrc"]
+    paths:
+      - "apps/docs/**"
+      - "docs/**"
+      - "packages/cli/src/commands.ts"
+      - "packages/sdk/src/index.ts"
+      - ".github/workflows/docs.yml"
+      - ".nvmrc"
   workflow_dispatch:
 
 permissions:

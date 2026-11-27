@@ -1,0 +1,34 @@
+---
+title: Command reference
+description: Retainer CLI commands, global options, browser approval requirements, and exit codes.
+---
+
+Run `retainer --help` for terminal help or `retainer --help --json` for the same reference in JSON.
+
+## Global options
+
+| Flag | Purpose |
+| --- | --- |
+| `--server <url>` | Server origin. Overrides `RETAINER_URL` and the last-used server. A fresh install defaults to hosted Retainer. |
+| `--workspace <slug\|id>` | Workspace for commands that accept a target. Overrides `RETAINER_WORKSPACE` and the saved workspace from `retainer use`. |
+| `--json` | Request JSON output. Noninteractive commands already use JSON. |
+| `--help`, `-h` | Print command help. |
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Command failed |
+| 2 | Invalid usage |
+| 3 | Login required |
+| 4 | Temporary elevation required |
+| 5 | Timed out |
+| 6 | Browser action required |
+| 7 | Denied |
+
+<Callout title="Handle browser actions in scripts">
+Exit code 6 tells you to inspect the returned URL and, when present, the ID. For login or approval requests, open the URL and use `retainer wait <id>` to check completion. Review screens for routines and extensions are completed in the web app.
+</Callout>
+
+<cli-command-reference />

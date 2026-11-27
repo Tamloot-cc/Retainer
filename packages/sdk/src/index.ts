@@ -95,20 +95,25 @@ import type {
   WriteResponse,
 } from '@retainer/shared';
 export type RetainerClientOptions = {
+  /** The Retainer server origin, such as https://retainer.tamloot.cc. */
   baseUrl: string;
   /** Bearer credential: workspace/installation key or a REST installation OAuth access token. */
   apiKey?: string;
   /** A CLI access token issued after browser consent. */
   accessToken?: string;
+  /** The browser approval ID for a CLI action that requires individual confirmation. */
   approval?: string;
+  /** Fetch credential mode. Defaults to same-origin. Use include to send a cross-origin session cookie. */
   credentials?: 'omit' | 'same-origin' | 'include';
   /**
-   * The workspace ID a signed-in person's cookie requests go to. A person
+   * The workspace ID for session-cookie or CLI requests. A person
    * can reach several workspaces with one session; an API key belongs to
    * one, so key requests ignore this.
    */
   workspace?: string;
+  /** Override fetch, for example to route requests through a proxy. */
   fetch?: typeof fetch;
+  /** Called on HTTP 401, except when creating a session. */
   onUnauthorized?: () => void;
 };
 export type HealthResponse = {

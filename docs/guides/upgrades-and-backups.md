@@ -14,3 +14,5 @@ Adjust the service, role, and database names for your configuration. Keep the du
 Test restoration into a separate instance before relying on the backup. Verify that records, file downloads when configured, and a new authenticated request work there.
 
 For upgrade ordering, migration commands, and Postgres version requirements, follow [Upgrading](../self-hosting.md#upgrading). For the relationship between Postgres metadata and file bytes, see [File storage](../files.md).
+
+For workspace administration and review from your terminal, see the [Retainer CLI](../cli/index.mdx).

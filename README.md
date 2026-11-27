@@ -117,7 +117,7 @@ Tools: `describe_schema`, `list_templates`, `apply_template`,
 `query_records`, `get_record`, `search`, `get_context`, `upsert_record`,
 `log_event`, `remember` and `propose_schema_change`. See
 [Connecting agents](docs/agents.md) for the workflow an agent should follow,
-and [the SDK guide](docs/sdk.md) to call the REST API from code.
+and [the SDK guide](docs/sdk.mdx) to call the REST API from code.
 
 ## Develop
 
@@ -179,4 +179,4 @@ covers Markdown exports, API reference maintenance, and the independent build.
 The server is licensed under [AGPL-3.0](LICENSE). The SDK, shared types and
 MCP bridge, web app and Claude Code plugin are MIT-licensed; see each package's `LICENSE`.
 
-See the [Retainer CLI guide](docs/cli.md) for workspace administration in accounts mode.
+See the [Retainer CLI guide](docs/cli/index.mdx) for workspace administration in accounts mode.
