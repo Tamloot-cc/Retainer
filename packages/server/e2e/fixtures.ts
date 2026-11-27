@@ -135,6 +135,15 @@ const recordButtonManifest = manifestFixture({
       inputSchema: recordButtonInputSchema,
       timeoutSeconds: 120,
     },
+    {
+      universalId: '3d2a47f8-eb81-4aa2-bc3f-77872f8e7e8f',
+      name: 'checkCompany',
+      description: 'Check company details.',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'recordButton', binding: 'company', label: 'Check company' },
+      inputSchema: recordButtonInputSchema,
+      timeoutSeconds: 120,
+    },
   ],
 });
 export const browserConfigureManifest = manifestFixture({
