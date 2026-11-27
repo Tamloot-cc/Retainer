@@ -6,11 +6,12 @@ import gmail from './logos/gmail.webp?no-inline';
 import granola from './logos/granola.webp?no-inline';
 import tamloot from './logos/tamloot.webp?no-inline';
 
+export const exaRegistrationId = '9796c2c7-46f3-4006-8f35-059d5ef3553e';
 const lastContactId = 'c1e8ba8a-69bb-4b2e-8db3-6ddc6c7b1606';
 
 // Registration IDs identify the same extension across releases and catalogs.
 const branding = new Map<string, { name: string; logo?: string }>([
-  ['9796c2c7-46f3-4006-8f35-059d5ef3553e', { name: 'Exa Enrichment', logo: exa }],
+  [exaRegistrationId, { name: 'Exa Enrichment', logo: exa }],
   ['4c60fc8e-45f9-49c8-919e-5c05c947a9aa', { name: 'Gmail', logo: gmail }],
   ['9e427713-3c8a-4981-872c-c8db69703113', { name: 'Granola', logo: granola }],
   [TAMLOOT_REGISTRATION_ID, { name: 'Tamloot', logo: tamloot }],

@@ -5,7 +5,6 @@ import {
   Activity,
   Cpu,
   Ellipsis,
-  History,
   KeyRound,
   LayoutList,
   Server,
@@ -66,6 +65,7 @@ import {
   useExtensions,
   useRefreshExtensions,
 } from './model.js';
+import { RunHistory } from './run-history.js';
 import { SettingFields } from './setting-fields.js';
 import { ExtensionCard, ExtensionFacts } from './surface.js';
 
@@ -321,7 +321,8 @@ function InstalledExtension({
           onDismiss={() => setSavedRevision(undefined)}
         />
       ) : tab === 'runs' ? (
-        <RunList
+        <RunHistory
+          key={`${installation.id}:${runsConnection ?? 'all'}`}
           installation={installation}
           admin={admin}
           {...(runsConnection ? { connection: runsConnection } : {})}
@@ -575,92 +576,6 @@ function MappingSummary({
         </ReviewCardFooter>
       ) : null}
     </ReviewCard>
-  );
-}
-
-function RunList({
-  installation,
-  connection,
-  admin,
-  onAll,
-}: {
-  installation: Installation;
-  connection?: string;
-  admin: boolean;
-  onAll: () => void;
-}) {
-  const client = useQueryClient();
-  const [cursor, setCursor] = useState<string | undefined>();
-  const runs = useQuery({
-    queryKey: [...queryKey, 'runs', installation.id, connection, cursor],
-    queryFn: ({ signal }) =>
-      api.extensionRuns(installation.id, {
-        signal,
-        ...(connection ? { connection } : {}),
-        ...(cursor ? { cursor } : {}),
-      }),
-    refetchInterval: 3000,
-  });
-  const retry = useMutation({
-    mutationFn: (runId: string) =>
-      api.retryExtensionRun(installation.id, runId, crypto.randomUUID()),
-    onSuccess: () => client.invalidateQueries({ queryKey }),
-  });
-  return (
-    <ExtensionCard title="Run history" icon={History}>
-      {connection ? <Notice onDismiss={onAll}>Showing the runs of one connection.</Notice> : null}
-      {runs.error ? <QueryError error={runs.error} retry={() => void runs.refetch()} /> : null}
-      {retry.error ? <Notice error>{retry.error.message}</Notice> : null}
-      {!runs.data ? (
-        <Muted>Loading runs…</Muted>
-      ) : !runs.data.runs.length ? (
-        <Empty quiet title="No runs yet." />
-      ) : (
-        <ul
-          aria-label="Extension runs"
-          className="flex flex-col divide-y divide-border rounded-lg border border-border"
-        >
-          {runs.data.runs.map((run) => (
-            <li
-              key={run.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 bg-muted/30 px-3 py-3"
-            >
-              <Badge
-                tone={
-                  run.status === 'failed'
-                    ? 'error'
-                    : run.status === 'succeeded'
-                      ? 'success'
-                      : 'neutral'
-                }
-              >
-                {stateLabel(run.status)}
-              </Badge>
-              <span className="text-sm">Attempt {run.attempt}</span>
-              {run.code ? <Muted small>{stateLabel(run.code)}</Muted> : null}
-              <span className="flex w-full flex-wrap items-center justify-between gap-2 sm:ml-auto sm:w-auto">
-                <Muted small>{new Date(run.createdAt).toLocaleString()}</Muted>
-                {admin && run.status === 'failed' ? (
-                  <Button
-                    size="small"
-                    disabled={retry.isPending}
-                    onClick={() => retry.mutate(run.id)}
-                  >
-                    Retry run
-                  </Button>
-                ) : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <Row>
-        {cursor ? <Button onClick={() => setCursor(undefined)}>Newest runs</Button> : null}
-        {runs.data?.nextCursor ? (
-          <Button onClick={() => setCursor(runs.data?.nextCursor ?? undefined)}>Older runs</Button>
-        ) : null}
-      </Row>
-    </ExtensionCard>
   );
 }
 
