@@ -1072,6 +1072,13 @@
       "when": 1795680955165,
       "tag": "0152_agent_turn_message",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1795779249776,
+      "tag": "0153_extension_run_mapped_fields",
+      "breakpoints": true
     }
   ]
 }

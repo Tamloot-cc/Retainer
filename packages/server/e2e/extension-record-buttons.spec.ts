@@ -79,18 +79,41 @@ test('filters run history and opens run details on a narrow screen', async ({
   await history.getByRole('button', { name: 'In progress' }).click();
   await expect(history.getByRole('listitem')).toHaveCount(1);
   await expect(history.getByText('Queued', { exact: true })).toBeVisible();
-  await r.finishRecordButton(installation, company.id, 'no_match');
+  await r.finishRecordButton(installation, company.id, 'matched_shortcut', {
+    employee_count: 42,
+    headquarters: { city: 'Springfield' },
+  });
   await expect(history.getByText('No runs in progress')).toBeVisible();
 
   await page.setViewportSize({ width: 375, height: 812 });
   const filters = history.getByRole('group', { name: 'Filter by run status' });
   await filters.getByRole('button', { name: 'Succeeded' }).click();
-  const row = history.getByRole('listitem').filter({ hasText: 'Enrich company now' });
-  await expect(row.getByText('No match', { exact: true })).toBeVisible();
+  const row = history.getByRole('listitem').filter({ hasText: 'Enrich company' });
+  await expect(row.getByText(/Found a direct match/)).toBeVisible();
   await expect(row.getByRole('button', { name: 'Copy run ID' })).toBeHidden();
-  await row.locator('summary').press('Enter');
+  await row.locator(':scope > details > summary').press('Enter');
+  await expect(row.getByRole('button', { name: 'Copy run ID' })).toBeHidden();
+  const input = row.locator('summary').filter({ hasText: /^Input/ });
+  const output = row.locator('summary').filter({ hasText: /^Output/ });
+  await expect(input).toContainText('Acme Systems');
+  await expect(output).toContainText('2 filled');
+  await expect(row.getByRole('link', { name: 'Acme Systems' })).toBeHidden();
+  await input.press('Enter');
+  await expect(row.getByRole('link', { name: 'Acme Systems' })).toHaveAttribute(
+    'href',
+    `/app/r/${company.id}`,
+  );
+  await expect(row.getByText('Employee count, Headquarters', { exact: true })).toBeHidden();
+  await output.press('Space');
+  await expect(row.getByText('Employee count, Headquarters', { exact: true })).toBeVisible();
+  await input.press('Enter');
+  await expect(row.getByRole('link', { name: 'Acme Systems' })).toBeHidden();
+  await expect(row.getByText('Employee count, Headquarters', { exact: true })).toBeVisible();
+  await row
+    .locator('summary')
+    .filter({ hasText: /^Technical details/ })
+    .press('Enter');
   await expect(row.getByRole('button', { name: 'Copy run ID' })).toBeVisible();
-  await expect(row.getByText('Record button', { exact: true })).toBeVisible();
   await expect
     .poll(() => history.evaluate((element) => element.scrollWidth <= element.clientWidth))
     .toBe(true);
