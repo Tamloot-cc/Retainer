@@ -9,6 +9,12 @@ import { queryKey, stateLabel } from './model.js';
 const inProgress = (status: string) =>
   status === 'queued' || status === 'running' || status === 'waiting';
 
+// The built-in Exa button IDs are stable across releases.
+const exaButtons = new Set([
+  'f2a76368-d95d-4020-a8e9-099b1e5ceda4',
+  'd8c01ffc-4418-43e8-a084-dc7d499d8117',
+]);
+
 function RecordButton({
   button,
   recordId,
@@ -20,6 +26,7 @@ function RecordButton({
 }) {
   const { session } = useWorkspace();
   const workspace = session.workspace.id;
+  const isExa = exaButtons.has(button.functionId);
   const client = useQueryClient();
   const { mutate, reset, data, isPending } = useMutation({
     mutationFn: () => api.runExtensionRecordButton(button, recordId),
@@ -44,9 +51,16 @@ function RecordButton({
       report(`Couldn’t check the status of “${button.label}”.`);
     } else if (run.data && !inProgress(run.data.status)) {
       if (run.data.status === 'succeeded') {
-        const reason =
-          run.data.code === 'nothing_to_fill' ? ' All mapped fields already have values.' : '';
-        report(`“${button.label}” finished.${reason}`);
+        const code = run.data.code;
+        if (isExa && code === 'no_domain') {
+          report('Enrichment skipped. Add a company domain and try again.');
+        } else if (isExa && (code === 'no_match' || code?.startsWith('no_match_'))) {
+          report('Enrichment skipped. No confident match was found.');
+        } else {
+          const reason =
+            code === 'nothing_to_fill' ? ' All mapped fields already have values.' : '';
+          report(`“${button.label}” finished.${reason}`);
+        }
       } else {
         report(`“${button.label}” ended with status: ${stateLabel(run.data.status)}.`);
       }
@@ -55,7 +69,7 @@ function RecordButton({
       return;
     }
     reset();
-  }, [button.label, client, report, reset, run.data, run.error, runId, workspace]);
+  }, [button.label, client, isExa, report, reset, run.data, run.error, runId, workspace]);
 
   const busy = isPending || !!runId;
   return (

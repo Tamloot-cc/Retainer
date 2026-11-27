@@ -33,3 +33,26 @@ test('shows an extension button in the record sheet and full page and runs it on
   await expect(page).toHaveURL(new RegExp(`/r/${company.id}$`));
   await expect(page.getByRole('button', { name: 'Enrich now' })).toBeEnabled();
 });
+
+for (const [label, code, message] of [
+  ['Enrich now', 'no_domain', 'Enrichment skipped. Add a company domain and try again.'],
+  ['Enrich now', 'no_match', 'Enrichment skipped. No confident match was found.'],
+  ['Enrich now', 'no_match_model_unavailable', 'Enrichment skipped. No confident match was found.'],
+  ['Check company', 'no_match', '“Check company” finished.'],
+] as const) {
+  test(`shows the ${code} outcome for ${label}`, async ({ page, retainer: r }) => {
+    const installation = await r.installRecordButton();
+    const { record: company } = await r.request('/objects/company/records', {
+      values: { name: 'Acme Systems' },
+    });
+
+    await signIn(page, r.url, r.keys.writer);
+    await page.getByRole('link', { name: 'Companies', exact: true }).click();
+    await page.getByRole('link', { name: 'Acme Systems', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Acme Systems' });
+    await sheet.getByRole('button', { name: label }).click();
+    await expect(sheet.getByText(`Started “${label}” on this record.`)).toBeVisible();
+    await r.finishRecordButton(installation, company.id, code);
+    await expect(sheet.getByRole('status')).toHaveText(message);
+  });
+}

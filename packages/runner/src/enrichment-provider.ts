@@ -254,10 +254,10 @@ export function normalizeCompanyName(name: string): string {
  */
 export function acceptPick(
   pick: { candidate: Candidate; certainty: Certainty },
-  record: { domain: string; name: string | null },
+  record: { domain: string | null; name: string | null },
 ): boolean {
   if (pick.certainty === 'low') return false;
-  if (candidateDomain(pick.candidate) === record.domain) return true;
+  if (record.domain && candidateDomain(pick.candidate) === record.domain) return true;
   if (pick.certainty !== 'high' || !record.name || !pick.candidate.name) return false;
   const name = normalizeCompanyName(record.name);
   return name !== '' && name === normalizeCompanyName(pick.candidate.name);
@@ -514,7 +514,7 @@ export class ExaProvider {
   }
 
   /** The company candidates for a record's domain and name. */
-  async search(domain: string, name?: string | null): Promise<Candidate[]> {
+  async search(domain: string | null, name?: string | null): Promise<Candidate[]> {
     return companyCandidates(
       await this.request('/search', exaSearchResponse, exaSearchRequest(domain, name)),
     );

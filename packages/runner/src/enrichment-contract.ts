@@ -132,7 +132,7 @@ const search = (category: 'company' | 'people', parts: (string | null | undefine
  * the domain alone, across all domains, so a company whose site redirects or
  * whose profile lives under another domain is still found.
  */
-export const exaSearchRequest = (domain: string, name?: string | null) =>
+export const exaSearchRequest = (domain: string | null, name?: string | null) =>
   search('company', [name, domain]);
 
 /**
@@ -502,7 +502,7 @@ export function enrichmentManifest(build: {
         reconnect: true,
         secret: false,
         description:
-          "For a company, only its name and website domain are sent. For a person, their LinkedIn profile address, or their name with their company's name and domain; never an email address or other record data. Skip the People destination to send no people at all. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.",
+          'For a company, only its name and website domain are sent. For a person, their LinkedIn profile address, or their name and available company details. Enrich now may send the name alone. No email addresses are sent. Skip the People destination to send no people at all. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.',
       },
     },
 

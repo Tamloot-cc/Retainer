@@ -85,6 +85,7 @@ export function acceptPersonPick(
 export async function lookUpPerson(
   run: { exa: ExaProvider; model: () => Anthropic | null; signal: AbortSignal },
   record: PersonRecord,
+  allowNameOnly = false,
 ): Promise<Found> {
   const company = record.company?.name ?? null;
   if (linkedinProfile(record.linkedin)) {
@@ -100,10 +101,15 @@ export async function lookUpPerson(
   const name = record.name?.trim();
   if (!name) return { status: 'no_match', code: 'no_name' };
   const domain = record.company?.domain ?? workEmailDomain(record.email);
-  if (!company && !domain) return { status: 'no_match', code: 'no_company' };
+  const nameOnly = !company && !domain;
+  if (nameOnly && !allowNameOnly) return { status: 'no_match', code: 'no_company' };
   const signal = { name: company, domain };
   const candidates = await run.exa.searchPeople(name, signal);
-  if (!candidates.length) return { status: 'no_match', code: 'no_match' };
+  if (
+    !candidates.length ||
+    (nameOnly && candidates.filter((candidate) => sameName(name, candidate.name)).length !== 1)
+  )
+    return { status: 'no_match', code: 'no_match' };
   const direct = candidates.filter(
     (candidate) => sameName(name, candidate.name) && rolesAt(candidate, company).length,
   );

@@ -135,6 +135,15 @@ const recordButtonManifest = manifestFixture({
       inputSchema: recordButtonInputSchema,
       timeoutSeconds: 120,
     },
+    {
+      universalId: '3d2a47f8-eb81-4aa2-bc3f-77872f8e7e8f',
+      name: 'checkCompany',
+      description: 'Check company details.',
+      handlerDigest: 'b'.repeat(64),
+      trigger: { kind: 'recordButton', binding: 'company', label: 'Check company' },
+      inputSchema: recordButtonInputSchema,
+      timeoutSeconds: 120,
+    },
   ],
 });
 export const browserConfigureManifest = manifestFixture({
@@ -306,7 +315,11 @@ export const test = base.extend<
       suggestTamloot: () => Promise<void>;
       previousConfiguration: () => Promise<string>;
       installRecordButton: () => Promise<string>;
-      finishRecordButton: (installationId: string, recordId: string) => Promise<void>;
+      finishRecordButton: (
+        installationId: string,
+        recordId: string,
+        code?: string,
+      ) => Promise<void>;
       expireConfigurationSecrets: () => Promise<void>;
       sourceEvidence: () => Promise<{
         personId: string;
@@ -797,7 +810,7 @@ export const test = base.extend<
         bindings: { company: { action: 'existing', objects: ['company'] } },
       });
     }
-    async function finishRecordButton(installationId: string, recordId: string) {
+    async function finishRecordButton(installationId: string, recordId: string, code?: string) {
       if (!catalog) throw new Error('record button fixture is not enabled');
       const [pending] = await owner<{ id: string }[]>`
         select id from extension_jobs where installation_id=${installationId} and status='queued'
@@ -806,7 +819,7 @@ export const test = base.extend<
       const queue = new ExtensionQueue(sql, catalog.runtime);
       const job = await queue.claim(workspace.id, pending.id, randomUUID());
       if (!job) throw new Error('record button claim failed');
-      await queue.complete(job, { status: 'succeeded' });
+      await queue.complete(job, { status: 'succeeded', code });
     }
     async function activateMembers() {
       if (!memberFixture || !catalog || !runTokens)

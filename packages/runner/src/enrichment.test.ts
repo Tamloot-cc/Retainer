@@ -290,6 +290,16 @@ describe('the lookup (spec 6.3-6.5)', () => {
     expect(f.calls.model).toEqual([]);
   });
 
+  it('skips a name-only search with multiple matching companies before calling the model', async () => {
+    const f = fakes([result('https://acme.example.org/'), result('https://acme.example.net/')]);
+    expect(await lookUp(f.run, { ...f.record, domain: null })).toEqual({
+      status: 'no_match',
+      code: 'no_match',
+    });
+    expect(f.calls.exa[0]?.query).toBe('Acme');
+    expect(f.calls.model).toEqual([]);
+  });
+
   it('asks the model with the record and the candidates as untrusted content', async () => {
     const f = fakes([result('https://acme.example.org/'), result('https://acme.example.net/')]);
     expect(await lookUp(f.run, f.record)).toMatchObject({
