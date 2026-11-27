@@ -20,6 +20,7 @@ const mcpTools = new Set([
   'describe_schema',
   'query_records',
   'aggregate_records',
+  'check_dashboard',
   'get_record',
   'search',
   'list_comments',

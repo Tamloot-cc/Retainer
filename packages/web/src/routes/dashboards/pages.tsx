@@ -104,26 +104,33 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
     mutationFn: async () => {
       if (dashboard.chatId && !dashboard.issues.length) {
         try {
-          await api.agentChat(dashboard.chatId);
-          return { id: dashboard.chatId, fresh: false };
+          const [, linked] = await Promise.all([
+            api.agentChat(dashboard.chatId),
+            api.dashboards(dashboard.chatId),
+          ]);
+          if (
+            linked.dashboards.some(
+              (other) => other.id !== dashboard.id && other.updatedAt >= dashboard.updatedAt,
+            )
+          )
+            firstMessages.set(dashboard.chatId, firstDashboardMessage(dashboard));
+          return dashboard.chatId;
         } catch (error) {
           if (!(error instanceof RetainerApiError) || error.status !== 404) throw error;
         }
       }
       const chat = await api.createAgentChat(undefined, 'web');
       firstMessages.set(chat.id, firstDashboardMessage(dashboard));
-      return { id: chat.id, fresh: true };
+      return chat.id;
     },
-    onSuccess: ({ id, fresh }) => {
+    onSuccess: (id) => {
       void navigate({
         to: '/chat/$id',
         params: { id },
-        search: fresh
-          ? {
-              dashboard: dashboard.id,
-              dashboardRevision: dashboard.updatedAt,
-            }
-          : {},
+        search: {
+          dashboard: dashboard.id,
+          dashboardRevision: dashboard.updatedAt,
+        },
       });
     },
   });

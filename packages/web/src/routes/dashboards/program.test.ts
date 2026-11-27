@@ -14,6 +14,7 @@ it('merges the changed statements and drops unused components', () => {
 it('disables reads with a removed field, a fast refresh, or a nonliteral argument', () => {
   const invalid = `root = Dashboard("Plan", [])
 fast = Query("aggregate_records", {object: "deal"}, {}, 59)
+overflow = Query("aggregate_records", {object: "deal"}, {}, 2147484)
 dynamic = Query("aggregate_records", {object: fast.total}, {})
 removed = Query("aggregate_records", {object: "deal", groupBy: "stage"}, {})
 valid = Query("aggregate_records", {object: "deal"}, {}, 60)`;
@@ -21,9 +22,11 @@ valid = Query("aggregate_records", {object: "deal"}, {}, 60)`;
   expect(safe.issues.map(({ statement }) => statement).sort()).toEqual([
     'dynamic',
     'fast',
+    'overflow',
+
     'removed',
   ]);
-  expect(safe.program.match(/Query\("__unavailable"/g)).toHaveLength(3);
+  expect(safe.program.match(/Query\("__unavailable"/g)).toHaveLength(4);
   expect(safe.program).toContain('valid = Query("aggregate_records", {object: "deal"}, {}, 60)');
 });
 

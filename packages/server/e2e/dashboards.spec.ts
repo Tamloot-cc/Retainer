@@ -100,4 +100,52 @@ test.describe('saved dashboards', () => {
       await second.close();
     }
   });
+  test('edits the selected dashboard when several were saved from the same chat', async ({
+    page,
+    retainer,
+  }) => {
+    const key = retainer.keys.user;
+    const chat = await retainer.request('/agent/chats', { client: 'web' }, key);
+    const selected = await retainer.request(
+      '/dashboards',
+      {
+        name: 'Company snapshot',
+        program,
+        chatId: chat.id,
+      },
+      key,
+    );
+    const otherProgram = program.replace('Company snapshot', 'Latest snapshot');
+    const latest = await retainer.request(
+      '/dashboards',
+      {
+        name: 'Latest snapshot',
+        program: otherProgram,
+        chatId: chat.id,
+      },
+      key,
+    );
+    retainer.anthropic?.enqueue({
+      blocks: [
+        {
+          type: 'text',
+          text: '```openui-lang\ncount = Metric("Companies in CRM", companies.total)\n```',
+        },
+      ],
+      stopReason: 'end_turn',
+    });
+    await signIn(page, retainer.url, key);
+    await page.goto(`${retainer.url}/app/dashboards/${selected.id}`);
+    await page.getByRole('button', { name: 'Edit with the agent' }).click();
+    await expect(page).toHaveURL(new RegExp(`/chat/${chat.id}\\?`));
+    await page.getByRole('button', { name: 'Update “Company snapshot”' }).click();
+    await expect(page.getByRole('link', { name: 'Saved' })).toHaveAttribute(
+      'href',
+      `/app/dashboards/${selected.id}`,
+    );
+    const changed = await retainer.request(`/dashboards/${selected.id}`, undefined, key);
+    const untouched = await retainer.request(`/dashboards/${latest.id}`, undefined, key);
+    expect(changed.program).toContain('Companies in CRM');
+    expect(untouched.updatedAt).toBe(latest.updatedAt);
+  });
 });

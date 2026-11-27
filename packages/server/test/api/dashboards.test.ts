@@ -260,6 +260,23 @@ it('admits dashboard reads in restricted mode while pausing writes', async () =>
   const result = await restricted.request(`${dashboards}/${created.body.id}`, { headers });
   expect(result.status).toBe(200);
   expect(await result.json()).toMatchObject({ name: created.body.name });
+  const validation = await restricted.request('/mcp', {
+    method: 'POST',
+    headers: {
+      ...headers,
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      'mcp-protocol-version': '2025-11-25',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'check_dashboard', arguments: { program: EXAMPLE_DASHBOARD } },
+    }),
+  });
+  expect(validation.status).toBe(200);
+  expect(await validation.text()).toContain('"ok":true');
   const write = await restricted.request(dashboards, { headers, method: 'POST' });
   expect(write.status).toBe(503);
 });

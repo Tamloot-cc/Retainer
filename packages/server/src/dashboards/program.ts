@@ -12,12 +12,12 @@ import {
   DASHBOARD_COMPONENT_NAMES,
   DASHBOARD_MAX_BYTES,
   DASHBOARD_MAX_QUERIES,
-  DASHBOARD_MIN_REFRESH,
   type DashboardComponentName,
   type DashboardIssue,
   dashboardAggregateSchema,
   dashboardComponents,
   dashboardRecordsSchema,
+  validDashboardRefresh,
 } from '@retainer/shared';
 import type { z } from 'zod';
 
@@ -136,11 +136,10 @@ export function inspectDashboard(program: string, stored = false) {
         const args = literal(node.args[1]);
         const defaults = literal(node.args[2]);
         const refresh = node.args[3] && literal(node.args[3]);
-        if (
-          refresh !== undefined &&
-          (typeof refresh !== 'number' || refresh < DASHBOARD_MIN_REFRESH)
-        )
-          throw new Error('Query refresh must be at least 60 seconds');
+        if (refresh !== undefined && !validDashboardRefresh(refresh))
+          throw new Error(
+            'Query refresh must be at least 60 seconds and fit within the browser timer range',
+          );
         const location = { statement: raw.id, start: raw.start ?? 0, end: at, defaults, refresh };
         if (tool === 'query_records') {
           queries.push({ ...location, tool, args: dashboardRecordsSchema.parse(args) });

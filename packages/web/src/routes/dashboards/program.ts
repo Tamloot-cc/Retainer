@@ -8,8 +8,8 @@ import {
 import {
   DASHBOARD_MAX_BYTES,
   DASHBOARD_MAX_QUERIES,
-  DASHBOARD_MIN_REFRESH,
   type DashboardIssue,
+  validDashboardRefresh,
 } from '@retainer/shared';
 
 function statements(program: string) {
@@ -106,8 +106,7 @@ export function renderableProgram(program: string, savedIssues: DashboardIssue[]
       args?.k === 'Obj' &&
       isLiteral(args) &&
       isLiteral(defaults) &&
-      (!refresh ||
-        (refresh.k === 'Num' && Number.isFinite(refresh.v) && refresh.v >= DASHBOARD_MIN_REFRESH));
+      (!refresh || (refresh.k === 'Num' && validDashboardRefresh(refresh.v)));
     const existingIssue = savedIssues.some((issue) => issue.statement === id);
     if (valid && !existingIssue) continue;
     if (!existingIssue)

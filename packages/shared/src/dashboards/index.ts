@@ -180,6 +180,12 @@ export function dashboardComponents<C, D extends Defined>(
 export const DASHBOARD_MAX_BYTES = 20 * 1024;
 export const DASHBOARD_MAX_QUERIES = 20;
 export const DASHBOARD_MIN_REFRESH = 60;
+// Browser timers store millisecond delays in a signed 32-bit integer.
+const DASHBOARD_MAX_REFRESH = Math.floor(0x7fffffff / 1000);
+export const validDashboardRefresh = (seconds: unknown): seconds is number =>
+  typeof seconds === 'number' &&
+  seconds >= DASHBOARD_MIN_REFRESH &&
+  seconds <= DASHBOARD_MAX_REFRESH;
 
 const reserved = new Set([
   'id',

@@ -30,6 +30,7 @@ describe('dashboard programs', () => {
     ['mutation', `${root}\ndata = Mutation("query_records", {}, {})`],
     ['unknown read', `${root}\n${query.replace('aggregate_records', 'other')}`],
     ['dynamic arguments', `${root}\n${query.replace('{object: "deal"}', 'metric')}`],
+    ['overflowing refresh', `${root}\n${query.replace('{total: 0})', '{total: 0}, 2147484)')}`],
     ['refresh under a minute', `${root}\n${query.replace('{total: 0})', '{total: 0}, 59)')}`],
     [
       'missing alias',
