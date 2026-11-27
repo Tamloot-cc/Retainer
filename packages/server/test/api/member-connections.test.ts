@@ -346,6 +346,17 @@ describe('member connection API, broker and execution with real Postgres', () =>
     expect(runs.body.runs.every((r: { connectionId: string }) => r.connectionId === a.cid)).toBe(
       true,
     );
+    const inspections = await Promise.all([
+      t.request(`${h.base}/runs/${first}`, { key: h.keys.dana }),
+      t.request(`${h.base}/runs/${second}`, { key: h.keys.dana }),
+      t.request(`${h.base}/runs/${second}`, { key: h.keys.admin }),
+      t.request(`${h.base}/runs/${first}`, { key: ra.token }),
+    ]);
+    expect(inspections.map(({ status }) => status)).toEqual([200, 404, 200, 404]);
+    expect(inspections[0]?.body).toMatchObject({
+      input: { trigger: 'job', record: null, changedFields: [] },
+      output: { fields: [] },
+    });
     const [one, two] = await Promise.all([
       tokens.authenticate(t.sql, ra.token),
       tokens.authenticate(t.sql, rb.token),

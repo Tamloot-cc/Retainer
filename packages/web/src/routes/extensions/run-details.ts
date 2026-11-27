@@ -74,9 +74,11 @@ const exaOutcomes = new Map([
   ['provider_rate_limited', 'Exa rate limited the request.'],
 ]);
 
+export const runTriggerLabel = (kind: string) => triggers.get(kind) ?? stateLabel(kind);
+
 export function runDetails(registrationId: string, run: ExtensionRun) {
   const isExa = registrationId === exaRegistrationId;
-  const trigger = run.triggerKind && (triggers.get(run.triggerKind) ?? stateLabel(run.triggerKind));
+  const trigger = run.triggerKind && runTriggerLabel(run.triggerKind);
   const title = run.functionName
     ? ((isExa ? exaFunctions.get(run.functionName) : undefined) ??
       stateLabel(

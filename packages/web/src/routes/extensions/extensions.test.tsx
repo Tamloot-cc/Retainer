@@ -741,6 +741,11 @@ describe('extension pages and human approval', () => {
       runs: options?.status === 'failed' ? [failed] : options?.cursor ? [failed] : [run],
       nextCursor: options?.status || options?.cursor ? null : 'older-cursor',
     }));
+    const inspection = vi.spyOn(api, 'inspectExtensionRun').mockResolvedValue({
+      input: { trigger: 'recordButton', record: null, operation: null, changedFields: [] },
+      output: { fields: [] },
+      timing: { queueMs: 350, latestAttemptMs: 1400 },
+    });
     const retry = vi.spyOn(api, 'retryExtensionRun').mockResolvedValue({
       id: failed.id,
       status: 'queued',
@@ -754,9 +759,18 @@ describe('extension pages and human approval', () => {
     expect(within(manual).getByText('No mapped fields were eligible to fill.')).toBeTruthy();
     const details = manual.querySelector('details');
     expect(details?.open).toBe(false);
+    expect(inspection).not.toHaveBeenCalled();
     expect(within(manual).getByText('Record button')).toBeTruthy();
     await userEvent.click(within(manual).getByText('Enrich company'));
     expect(details?.open).toBe(true);
+    const input = await within(manual).findByText('Input');
+    expect(input.closest('details')?.open).toBe(false);
+    expect(within(manual).getByText('Output').closest('details')?.open).toBe(false);
+    await userEvent.click(input);
+    expect(input.closest('details')?.open).toBe(true);
+    expect(within(manual).getByText('Record unavailable')).toBeTruthy();
+    expect(within(manual).getByText('350 ms')).toBeTruthy();
+    await userEvent.click(within(manual).getByText('Technical details'));
     expect(within(manual).getByRole('button', { name: 'Copy run ID' })).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: 'Older runs' }));

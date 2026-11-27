@@ -1,6 +1,7 @@
 import type {
   Actor,
   CoreRole,
+  ExtensionRunFieldStatus,
   FieldSettings,
   FieldType,
   ObjectClass,
@@ -2042,6 +2043,8 @@ export const extensionAttempts = pgTable(
     code: text('code'),
     startedAt: timestamptz('started_at').notNull().defaultNow(),
     finishedAt: timestamptz('finished_at'),
+    /** Only destination field IDs and dispositions from writes to the trigger record. */
+    mappedFields: jsonb('mapped_fields').$type<Record<string, ExtensionRunFieldStatus>>(),
   },
   (t) => [
     tenantFk(

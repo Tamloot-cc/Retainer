@@ -438,6 +438,37 @@ describe('Exa enrichment through a fake Exa', () => {
     });
     // The one result on the domain settles it without a model call.
     expect(messages()).toHaveLength(before);
+    const { body: history } = await h.app.request(`/v1/extensions/${h.id}/runs`, {
+      key: h.keys.reader,
+    });
+    const run = history.runs.find(
+      (entry: { triggerKind: string }) => entry.triggerKind === 'change',
+    );
+    const path = `/v1/extensions/${h.id}/runs/${run.id}`;
+    const inspection = await h.app.request(path, { key: h.keys.reader });
+    expect(inspection.status).toBe(200);
+    expect(inspection.body).toMatchObject({
+      input: {
+        trigger: 'change',
+        record: { id: acme, label: 'Acme', object: 'company' },
+        operation: 'create',
+        changedFields: expect.arrayContaining(['Name', 'Domain']),
+      },
+      output: {
+        fields: expect.arrayContaining([
+          { label: expect.stringMatching(/^employee count$/i), status: 'applied' },
+          { label: 'Headquarters', status: 'applied' },
+        ]),
+      },
+      timing: { queueMs: expect.any(Number), latestAttemptMs: expect.any(Number) },
+    });
+    expect(JSON.stringify(inspection.body)).not.toMatch(
+      /acme\.example|Springfield|exa-fixture-key/,
+    );
+    expect(
+      (await h.app.request(path.replace(h.id, randomUUID()), { key: h.keys.reader })).status,
+    ).toBe(404);
+
     const filled = await h.fields(acme);
     expect(filled.employeeCount).toBe(12);
     // The output fields the install created carry the bundle's descriptions.
@@ -466,6 +497,19 @@ describe('Exa enrichment through a fake Exa', () => {
     expect(h.exa.requests).toHaveLength(2);
     // Nothing the provider returned is copied into Retainer requests beyond the values.
     expect(h.apiBodies.join('\n')).not.toContain('Fixture Co');
+    const forgotten = await h.app.request(`/v1/records/${acme}/forget`, {
+      key: h.keys.admin,
+      method: 'POST',
+    });
+    expect(forgotten.status).toBe(200);
+    const afterForget = await h.app.request(path, { key: h.keys.reader });
+    expect(afterForget.body).toMatchObject({
+      input: { record: null, operation: null, changedFields: [] },
+      output: { fields: [] },
+    });
+    const stored =
+      await db.owner`select mapped_fields from extension_attempts where job_id=${run.id}`;
+    expect(stored).toEqual([{ mapped_fields: null }]);
   });
 
   it('runs a company button after an automatic miss and coalesces concurrent presses', async () => {
@@ -893,6 +937,15 @@ describe('picking the company with the model (model calls spec 6.3-6.5)', () => 
     const pending = await db.owner<{ n: number }[]>`
       select count(*)::int as n from field_assertions where record_id=${held} and status='pending_review'`;
     expect(pending[0]?.n).toBeGreaterThan(0);
+    const [job] = await db.owner<{ id: string }[]>`
+      select id from extension_jobs where workspace_id=${h.workspace} and change_snapshot->>'record_id'=${held}`;
+    const inspection = await h.app.request(`/v1/extensions/${h.id}/runs/${job?.id}`, {
+      key: h.keys.reader,
+    });
+    expect(inspection.body.output.fields).toContainEqual({
+      label: expect.stringMatching(/^employee count$/i),
+      status: 'pending_review',
+    });
   });
 
   it('accepts a pick on another domain only at high with the same name', async () => {

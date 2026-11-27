@@ -125,6 +125,9 @@ export const browserExaMappingManifest = manifestFixture({
 });
 const recordButtonManifest = manifestFixture({
   ...browserMappingManifest,
+  universalId: ENRICHMENT.registration,
+  name: 'exa-enrichment',
+  bindings: ENRICHMENT_BINDINGS,
   functions: [
     {
       universalId: ENRICHMENT.enrichCompanyNow,
@@ -134,6 +137,7 @@ const recordButtonManifest = manifestFixture({
       trigger: { kind: 'recordButton', binding: 'company', label: 'Enrich now' },
       inputSchema: recordButtonInputSchema,
       timeoutSeconds: 120,
+      mappedWrite: 'company',
     },
     {
       universalId: '3d2a47f8-eb81-4aa2-bc3f-77872f8e7e8f',
@@ -349,6 +353,7 @@ export const test = base.extend<
         installationId: string,
         recordId: string,
         code?: string,
+        mappedValues?: Record<string, unknown>,
       ) => Promise<void>;
       expireConfigurationSecrets: () => Promise<void>;
       sourceEvidence: () => Promise<{
@@ -838,10 +843,25 @@ export const test = base.extend<
         registrationId: recordButtonManifest.universalId,
         version: recordButtonManifest.version,
         settings: {},
-        bindings: { company: { action: 'existing', objects: ['company'] } },
+        bindings: {
+          company: {
+            action: 'existing',
+            objects: ['company'],
+            fields: {
+              employee_count: { action: 'create' },
+              headquarters: { action: 'create' },
+            },
+          },
+          person: { action: 'skip' },
+        },
       });
     }
-    async function finishRecordButton(installationId: string, recordId: string, code?: string) {
+    async function finishRecordButton(
+      installationId: string,
+      recordId: string,
+      code?: string,
+      mappedValues?: Record<string, unknown>,
+    ) {
       if (!catalog) throw new Error('record button fixture is not enabled');
       const [pending] = await owner<{ id: string }[]>`
         select id from extension_jobs where installation_id=${installationId} and status='queued'
@@ -850,6 +870,19 @@ export const test = base.extend<
       const queue = new ExtensionQueue(sql, catalog.runtime);
       const job = await queue.claim(workspace.id, pending.id, randomUUID());
       if (!job) throw new Error('record button claim failed');
+      if (mappedValues) {
+        if (!runTokens) throw new Error('record button run tokens are unavailable');
+        const token = await runTokens.issue(sql, job, recordButtonManifest.universalId, job.scopes);
+        const write = () =>
+          request(
+            `/extensions/${installationId}/runtime/mapped-writes`,
+            { binding: 'company', recordId, values: mappedValues },
+            token,
+          );
+        // A concurrent replay must leave the actual fill visible in run history.
+        const results = await Promise.all([write(), write()]);
+        expect(results.map(({ outcome }) => outcome).sort()).toEqual(['applied', 'skipped']);
+      }
       await queue.complete(job, { status: 'succeeded', code });
     }
     async function activateMembers() {

@@ -19,7 +19,7 @@ import {
   runsHostedCode,
   SIDEBAR_INSTALLATION_PARAM,
 } from '@retainer/extension';
-import type { Actor } from '@retainer/shared';
+import type { Actor, ExtensionRunFieldStatus, ExtensionRunInspection } from '@retainer/shared';
 import { z } from 'zod';
 import { type Caller, canApproveDestructive } from '../caller.js';
 import { recheckElevation } from '../db/cli.js';
@@ -57,6 +57,8 @@ import {
 import { ExtensionQueue } from '../extension-runtime/queue.js';
 import { pendingSecrets, type SecretBroker } from '../extension-runtime/secrets.js';
 import { log } from '../log.js';
+import { references } from '../records/references.js';
+import { withRead } from '../records/service.js';
 import { lockRecordsForUpdate, objectOf, recomputeFields } from '../records/write.js';
 import { getSchema, objectNamed } from '../schema/compiled.js';
 import { loadSchemaState } from '../schema/load.js';
@@ -199,6 +201,25 @@ function present(
 }
 
 export const runStatusFilterSchema = z.enum(['active', 'succeeded', 'failed', 'cancelled']);
+
+async function runConnectionScope(tx: Tx, caller: Caller, installationId: string) {
+  // A postgres query fragment is thenable. Wrap it so returning from this async helper
+  // does not execute the fragment independently.
+  if (caller.run)
+    return {
+      predicate: tx`and connection_id is not distinct from ${caller.run.connectionId ?? null}::uuid`,
+    };
+  if (canApproveDestructive(caller.actor, caller.scopes)) return { predicate: tx`` };
+  const [member] =
+    await tx`select 1 from extension_connections where installation_id=${installationId} limit 1`;
+  return {
+    predicate: member
+      ? tx`and connection_id in(select id from extension_connections where installation_id=${installationId} and owner_id=${ownerId(caller)})`
+      : tx``,
+  };
+}
+
+const dispositionPriority = { cleared: 0, populated: 0, pending_review: 1, applied: 2 } as const;
 
 export class Extensions {
   constructor(
@@ -471,10 +492,7 @@ export class Extensions {
       const [installation] =
         await tx`select registration_id from extension_installations where id=${id}`;
       if (!installation) throw notFound('extension installation');
-      const [member] =
-        await tx`select 1 from extension_connections where installation_id=${id} limit 1`;
-      const owner = ownerId(caller);
-      const all = canApproveDestructive(caller.actor, caller.scopes);
+      const { predicate: visibleConnections } = await runConnectionScope(tx, caller, id);
       const rows = await tx<
         {
           id: string;
@@ -493,8 +511,7 @@ export class Extensions {
         select id,function_id as "functionId",trigger_kind as "triggerKind",connection_id as "connectionId",status,attempt,generation,release_digest as "releaseDigest",code,
           created_at as "createdAt",updated_at as "updatedAt" from extension_jobs where installation_id=${id}
           ${connectionId ? tx`and connection_id=${connectionId}` : tx``}
-          ${caller.run ? tx`and connection_id is not distinct from ${caller.run.connectionId ?? null}::uuid` : tx``}
-          ${member && !all && !caller.run ? tx`and connection_id in(select id from extension_connections where installation_id=${id} and owner_id=${owner})` : tx``}
+          ${visibleConnections}
           ${status === 'active' ? tx`and status in ('queued','running','waiting')` : status ? tx`and status=${status}` : tx``}
           ${after ? tx`and id<${after}::uuid` : tx``} order by id desc limit ${limit + 1}`;
       const page = rows.slice(0, limit),
@@ -518,6 +535,95 @@ export class Extensions {
         nextCursor: rows.length > limit && last ? Buffer.from(last.id).toString('base64url') : null,
       };
     });
+  }
+
+  async inspectRun(
+    caller: Caller,
+    installationId: string,
+    runId: string,
+  ): Promise<ExtensionRunInspection> {
+    scope(caller, 'read');
+    if (caller.run || caller.installation) throw notFound('extension run');
+    return withRead(
+      this.sql,
+      caller,
+      async (tx, schema) => {
+        if (caller.agent) await admitCaller(tx, caller);
+        const { predicate: visibleConnections } = await runConnectionScope(
+          tx,
+          caller,
+          installationId,
+        );
+        const [job] = await tx<
+          {
+            trigger: string;
+            recordId: string | null;
+            operation: string | null;
+            fieldKeys: string[] | null;
+            createdAt: Date;
+          }[]
+        >`
+        select trigger_kind as trigger, created_at as "createdAt",
+          case trigger_kind when 'recordButton' then input->>'recordId'
+            when 'change' then change_snapshot->>'record_id' end as "recordId",
+          change_snapshot->>'operation' as operation,
+          change_snapshot->'field_keys' as "fieldKeys"
+        from extension_jobs where id=${runId} and installation_id=${installationId}
+          ${visibleConnections}`;
+        if (!job) throw notFound('extension run');
+        const target = z.uuid().safeParse(job.recordId);
+        const record = target.success
+          ? ((await references(tx, schema, [target.data]))[target.data] ?? null)
+          : null;
+        const object = record ? schema.objectsByName.get(record.object) : undefined;
+        const changed = new Set(job.fieldKeys ?? []);
+        const attempts = await tx<
+          {
+            startedAt: Date;
+            finishedAt: Date | null;
+            fields: Record<string, ExtensionRunFieldStatus> | null;
+          }[]
+        >`select started_at as "startedAt", finished_at as "finishedAt", mapped_fields as fields
+          from extension_attempts where workspace_id=${caller.workspaceId} and job_id=${runId}
+          order by attempt`;
+        const fields = new Map<string, ExtensionRunFieldStatus>();
+        for (const attempt of attempts) {
+          for (const [fieldId, status] of Object.entries(attempt.fields ?? {})) {
+            const prior = fields.get(fieldId);
+            if (!prior || dispositionPriority[status] >= dispositionPriority[prior])
+              fields.set(fieldId, status);
+          }
+        }
+        const [first] = attempts;
+        const latest = attempts.at(-1);
+        return {
+          input: {
+            trigger: job.trigger,
+            record,
+            operation: record ? job.operation : null,
+            changedFields:
+              object?.activeFields
+                .filter((field) => changed.has(field.key))
+                .map((field) => field.label) ?? [],
+          },
+          output: {
+            fields: (object?.activeFields ?? []).flatMap((field) => {
+              const status = field.id ? fields.get(field.id) : undefined;
+              return status ? [{ label: field.label, status }] : [];
+            }),
+          },
+          timing: {
+            queueMs: first
+              ? Math.max(0, first.startedAt.getTime() - job.createdAt.getTime())
+              : null,
+            latestAttemptMs: latest?.finishedAt
+              ? Math.max(0, latest.finishedAt.getTime() - latest.startedAt.getTime())
+              : null,
+          },
+        };
+      },
+      { privacy: true, schema: true },
+    );
   }
 
   private async plan(tx: Tx, caller: Caller, input: ExtensionInstallInput) {
