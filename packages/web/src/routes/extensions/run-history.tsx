@@ -19,7 +19,7 @@ import { type Installation, queryKey, stateLabel } from './model.js';
 import { type ExtensionRun, runDetails } from './run-details.js';
 
 const filters = [
-  { value: 'all', label: 'All runs', empty: 'No runs yet' },
+  { value: 'all', label: 'All runs', empty: 'No runs yet.' },
   { value: 'active', label: 'In progress', empty: 'No runs in progress' },
   { value: 'succeeded', label: 'Succeeded', empty: 'No successful runs' },
   { value: 'failed', label: 'Failed', empty: 'No failed runs' },
