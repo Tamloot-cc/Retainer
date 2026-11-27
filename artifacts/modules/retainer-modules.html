@@ -1,0 +1,1103 @@
+<title>Retainer Modules</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one plain column. Each kind of place keeps one color everywhere:
+   core blue, modules violet, extensions green, switches amber, outside grey. */
+:root {
+  --bg: #f5f6f9; --surface: #ffffff; --fg: #1a2030; --muted: #5a6376; --line: #d8dde6;
+  --accent: #2f5bd3;
+  --core: #e6edfc; --core-line: #8ba6e6; --core-ink: #2f5bd3;
+  --mod: #efe9fb; --mod-line: #9a82d6; --mod-ink: #5b3fb0;
+  --ext: #e5f4ec; --ext-line: #5fae84; --ext-ink: #1f7a4a;
+  --sw: #fff2d9; --sw-line: #c98a12; --sw-ink: #9a6200;
+  --out: #eef0f3; --out-line: #a9b1bf; --iface: #eef0f3; --iface-line: #a9b1bf;
+  --good: #1f7a4a; --bad: #b3342b; --code-bg: #eef1f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+    --accent: #7ea2ff; --core: #1c2943; --core-line: #4766a8; --core-ink: #9db8ff;
+    --mod: #251d3b; --mod-line: #7a62c2; --mod-ink: #c2b0ff;
+    --ext: #15302a; --ext-line: #3f8f68; --ext-ink: #6fd6a0;
+    --sw: #3a2c12; --sw-line: #d79a2b; --sw-ink: #f0b54a;
+    --out: #232833; --out-line: #566073; --iface: #232833; --iface-line: #566073;
+    --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+  --accent: #7ea2ff; --core: #1c2943; --core-line: #4766a8; --core-ink: #9db8ff;
+  --mod: #251d3b; --mod-line: #7a62c2; --mod-ink: #c2b0ff;
+  --ext: #15302a; --ext-line: #3f8f68; --ext-ink: #6fd6a0;
+  --sw: #3a2c12; --sw-line: #d79a2b; --sw-ink: #f0b54a;
+  --out: #232833; --out-line: #566073; --iface: #232833; --iface-line: #566073;
+  --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+.prose { max-width: 66ch; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lead { font-size: 1.12rem; color: var(--muted); }
+.muted { color: var(--muted); }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+.map { display: flex; flex-wrap: wrap; gap: 8px; }
+.map a { text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); }
+.map a:hover, .map a:focus-visible { border-color: var(--accent); outline: none; }
+
+.map { display: flex; flex-wrap: wrap; gap: 8px; }
+.map a { text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); }
+.map a:hover, .map a:focus-visible { border-color: var(--accent); outline: none; }
+
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; }
+.scroll { overflow-x: auto; }
+.figure svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 760px; }
+figcaption, .caption { font-size: 0.85rem; color: var(--muted); }
+svg text { font-family: var(--sans); fill: var(--fg); font-size: 13px; }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .zlabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .mono { font-family: var(--mono); font-size: 11px; }
+svg .b-core { fill: var(--surface); stroke: var(--core-line); stroke-width: 1.5; }
+svg .b-mod { fill: var(--surface); stroke: var(--mod-line); stroke-width: 1.5; }
+svg .b-modfill { fill: var(--mod); stroke: var(--mod-line); stroke-width: 1.8; }
+svg .b-maybe { fill: var(--surface); stroke: var(--mod-line); stroke-width: 1.3; stroke-dasharray: 5 4; }
+svg .b-iface { fill: var(--surface); stroke: var(--iface-line); stroke-width: 1.5; }
+svg .b-sw { fill: var(--surface); stroke: var(--sw-line); stroke-width: 1.5; }
+svg .b-swfill { fill: var(--sw); stroke: var(--sw-line); stroke-width: 1.8; }
+svg .b-good { fill: var(--surface); stroke: var(--good); stroke-width: 1.5; }
+svg .b-bad { fill: var(--surface); stroke: var(--bad); stroke-width: 1.5; }
+svg .z-core { fill: var(--core); }
+svg .z-mod { fill: var(--mod); }
+svg .z-iface { fill: var(--iface); }
+svg .z-sw { fill: var(--sw); }
+svg .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .arrow-mod { stroke: var(--mod-line); stroke-width: 1.8; fill: none; }
+svg .arrow-sw { stroke: var(--sw-line); stroke-width: 1.8; fill: none; }
+svg .arrow-bad { stroke: var(--bad); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+svg .arrow-good { stroke: var(--good); stroke-width: 1.6; fill: none; }
+svg .head { fill: var(--muted); }
+svg .head-mod { fill: var(--mod-line); }
+svg .head-sw { fill: var(--sw-line); }
+svg .head-bad { fill: var(--bad); }
+svg .head-good { fill: var(--good); }
+svg .modink { fill: var(--mod-ink); font-weight: 600; }
+svg .swink { fill: var(--sw-ink); font-weight: 600; }
+svg .coreink { fill: var(--accent); font-weight: 600; }
+svg .goodink { fill: var(--good); font-weight: 600; }
+svg .badink { fill: var(--bad); font-weight: 600; }
+svg .bold { font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card .k { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.card.mod { border-color: var(--mod-line); }
+.card.mod .k { color: var(--mod-ink); }
+.card p { font-size: 0.88rem; color: var(--muted); }
+
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .sub { font-size: 0.85rem; color: var(--muted); }
+.panel.mod { border-color: var(--mod-line); }
+.panel.core { border-color: var(--core-line); }
+
+/* folders */
+.folders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .folders { grid-template-columns: 1fr; } }
+.folder { background: var(--surface); border: 1.5px solid var(--mod-line); border-radius: 12px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.folder .top { background: var(--mod); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.folder .top code { font-size: 0.78rem; color: var(--mod-ink); word-break: break-all; }
+.folder .top .lic { font-size: 0.72rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.04em; }
+.folder .body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 0.86rem; }
+.folder .body .sub { font-size: 0.8rem; color: var(--muted); }
+.folder.optional { border-style: dashed; }
+
+.chiplist { display: flex; flex-wrap: wrap; gap: 6px; }
+.chiplist span { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; background: var(--bg); }
+.chiplist span small { color: var(--muted); font-size: 0.74rem; }
+.chiplist.mod span { border-color: var(--mod-line); }
+.chiplist.core span { border-color: var(--core-line); }
+
+/* test rows */
+.tests { display: flex; flex-direction: column; gap: 8px; }
+.test { display: grid; grid-template-columns: 34px minmax(0, 1.3fr) 28px minmax(0, 1fr); gap: 10px; align-items: stretch; }
+@media (max-width: 640px) { .test { grid-template-columns: 34px minmax(0, 1fr); } .test .arr, .test .out { grid-column: 2; } .test .arr { display: none; } }
+.test .n { font-family: var(--mono); font-size: 0.9rem; font-weight: 600; color: var(--mod-ink); background: var(--mod); border: 1.5px solid var(--mod-line); border-radius: 8px; display: grid; place-items: center; }
+.test .q { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.test .q b { font-weight: 600; font-size: 0.95rem; }
+.test .q small { color: var(--muted); font-size: 0.8rem; }
+.test .arr { align-self: center; text-align: center; font-family: var(--mono); color: var(--bad); font-size: 0.75rem; line-height: 1.1; }
+.test .out { background: var(--iface); border: 1px dashed var(--iface-line); border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; display: flex; flex-direction: column; gap: 2px; }
+.test .out b { font-weight: 600; }
+.test .out small { color: var(--muted); font-size: 0.78rem; }
+.pass { display: flex; align-items: center; gap: 10px; background: var(--mod); border: 1.5px solid var(--mod-line); border-radius: 10px; padding: 10px 14px; font-weight: 600; color: var(--mod-ink); }
+
+/* knowledge vs state */
+.ks { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 720px) { .ks { grid-template-columns: 1fr; } }
+.ks .panel h3 { display: flex; align-items: center; gap: 8px; }
+.tag { font-size: 0.7rem; font-weight: 700; border-radius: 999px; padding: 1px 9px; border: 1.5px solid; letter-spacing: 0.02em; white-space: nowrap; }
+.tag.core { color: var(--accent); border-color: var(--core-line); background: var(--core); }
+.tag.mod { color: var(--mod-ink); border-color: var(--mod-line); background: var(--mod); }
+.tag.sw { color: var(--sw-ink); border-color: var(--sw-line); background: var(--sw); }
+.tag.off { color: var(--muted); border-color: var(--line); }
+
+/* tables */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tablewrap table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.88rem; }
+.tablewrap th, .tablewrap td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.tablewrap thead th { font-size: 0.8rem; color: var(--muted); font-weight: 600; background: var(--bg); }
+.tablewrap tbody th { font-weight: 500; }
+.tablewrap tr:last-child th, .tablewrap tr:last-child td { border-bottom: none; }
+.tablewrap td.c { text-align: center; }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--mod-line); }
+.dot.ext { background: var(--sw-line); }
+.none { color: var(--muted); font-size: 0.8rem; }
+
+.ticks { list-style: none; padding: 0; gap: 6px; font-size: 0.9rem; }
+.ticks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; }
+.ticks li::before { font-weight: 700; }
+.ticks li.yes::before { content: "✓"; color: var(--good); }
+.ticks li.no::before { content: "✕"; color: var(--bad); }
+.ticks li.dot2::before { content: "•"; color: var(--muted); }
+
+.decisions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 720px) { .decisions { grid-template-columns: 1fr; } }
+.dec { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.dec b { font-weight: 600; font-size: 0.92rem; }
+.dec span { font-size: 0.84rem; color: var(--muted); }
+.dec.rev { border-color: var(--mod-line); }
+.note { font-size: 0.86rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+.steps > li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 0.88rem; }
+.steps .k { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); }
+.warnbox { border: 1.5px solid var(--sw-line); background: var(--sw); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.warnbox b { color: var(--sw-ink); }
+svg .b-ext { fill: var(--ext); stroke: var(--ext-line); stroke-width: 1.8; }
+svg .z-ext { fill: var(--ext); }
+svg .extink { fill: var(--ext-ink); font-weight: 600; }
+svg .arrow-ext { stroke: var(--ext-line); stroke-width: 1.8; fill: none; }
+svg .head-ext { fill: var(--ext-line); }
+svg .z-out { fill: var(--out); stroke: var(--out-line); stroke-width: 1.3; stroke-dasharray: 6 4; }
+.figure { margin: 0; }
+/* ---------- big picture ---------- */
+.world { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 760px) { .world { grid-template-columns: 1fr; } }
+.zone { border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.zone > .zl { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.zone.server { background: var(--core); border: 1.5px solid var(--core-line); }
+.zone.outside { background: var(--out); border: 1.5px dashed var(--out-line); }
+.box { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.box b { font-weight: 600; }
+.box small { color: var(--muted); font-size: 0.82rem; }
+.box.core { border-color: var(--core-line); }
+.box.core b { color: var(--core-ink); }
+.box.mod { border-color: var(--mod-line); background: var(--mod); }
+.box.mod b { color: var(--mod-ink); }
+.box.ext { border-color: var(--ext-line); background: var(--ext); }
+.box.ext b { color: var(--ext-ink); }
+.box.cfg { border-color: var(--sw-line); background: var(--sw); }
+.box.cfg b { color: var(--sw-ink); }
+.box.app { border-color: var(--out-line); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { font-size: 0.78rem; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.pill.mod { border-color: var(--mod-line); color: var(--mod-ink); }
+.pill.dash { border-style: dashed; color: var(--muted); }
+.pill.ext { border-color: var(--ext-line); color: var(--ext-ink); }
+.pill.sw { border-color: var(--sw-line); color: var(--sw-ink); background: var(--sw); }
+.mods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 520px) { .mods { grid-template-columns: 1fr; } }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--sw-ink); font-family: var(--mono); }
+.toggle i { width: 24px; height: 13px; border-radius: 999px; background: var(--sw-line); position: relative; display: inline-block; }
+.toggle i::after { content: ""; position: absolute; right: 2px; top: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--surface); }
+.toggle.off i { background: var(--out-line); }
+.toggle.off i::after { right: auto; left: 2px; }
+.toggle.off { color: var(--muted); }
+.bridge { font-size: 0.82rem; color: var(--muted); text-align: center; padding: 4px; }
+
+/* ---------- ladder ---------- */
+.ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 860px) { .ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .ladder { grid-template-columns: 1fr; } }
+.rung { background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rung .n { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.05em; }
+.rung h3 { font-size: 1rem; }
+.rung p { font-size: 0.86rem; }
+.rung .ask { font-size: 0.84rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.rung .eg { font-size: 0.8rem; color: var(--muted); }
+.rung.cfg { border-color: var(--sw-line); } .rung.cfg h3 { color: var(--sw-ink); }
+.rung.ext { border-color: var(--ext-line); } .rung.ext h3 { color: var(--ext-ink); }
+.rung.mod { border-color: var(--mod-line); background: var(--mod); } .rung.mod h3 { color: var(--mod-ink); }
+.rung.app { border-color: var(--out-line); }
+.note { font-size: 0.9rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+
+/* ---------- compare ---------- */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+thead th { font-size: 0.82rem; font-weight: 600; background: var(--bg); }
+thead th.m { color: var(--mod-ink); }
+thead th.e { color: var(--ext-ink); }
+tbody th { font-weight: 500; color: var(--muted); width: 22%; }
+tr:last-child th, tr:last-child td { border-bottom: none; }
+.y { color: var(--good); font-weight: 600; }
+.x { color: var(--bad); font-weight: 600; }
+.motto { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 640px) { .motto { grid-template-columns: 1fr; } }
+.motto div { border-radius: 12px; padding: 14px 16px; font-size: 1.02rem; }
+.motto .m { background: var(--mod); border: 1.5px solid var(--mod-line); }
+.motto .e { background: var(--ext); border: 1.5px solid var(--ext-line); }
+.motto b { display: block; font-size: 0.78rem; font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+.motto .m b { color: var(--mod-ink); } .motto .e b { color: var(--ext-ink); }
+
+/* ---------- rules ---------- */
+.rules { display: flex; flex-direction: column; gap: 10px; }
+.rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+@media (max-width: 680px) { .rule { grid-template-columns: 1fr; } }
+.rule .what { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--line); }
+@media (max-width: 680px) { .rule .what { border-right: none; border-bottom: 1px solid var(--line); } }
+.rule .what b { font-size: 1rem; }
+.rule .what small { color: var(--muted); font-size: 0.84rem; }
+.rule .why { padding: 14px 16px; background: var(--bg); font-size: 0.9rem; display: flex; flex-direction: column; gap: 6px; }
+.rule .why .k { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.rule .why .go { font-size: 0.84rem; color: var(--muted); }
+.big-rule { background: var(--mod); border: 1.5px solid var(--mod-line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.big-rule p.q { font-size: 1.15rem; font-weight: 600; color: var(--mod-ink); }
+.big-rule p { font-size: 0.92rem; }
+
+/* ---------- recording ---------- */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); align-items: stretch; gap: 6px; }
+@media (max-width: 760px) { .flow { grid-template-columns: 1fr; } .flow .arr { transform: rotate(90deg); justify-self: center; } }
+.flow .arr { display: grid; place-items: center; color: var(--muted); font-size: 1.2rem; }
+.step { border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.step .who { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; }
+.step h3 { font-size: 1rem; }
+.step ul { font-size: 0.86rem; }
+.step .why { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.step.mod { background: var(--mod); border: 1.5px solid var(--mod-line); } .step.mod .who { color: var(--mod-ink); }
+.step.ext { background: var(--ext); border: 1.5px solid var(--ext-line); } .step.ext .who { color: var(--ext-ink); }
+.step.core { background: var(--core); border: 1.5px solid var(--core-line); } .step.core .who { color: var(--core-ink); }
+.verdict { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 680px) { .verdict { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel p, .panel li { font-size: 0.9rem; }
+.panel.mod { border-color: var(--mod-line); }
+.panel.ext { border-color: var(--ext-line); }
+.tag { font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 1px 9px; border: 1.5px solid; white-space: nowrap; align-self: flex-start; }
+.tag.mod { color: var(--mod-ink); border-color: var(--mod-line); background: var(--mod); }
+.tag.ext { color: var(--ext-ink); border-color: var(--ext-line); background: var(--ext); }
+
+/* ---------- quick check ---------- */
+.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 680px) { .checks { grid-template-columns: 1fr; } }
+.check { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.check span { font-size: 0.9rem; }
+.check .ans { font-family: var(--mono); font-size: 0.74rem; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.ans.cfg { color: var(--sw-ink); background: var(--sw); }
+.ans.ext { color: var(--ext-ink); background: var(--ext); }
+.ans.app { color: var(--muted); background: var(--out); }
+.ans.core { color: var(--core-ink); background: var(--core); }
+.ans.mod { color: var(--mod-ink); background: var(--mod); }
+
+/* ---------- switch + life ---------- */
+.switches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .switches { grid-template-columns: 1fr; } }
+.swc { background: var(--surface); border: 1.5px solid var(--sw-line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.swc .who { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--sw-ink); }
+.swc p { font-size: 0.88rem; }
+.swc small { color: var(--muted); font-size: 0.8rem; }
+.life { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 760px) { .life { grid-template-columns: 1fr; } }
+.life .panel h3 { font-size: 0.98rem; }
+footer { font-size: 0.84rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+@media (prefers-reduced-motion: no-preference) { .map a { transition: border-color .15s; } }
+.parked { border: 1.5px solid var(--sw-line); background: var(--sw); border-radius: 12px; padding: 12px 16px; font-size: 0.95rem; }
+.parked b { color: var(--sw-ink); }
+.matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.matrix table { min-width: 620px; }
+.matrix th, .matrix td { text-align: center; }
+.matrix tbody th, .matrix thead th:first-child { text-align: left; width: 40%; color: var(--fg); }
+.matrix td.ok { color: var(--good); font-weight: 700; font-size: 1.05rem; }
+.matrix td.no { color: var(--bad); font-weight: 700; font-size: 1.05rem; }
+.matrix tr.sum td, .matrix tr.sum th { background: var(--bg); font-weight: 600; }
+.matrix tr.live td { background: var(--core); color: var(--core-ink); font-weight: 700; }
+.matrix tr.live th { background: var(--core); }
+.keep { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .keep { grid-template-columns: 1fr; } }
+.keep .box b { color: var(--core-ink); }
+.btn { align-self: flex-start; font-size: 0.8rem; font-weight: 600; padding: 3px 12px; border-radius: 8px; background: var(--accent); color: var(--surface); }
+.btn.ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+.step.agent { background: var(--surface); border: 1.5px solid var(--line); } .step.agent .who { color: var(--muted); }
+</style>
+
+<main>
+  <header class="prose" style="display:flex;flex-direction:column;gap:14px">
+    <span class="eyebrow">Retainer · parked design · docs/specs/modules.md</span>
+    <h1>Modules</h1>
+    <p class="lead">A module is a feature we build <b>inside</b> Retainer's server, kept in its own folders, so each workspace can switch it on or off, and we can delete it cleanly if the experiment fails.</p>
+    <p class="parked"><b>Parked on 2026-11-27.</b> No module is planned. Dashboards, which was going to be the first module, is a core feature like views and Routines (section 5). The design waits here for the first real experiment.</p>
+    <nav class="map" aria-label="Sections">
+      <a href="#picture">1. The picture</a>
+      <a href="#levels">2. Four places</a>
+      <a href="#vs">3. Module or extension?</a>
+      <a href="#test">4. Is it a module?</a>
+      <a href="#core">5. Why Dashboards is core</a>
+      <a href="#recording">6. Recording</a>
+      <a href="#anatomy">7. What it's made of</a>
+      <a href="#plug">8. How it plugs in</a>
+      <a href="#layers">9. Who may import what</a>
+      <a href="#switch">10. On and off</a>
+      <a href="#lifecycle">11. Keep or delete</a>
+      <a href="#dashboards">12. Worked example</a>
+      <a href="#points">13. Plug points</a>
+    </nav>
+  </header>
+
+  <section id="picture">
+    <span class="eyebrow">1 · The picture</span>
+    <h2>Modules live inside the server. Extensions live outside it.</h2>
+    <div class="world">
+      <div class="zone server">
+        <span class="zl">Inside Retainer's server · one process, one database</span>
+        <div class="box core">
+          <b>The core</b>
+          <small>Records, events, search, merge, forget, the REST API and the MCP server. Always there. Never calls a model.</small>
+          <div class="row"><span class="pill">Views</span><span class="pill">Routines</span><span class="pill">Dashboards</span></div>
+        </div>
+        <div class="box mod" style="background:var(--surface)">
+          <b>Modules</b>
+          <small>Extra features plugged into the core. Each has its own switch. None exists yet.</small>
+          <div class="mods">
+            <div class="box mod" style="border-style:dashed"><b>CSV import</b><span class="toggle off"><i></i>maybe later</span></div>
+            <div class="box mod" style="border-style:dashed"><b>Goals</b><span class="toggle off"><i></i>maybe later</span></div>
+            <div class="box mod" style="border-style:dashed"><b>Reminders</b><span class="toggle off"><i></i>maybe later</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="zone outside">
+        <span class="zl">Outside the server</span>
+        <div class="box ext">
+          <b>Extensions</b>
+          <small>Run in a sandbox. Talk to other services and call models. Write to Retainer through its API, like an agent does.</small>
+          <div class="row"><span class="pill ext">Gmail</span><span class="pill ext">Granola</span><span class="pill ext">Enrichment</span></div>
+        </div>
+        <div class="box app">
+          <b>Standalone apps</b>
+          <small>Their own service and database, for guests too.</small>
+          <div class="row"><span class="pill">Booking</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Configuration (schema, views, Routines) sits on top of all of this as workspace data. It needs no code at all.</p>
+  </section>
+
+  <section id="levels">
+    <span class="eyebrow">2 · Four places a feature can live</span>
+    <h2>Always start with the cheapest place that works</h2>
+    <div class="ladder">
+      <div class="rung cfg">
+        <span class="n">1 · cheapest</span>
+        <h3>Configuration</h3>
+        <p>Fields, views, templates and Routines. A workspace sets it up, no release.</p>
+        <p class="ask">Pick it when the data model and a rule are enough.</p>
+        <p class="eg">Tags, lead scoring, "when a deal moves, create a task".</p>
+      </div>
+      <div class="rung ext">
+        <span class="n">2</span>
+        <h3>Extension</h3>
+        <p>A sandboxed function. Brings data in from other services, or uses a model to work on it.</p>
+        <p class="ask">Pick it when the feature talks to the outside world or needs AI.</p>
+        <p class="eg">Gmail, Granola, enrichment, transcription.</p>
+      </div>
+      <div class="rung mod">
+        <span class="n">3</span>
+        <h3>Module</h3>
+        <p>Code inside the server, with its own tables, API routes, agent tools and screens.</p>
+        <p class="ask">Pick it when the feature needs new screens or its own data inside Retainer.</p>
+        <p class="eg">Goals, reminders on records, CSV import. None is planned.</p>
+      </div>
+      <div class="rung app">
+        <span class="n">4 · most expensive</span>
+        <h3>Standalone app</h3>
+        <p>A separate product with its own database, that also serves people who aren't members.</p>
+        <p class="ask">Pick it when guests use it, or it has its own hard rules.</p>
+        <p class="eg">Booking, client portals, intake forms.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="vs">
+    <span class="eyebrow">3 · Module or extension?</span>
+    <h2>They solve opposite problems</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 330" role="img" aria-label="Inside Retainer's server, a module such as Dashboards reads and writes the database directly, in the same transaction as the core, and may not call outside services or models. Outside the server, an extension runs in a sandbox, calls outside services and the model proxy, and writes to Retainer through the REST API, which checks the access the workspace approved.">
+        <defs>
+          <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="avm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-mod"/></marker>
+          <marker id="ave" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-ext"/></marker>
+        </defs>
+        <rect x="10" y="10" width="560" height="310" rx="12" class="z-core"/>
+        <text x="24" y="32" class="zlabel">INSIDE RETAINER'S SERVER</text>
+        <rect x="30" y="48" width="240" height="132" rx="10" class="b-modfill"/>
+        <text x="150" y="74" text-anchor="middle" class="modink">Module</text>
+        <text x="150" y="94" text-anchor="middle" class="small">e.g. Goals</text>
+        <text x="150" y="118" text-anchor="middle">own tables</text>
+        <text x="150" y="136" text-anchor="middle">own screens and tools</text>
+        <text x="150" y="164" text-anchor="middle" class="small badink">✕ no outside calls, no model</text>
+        <rect x="310" y="48" width="240" height="132" rx="10" class="b-iface"/>
+        <text x="430" y="74" text-anchor="middle" class="bold">REST API · MCP</text>
+        <text x="430" y="100" text-anchor="middle" class="small">the door for anyone outside:</text>
+        <text x="430" y="116" text-anchor="middle" class="small">agents, apps, extensions</text>
+        <text x="430" y="146" text-anchor="middle" class="small">checks what each caller</text>
+        <text x="430" y="162" text-anchor="middle" class="small">is allowed to do</text>
+        <rect x="30" y="222" width="520" height="84" rx="10" class="b-core"/>
+        <text x="290" y="250" text-anchor="middle" class="coreink">Core and its database</text>
+        <text x="290" y="272" text-anchor="middle" class="small">records, events, files · search · merge · forget</text>
+        <text x="290" y="290" text-anchor="middle" class="small">never calls a model</text>
+        <line x1="150" y1="182" x2="150" y2="220" class="arrow-mod" marker-end="url(#avm)"/>
+        <text x="160" y="206" class="small" style="fill:var(--mod-ink)">direct, same transaction</text>
+        <line x1="430" y1="182" x2="430" y2="220" class="arrow" marker-end="url(#av)"/>
+
+        <rect x="600" y="10" width="350" height="310" rx="12" class="z-out"/>
+        <text x="614" y="32" class="zlabel">OUTSIDE THE SERVER</text>
+        <rect x="620" y="48" width="310" height="132" rx="10" class="b-ext"/>
+        <text x="775" y="74" text-anchor="middle" class="extink">Extension</text>
+        <text x="775" y="94" text-anchor="middle" class="small">runs in a sandbox</text>
+        <text x="775" y="118" text-anchor="middle">brings data in, uses AI</text>
+        <text x="775" y="136" text-anchor="middle" class="small">Gmail · Granola · enrichment</text>
+        <text x="775" y="164" text-anchor="middle" class="small">no screens or tables of its own</text>
+        <rect x="620" y="222" width="145" height="84" rx="10" class="b-iface"/>
+        <text x="692" y="252" text-anchor="middle" class="bold">Other services</text>
+        <text x="692" y="272" text-anchor="middle" class="small">Gmail, Exa,</text>
+        <text x="692" y="288" text-anchor="middle" class="small">speech-to-text</text>
+        <rect x="785" y="222" width="145" height="84" rx="10" class="b-iface"/>
+        <text x="857" y="252" text-anchor="middle" class="bold">Model proxy</text>
+        <text x="857" y="272" text-anchor="middle" class="small">calls Claude for it,</text>
+        <text x="857" y="288" text-anchor="middle" class="small">with a budget</text>
+        <line x1="692" y1="182" x2="692" y2="220" class="arrow-ext" marker-end="url(#ave)"/>
+        <line x1="857" y1="182" x2="857" y2="220" class="arrow-ext" marker-end="url(#ave)"/>
+        <line x1="618" y1="114" x2="553" y2="114" class="arrow-ext" marker-end="url(#ave)"/>
+        <text x="585" y="104" text-anchor="middle" class="small" style="fill:var(--ext-ink)">writes</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--mod)"></i>Module</span>
+        <span><i class="sw" style="background:var(--ext)"></i>Extension</span>
+        <span><i class="sw" style="background:var(--core)"></i>Core</span>
+      </div>
+      <figcaption>A module is trusted code inside the house. An extension is a guest that knocks on the API's door, and only gets in where the workspace approved it.</figcaption>
+    </figure>
+    <div class="motto">
+      <div class="m"><b>Module</b>Retainer grows a new room: new screens, new data, new tools, inside the house.</div>
+      <div class="e"><b>Extension</b>Retainer reaches out: to Gmail, to an enrichment service, to a model. Results come back as records.</div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th class="m">Module</th><th class="e">Extension</th></tr></thead>
+        <tbody>
+          <tr><th>Where it runs</th><td>Inside the server, with full access to the database</td><td>In a sandbox, out of the server</td></tr>
+          <tr><th>How it touches data</th><td>Directly, in the same database transaction as the core</td><td>Through the API, with only the access the workspace approved</td></tr>
+          <tr><th>Its own screens in the web app</th><td><span class="y">Yes</span>: pages, a sidebar item, blocks in the chat</td><td><span class="x">No</span>: settings and record buttons only</td></tr>
+          <tr><th>Its own database tables</th><td><span class="y">Yes</span></td><td><span class="x">No</span>: it writes fields and records</td></tr>
+          <tr><th>Tools for agents</th><td><span class="y">Yes</span></td><td><span class="y">Yes</span></td></tr>
+          <tr><th>Talks to other services</th><td><span class="x">No</span></td><td><span class="y">Yes</span>, that's its main job</td></tr>
+          <tr><th>Calls a model</th><td><span class="x">No</span>. It can hand a task to the workspace agent (not built yet)</td><td><span class="y">Yes</span>, through the model proxy</td></tr>
+          <tr><th>Who turns it on</th><td>The instance offers it, then a workspace admin switches it on</td><td>A workspace installs it and approves what it may do</td></tr>
+          <tr><th>If it has a bug</th><td>It can hurt the whole server, so it gets the core's reviews and tests</td><td>Only its own run fails</td></tr>
+          <tr><th>Removing it</th><td>Delete its folders. Its tables go; records it wrote stay</td><td>Uninstall. Records it wrote stay</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="test">
+    <span class="eyebrow">4 · Is it a module?</span>
+    <h2>Five tests, and where a feature goes when it fails one</h2>
+    <p class="prose muted">Every limit protects one promise: deleting the module's folders undoes the feature. A feature that fails a test isn't bad. It just belongs somewhere else.</p>
+    <div class="tests">
+      <div class="test">
+        <span class="n">1</span>
+        <div class="q"><b>It adds. It doesn't change what's there.</b><small>Why: you can't undo a change to search by deleting a folder.</small></div>
+        <span class="arr">no<br>→</span>
+        <div class="out"><b>A core change behind a setting</b><small>Search ranking, permissions, duplicate rules</small></div>
+      </div>
+      <div class="test">
+        <span class="n">2</span>
+        <div class="q"><b>It doesn't call other services or models.</b><small>Why: the core never calls a model, and a module runs as part of the core.</small></div>
+        <span class="arr">no<br>→</span>
+        <div class="out"><b>An extension</b><small>Gmail, WhatsApp, transcription, AI notes</small></div>
+      </div>
+      <div class="test">
+        <span class="n">3</span>
+        <div class="q"><b>Only signed-in members use it.</b><small>Why: public pages bring strangers&#39; traffic into the core.</small></div>
+        <span class="arr">no<br>→</span>
+        <div class="out"><b>A standalone app</b><small>Booking, intake forms, a client portal</small></div>
+      </div>
+      <div class="test">
+        <span class="n">4</span>
+        <div class="q"><b>The core doesn't depend on it.</b><small>Why: if it did, deleting the module would break Retainer.</small></div>
+        <span class="arr">no<br>→</span>
+        <div class="out"><b>Core code</b><small>It is part of the core already</small></div>
+      </div>
+      <div class="test">
+        <span class="n">5</span>
+        <div class="q"><b>It needs to be in the server at all.</b><small>Why: server code costs more to review and keep.</small></div>
+        <span class="arr">no<br>→</span>
+        <div class="out"><b>Configuration</b><small>Tags, lead scoring, Routines</small></div>
+      </div>
+      <div class="pass">All five hold → a module.</div>
+    </div>
+    <h3 style="margin-top:8px">One rule keeps modules small: what it learns goes in records</h3>
+    <div class="ks">
+      <div class="panel core">
+        <h3>Knowledge goes in records <span class="tag core">core</span></h3>
+        <p class="sub">What a module learns about a person, a company or a meeting is written as records, events and facts, through the core write path.</p>
+        <div class="chiplist core"><span>search</span><span><code>get_context</code></span><span>merge</span><span><code>forget</code></span><span>change feed</span><span>Routines</span></div>
+        <p class="sub">All of these work with no module code, and the knowledge stays if the module is removed.</p>
+      </div>
+      <div class="panel mod">
+        <h3>Feature state goes in module tables <span class="tag mod">module</span></h3>
+        <p class="sub">A module's own tables hold display settings, job state and pointers. Nothing else.</p>
+        <div class="chiplist mod"><span>display settings</span><span>job state</span><span>pointers</span></div>
+        <p class="sub">Example, Recording: audio goes with the core's files, the transcript becomes the event's full text, and the module's table only says which upload belongs to which event.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="core">
+    <span class="eyebrow">5 · Why Dashboards is core</span>
+    <h2>Passing the tests means it can be a module, not that it should</h2>
+    <div class="matrix">
+      <table>
+        <thead><tr><th></th><th>Dashboards</th><th>Views</th><th>Routines</th></tr></thead>
+        <tbody>
+          <tr><th>It adds, doesn't change</th><td class="ok">✓</td><td class="no">✕</td><td class="no">✕</td></tr>
+          <tr><th>No outside calls or models</th><td class="ok">✓</td><td class="ok">✓</td><td class="no">✕</td></tr>
+          <tr><th>Signed-in members only</th><td class="ok">✓</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+          <tr><th>The core doesn't depend on it</th><td class="ok">✓</td><td class="no">✕</td><td class="no">✕</td></tr>
+          <tr class="sum"><th>Can it be a module?</th><td>Yes</td><td>No</td><td>No</td></tr>
+          <tr><th>It shares no main pieces with core features</th><td class="no">✕</td><td>·</td><td>·</td></tr>
+          <tr><th>The doubt is "will anyone use it?"</th><td class="no">✕</td><td>·</td><td>·</td></tr>
+          <tr class="live"><th>Where it lives</th><td>Core</td><td>Core</td><td>Core</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 style="margin-top:8px">The piece all three share: describe it, see it, keep it</h3>
+    <div class="flow">
+      <div class="step agent">
+        <span class="who">Person</span>
+        <h3>1. Describe it</h3>
+        <ul><li>"Deals by stage this quarter"</li><li>"Companies in Israel with an open deal"</li><li>"When a deal moves, create a task"</li></ul>
+      </div>
+      <div class="arr" aria-hidden="true">→</div>
+      <div class="step agent">
+        <span class="who">Agent</span>
+        <h3>2. Draft and check</h3>
+        <ul><li>Reads the feature's guide</li><li>Writes a draft</li><li>Checks it with Retainer and fixes it</li></ul>
+      </div>
+      <div class="arr" aria-hidden="true">→</div>
+      <div class="step core">
+        <span class="who">In the chat</span>
+        <h3>3. See it live</h3>
+        <ul><li>Real rows, real numbers</li><li>"Change X" revises it in place</li><li>Nothing is saved yet</li></ul>
+      </div>
+    </div>
+    <div class="keep">
+      <div class="box core"><b>A view</b><small>Only reads, and it's yours.</small><span class="btn">Save</span></div>
+      <div class="box core"><b>A dashboard</b><small>Only reads, can be shared.</small><span class="btn">Pin</span></div>
+      <div class="box core"><b>A routine</b><small>Writes data and runs on its own, so a person approves it after a dry run.</small><span class="btn ghost">Propose → Approve</span></div>
+    </div>
+    <p class="note">These shared pieces must be in the core, because views and Routines are core and the core never imports a module. As a module, Dashboards would hold half of a feature whose other half is core. And a module system with one module is mostly overhead. The shared design is not written yet; views from a description is the next feature.</p>
+  </section>
+
+  <section id="recording">
+    <span class="eyebrow">6 · Example: Recording</span>
+    <h2>Does "record a meeting and save it as an event with notes" fit?</h2>
+    <p class="prose">Partly. Recording does three different jobs, and each one belongs in a different place.</p>
+    <div class="flow">
+      <div class="step mod">
+        <span class="who">Module</span>
+        <h3>1. Record</h3>
+        <ul>
+          <li>A record button and recorder screen in the web app</li>
+          <li>Upload the audio to Retainer's file storage</li>
+          <li>Create the meeting event and attach the audio</li>
+        </ul>
+        <p class="why">New screens inside Retainer, so only a module can do it.</p>
+      </div>
+      <div class="arr" aria-hidden="true">→</div>
+      <div class="step ext">
+        <span class="who">Extension</span>
+        <h3>2. Transcribe and write notes</h3>
+        <ul>
+          <li>The new event starts it</li>
+          <li>Sends the audio to a speech-to-text service</li>
+          <li>Asks a model for notes, through the model proxy</li>
+        </ul>
+        <p class="why">Outside services and a model, so a module may not do it.</p>
+      </div>
+      <div class="arr" aria-hidden="true">→</div>
+      <div class="step core">
+        <span class="who">Core</span>
+        <h3>3. Keep it</h3>
+        <ul>
+          <li>The transcript is the event's full text</li>
+          <li>Notes and facts are written on the event and the people</li>
+          <li>Search, the agent and forget work on it as usual</li>
+        </ul>
+        <p class="why">Knowledge goes in records, so nothing new is needed here.</p>
+      </div>
+    </div>
+    <div class="verdict">
+      <div class="panel mod">
+        <span class="tag mod">If Retainer records the call itself</span>
+        <p>You need a small module (the recorder screen and the link between upload and event) plus a transcription extension. The module is thin: it holds almost no data, because everything it learns is on the event.</p>
+      </div>
+      <div class="panel ext">
+        <span class="tag ext">If something else records the call</span>
+        <p>A meeting bot, Tamloot or Granola already records it. Then you need no module at all. One extension brings in the meeting as an event with its transcript and notes, the way Granola does today.</p>
+      </div>
+    </div>
+    <p class="note">So the simplest test is the cheapest one first: try Recording as an extension on top of an existing recorder. Build the module only if people need to press record inside Retainer.</p>
+  </section>
+
+  <section id="anatomy">
+    <span class="eyebrow">7 · What it's made of</span>
+    <h2>Up to three folders, all named after the module</h2>
+    <p class="note">Sections 7 to 12 use Dashboards as the example module, as the spec does, because that example is complete. Read it as "the first module, whichever it is".</p>
+    <div class="folders">
+      <div class="folder">
+        <div class="top"><span class="lic">SERVER · AGPL · always</span><code>packages/server/src/modules/dashboards/</code></div>
+        <div class="body">
+<pre><code><span class="m">module.ts</span>    its definition
+schema.ts    its Drizzle tables
+service.ts
+routes.ts
+tools.ts
+guide.ts
+*.test.ts</code></pre>
+          <span class="sub">Every module has one, even one with only screens: the server knows which modules exist and which are on.</span>
+        </div>
+      </div>
+      <div class="folder">
+        <div class="top"><span class="lic">WEB · MIT · when it has screens</span><code>packages/web/src/modules/dashboards/</code></div>
+        <div class="body">
+<pre><code><span class="m">module.tsx</span>   its definition
+list.tsx     lazy
+page.tsx     lazy
+chat-block.tsx lazy</code></pre>
+          <span class="sub">Every screen loads lazily, so a module that is off costs the bundle almost nothing.</span>
+        </div>
+      </div>
+      <div class="folder optional">
+        <div class="top"><span class="lic">SHARED · MIT · when needed</span><code>packages/shared/src/modules/dashboards/</code></div>
+        <div class="body">
+<pre><code>components.ts  the component list
+data-tools.ts  tool descriptions</code></pre>
+          <span class="sub">Contracts both sides use, exported as the subpath <code>@retainer/shared/modules/dashboards</code>. A wildcard export, so adding or removing one edits no shared file.</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Up to three folders, all named after the module. Delete them and the feature is gone.</p>
+  </section>
+
+  <section id="plug">
+    <span class="eyebrow">8 · How it plugs in</span>
+    <h2>The core asks the registry; the registry calls modules that are on</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 430" role="img" aria-label="The interfaces, which are the API, the MCP server, the worker and the web app, ask the registry at each extension point. The registry, built from modules/index.ts, checks which modules are on for the workspace and calls them. Dashboards is the one module planned; Goals and CSV import are dashed examples that may come. A module uses the core below it and writes records the normal way. The core never imports a module.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a1m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-mod"/></marker>
+          <marker id="a1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-bad"/></marker>
+        </defs>
+        <rect x="10" y="10" width="200" height="290" rx="12" class="z-iface"/>
+        <text x="24" y="32" class="zlabel">INTERFACES</text>
+        <rect x="28" y="48" width="164" height="46" rx="8" class="b-iface"/><text x="110" y="70" text-anchor="middle">REST API</text><text x="110" y="86" text-anchor="middle" class="small">api/app.ts</text>
+        <rect x="28" y="104" width="164" height="46" rx="8" class="b-iface"/><text x="110" y="126" text-anchor="middle">MCP server</text><text x="110" y="142" text-anchor="middle" class="small">mcp/server.ts</text>
+        <rect x="28" y="160" width="164" height="46" rx="8" class="b-iface"/><text x="110" y="182" text-anchor="middle">Worker</text><text x="110" y="198" text-anchor="middle" class="small">jobs, later</text>
+        <rect x="28" y="216" width="164" height="66" rx="8" class="b-iface"/><text x="110" y="238" text-anchor="middle">Web app</text><text x="110" y="254" text-anchor="middle" class="small">routes · sidebar</text><text x="110" y="270" text-anchor="middle" class="small">chat blocks</text>
+
+        <rect x="290" y="80" width="200" height="160" rx="12" class="b-swfill"/>
+        <text x="390" y="108" text-anchor="middle" class="swink">Registry</text>
+        <text x="390" y="128" text-anchor="middle" class="mono">createRegistry(modules)</text>
+        <text x="390" y="152" text-anchor="middle" class="small">from modules/index.ts:</text>
+        <text x="390" y="167" text-anchor="middle" class="small">the only file that imports one</text>
+        <line x1="306" y1="182" x2="474" y2="182" stroke="var(--sw-line)" stroke-width="1"/>
+        <text x="390" y="202" text-anchor="middle" class="small">on for this workspace?</text>
+        <text x="390" y="218" text-anchor="middle" class="small">refuses clashing names</text>
+
+        <rect x="560" y="10" width="390" height="290" rx="12" class="z-mod"/>
+        <text x="574" y="32" class="zlabel">MODULES · modules/&lt;id&gt;/</text>
+        <rect x="578" y="48" width="210" height="234" rx="10" class="b-modfill"/>
+        <text x="683" y="74" text-anchor="middle" class="modink">Dashboards</text>
+        <text x="683" y="92" text-anchor="middle" class="small">worked example, not a plan</text>
+        <rect x="596" y="106" width="174" height="24" rx="6" class="b-mod"/><text x="683" y="122" text-anchor="middle" class="small">tables · schema.ts</text>
+        <rect x="596" y="136" width="174" height="24" rx="6" class="b-mod"/><text x="683" y="152" text-anchor="middle" class="small">routes · /v1/dashboards</text>
+        <rect x="596" y="166" width="174" height="24" rx="6" class="b-mod"/><text x="683" y="182" text-anchor="middle" class="small">tool · check_dashboard</text>
+        <rect x="596" y="196" width="174" height="24" rx="6" class="b-mod"/><text x="683" y="212" text-anchor="middle" class="small">guide · chat context line</text>
+        <rect x="596" y="226" width="174" height="24" rx="6" class="b-mod"/><text x="683" y="242" text-anchor="middle" class="small">screens · sidebar · renderer</text>
+        <text x="683" y="270" text-anchor="middle" class="small">server · web · shared</text>
+
+        <rect x="804" y="48" width="130" height="70" rx="10" class="b-maybe"/>
+        <text x="869" y="74" text-anchor="middle">Goals</text>
+        <text x="869" y="92" text-anchor="middle" class="small">may come</text>
+        <text x="869" y="106" text-anchor="middle" class="small">not planned</text>
+        <rect x="804" y="130" width="130" height="70" rx="10" class="b-maybe"/>
+        <text x="869" y="156" text-anchor="middle">CSV import</text>
+        <text x="869" y="174" text-anchor="middle" class="small">may come</text>
+        <text x="869" y="188" text-anchor="middle" class="small">not planned</text>
+        <text x="869" y="232" text-anchor="middle" class="small">each later module</text>
+        <text x="869" y="246" text-anchor="middle" class="small">adds the extension</text>
+        <text x="869" y="260" text-anchor="middle" class="small">points it needs</text>
+
+        <rect x="10" y="340" width="940" height="80" rx="12" class="z-core"/>
+        <text x="24" y="362" class="zlabel">CORE · admin, features, core layers</text>
+        <text x="480" y="386" text-anchor="middle">Records, events, facts · write path and assertions · schema engine · search · merge · forget · change feed</text>
+        <text x="480" y="406" text-anchor="middle" class="small">Never imports a module, and no core table points at a module table</text>
+
+        <line x1="192" y1="71" x2="288" y2="120" class="arrow" marker-end="url(#a1)"/>
+        <line x1="192" y1="127" x2="288" y2="145" class="arrow" marker-end="url(#a1)"/>
+        <line x1="192" y1="183" x2="288" y2="170" class="arrow" marker-end="url(#a1)"/>
+        <line x1="192" y1="249" x2="288" y2="200" class="arrow" marker-end="url(#a1)"/>
+        <text x="206" y="318" class="small">asks at each extension point</text>
+        <line x1="490" y1="160" x2="576" y2="160" class="arrow-mod" marker-end="url(#a1m)"/>
+        <text x="498" y="150" class="small">calls modules</text>
+        <text x="498" y="176" class="small">that are on</text>
+        <line x1="683" y1="284" x2="683" y2="338" class="arrow-mod" marker-end="url(#a1m)"/>
+        <text x="692" y="316" class="small" style="fill:var(--mod-ink)">uses the core: writes records the normal way</text>
+        <path d="M440,338 L440,300 Q440,290 450,290 L558,290" class="arrow-bad" marker-end="url(#a1b)"/>
+        <text x="448" y="324" class="small badink">✕ never imports</text>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--iface)"></i>Interfaces</span>
+        <span><i class="sw" style="background:var(--sw)"></i>Registry and switches</span>
+        <span><i class="sw" style="background:var(--mod)"></i>Modules</span>
+        <span><i class="sw" style="background:var(--core)"></i>Core</span>
+      </div>
+      <figcaption>The web app, API and MCP server ask the registry "which modules are on here?" and call only those. The core never names a module, so deleting one breaks nothing.</figcaption>
+    </figure>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 330" role="img" aria-label="modules/index.ts lists the modules. createRegistry builds a value from it and refuses to start on any clash. The API mounts registry.routes once, and each module's routes answer 404 where it is off. The MCP server registers registry.tools for the caller after the core tools. Core code below the modules layer, such as the agent's session code, can't import the registry: it receives plain functions through options it already takes, such as RetainerToolHost and WriteContext. Tests pass a fixture module or no modules at all.">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a4s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-sw"/></marker>
+        </defs>
+        <rect x="20" y="40" width="170" height="80" rx="10" class="b-mod"/>
+        <text x="105" y="66" text-anchor="middle" class="mono">modules/index.ts</text>
+        <text x="105" y="86" text-anchor="middle" class="small">[dashboards]</text>
+        <text x="105" y="104" text-anchor="middle" class="small">the only import of a module</text>
+        <rect x="20" y="150" width="170" height="64" rx="10" class="b-maybe"/>
+        <text x="105" y="176" text-anchor="middle">Tests</text>
+        <text x="105" y="196" text-anchor="middle" class="small">a fixture module, or none</text>
+
+        <rect x="260" y="60" width="200" height="140" rx="12" class="b-swfill"/>
+        <text x="360" y="88" text-anchor="middle" class="swink">createRegistry()</text>
+        <text x="360" y="112" text-anchor="middle" class="small">on now? asked on every call</text>
+        <text x="360" y="127" text-anchor="middle" class="small">owns data? asked by hooks</text>
+        <line x1="276" y1="140" x2="444" y2="140" stroke="var(--sw-line)" stroke-width="1"/>
+        <text x="360" y="160" text-anchor="middle" class="small">refuses to start on a clash</text>
+        <text x="360" y="175" text-anchor="middle" class="small">id, tool, guide, route, table</text>
+
+        <line x1="190" y1="80" x2="258" y2="110" class="arrow" marker-end="url(#a4)"/>
+        <line x1="190" y1="182" x2="258" y2="160" class="arrow" style="stroke-dasharray:4 3" marker-end="url(#a4)"/>
+
+        <rect x="540" y="20" width="400" height="60" rx="10" class="b-iface"/>
+        <text x="556" y="44" class="mono">api/app.ts</text>
+        <text x="556" y="64" class="small">mounts declared routes once · auth, scope, switch, restricted mode</text>
+        <rect x="540" y="92" width="400" height="60" rx="10" class="b-iface"/>
+        <text x="556" y="116" class="mono">mcp/server.ts</text>
+        <text x="556" y="136" class="small">registry.tools(caller) after the core tools · one server per caller</text>
+        <rect x="540" y="164" width="400" height="60" rx="10" class="b-iface"/>
+        <text x="556" y="188" class="mono">worker</text>
+        <text x="556" y="208" class="small">takes the registry as an option · runs module jobs, later</text>
+
+        <path d="M460,100 C500,100 500,50 538,50" class="arrow-sw" marker-end="url(#a4s)"/>
+        <line x1="460" y1="122" x2="538" y2="122" class="arrow-sw" marker-end="url(#a4s)"/>
+        <path d="M460,150 C500,150 500,194 538,194" class="arrow-sw" marker-end="url(#a4s)"/>
+
+        <rect x="20" y="250" width="920" height="70" rx="12" class="z-core"/>
+        <text x="34" y="272" class="zlabel">CORE, BELOW THE MODULES LAYER</text>
+        <text x="34" y="296">Agent session code pins tools and writes the chat context; later, <tspan class="mono">forget</tspan> and merge run hooks.</text>
+        <text x="34" y="312" class="small">It can't import the registry. It receives plain functions through options it already takes: RetainerToolHost, WriteContext.</text>
+        <path d="M740,226 L740,248" class="arrow-sw" marker-end="url(#a4s)"/>
+        <text x="750" y="242" class="small">plain functions</text>
+      </svg>
+      </div>
+      <figcaption>The registry is built once from one list. Tests can hand it a fake module, or none.</figcaption>
+    </figure>
+  </section>
+
+  <section id="layers">
+    <span class="eyebrow">9 · Who may import what</span>
+    <h2>Modules sit between the core and the interfaces</h2>
+    <div class="two">
+      <figure class="figure">
+        <svg viewBox="0 0 440 340" role="img" aria-label="Layer stack, top to bottom: interfaces (API, MCP, worker), modules (new), admin (schema engine, workspaces), features, core. Modules import the layers below them. Interfaces reach modules only through the registry. A module never imports another module or an interface.">
+          <defs>
+            <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-mod"/></marker>
+            <marker id="a5s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-sw"/></marker>
+          </defs>
+          <rect x="20" y="14" width="300" height="50" rx="8" class="b-iface"/>
+          <text x="36" y="36" class="bold">interfaces</text><text x="36" y="54" class="small">API, MCP, worker</text>
+          <rect x="20" y="84" width="300" height="70" rx="8" class="b-modfill"/>
+          <text x="36" y="106" class="modink">modules</text><text x="270" y="106" text-anchor="end" class="tag" style="font-size:10px;fill:var(--mod-ink)">NEW</text>
+          <rect x="36" y="116" width="120" height="26" rx="6" class="b-mod"/><text x="96" y="133" text-anchor="middle" class="small">dashboards/</text>
+          <rect x="166" y="116" width="120" height="26" rx="6" class="b-maybe"/><text x="226" y="133" text-anchor="middle" class="small">next/</text>
+          <rect x="20" y="174" width="300" height="44" rx="8" class="b-core"/>
+          <text x="36" y="194" class="bold">admin</text><text x="36" y="210" class="small">schema engine, workspaces</text>
+          <rect x="20" y="228" width="300" height="40" rx="8" class="b-core"/>
+          <text x="36" y="253" class="bold">features</text>
+          <rect x="20" y="278" width="300" height="40" rx="8" class="b-core"/>
+          <text x="36" y="303" class="bold">core</text>
+
+          <path d="M330,40 C370,40 370,100 322,108" class="arrow-sw" marker-end="url(#a5s)"/>
+          <text x="352" y="64" class="small">registry</text>
+          <text x="352" y="78" class="small">only</text>
+          <path d="M330,130 C380,140 380,290 322,298" class="arrow-mod" marker-end="url(#a5)"/>
+          <text x="364" y="200" class="small" style="fill:var(--mod-ink)">uses</text>
+          <text x="364" y="214" class="small" style="fill:var(--mod-ink)">all</text>
+          <text x="364" y="228" class="small" style="fill:var(--mod-ink)">below</text>
+          <text x="160" y="160" text-anchor="middle" class="small badink">✕ module → module</text>
+        </svg>
+        <figcaption><code>pnpm lint</code> checks these rules on every change.</figcaption>
+      </figure>
+      <div class="panel">
+        <h3>Three import rules</h3>
+        <ul class="ticks">
+          <li class="yes"><span>A module may use everything below it: records, schema, search.</span></li>
+          <li class="no"><span>A module never imports another module. Two that need each other are one module.</span></li>
+          <li class="no"><span>The core never imports a module. Only the list in <code>modules/index.ts</code> does.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="switch">
+    <span class="eyebrow">10 · On and off</span>
+    <h2>A module is on only when all three say yes</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 250" role="img" aria-label="A module is on for a workspace when three things hold: the instance offers it in RETAINER_MODULES, set by whoever runs it, default none; the workspace uses it in workspaces.settings.modules, set by a workspace admin in Settings, Experiments, default off; and the instance has what it requires, such as the agent. If any one is missing, the module is off. A module with alwaysOn true skips the two switches.">
+        <defs>
+          <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-sw"/></marker>
+          <marker id="a6g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-good"/></marker>
+          <marker id="a6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-bad"/></marker>
+        </defs>
+        <rect x="20" y="14" width="330" height="64" rx="10" class="b-sw"/>
+        <text x="36" y="38" class="swink">The instance offers it</text>
+        <text x="36" y="58" class="mono">RETAINER_MODULES=dashboards</text>
+        <text x="336" y="38" text-anchor="end" class="small">whoever runs it · none</text>
+        <rect x="20" y="92" width="330" height="64" rx="10" class="b-sw"/>
+        <text x="36" y="116" class="swink">The workspace uses it</text>
+        <text x="36" y="136" class="mono">settings.modules: ['dashboards']</text>
+        <text x="336" y="116" text-anchor="end" class="small">admin · off</text>
+        <rect x="20" y="170" width="330" height="64" rx="10" class="b-core"/>
+        <text x="36" y="194" class="coreink">The instance has what it requires</text>
+        <text x="36" y="214" class="mono">requires: ['agent']</text>
+        <text x="336" y="194" text-anchor="end" class="small">worked out by the server</text>
+
+        <path d="M350,46 C400,46 410,110 448,118" class="arrow-sw" marker-end="url(#a6)"/>
+        <line x1="350" y1="124" x2="448" y2="124" class="arrow-sw" marker-end="url(#a6)"/>
+        <path d="M350,202 C400,202 410,138 448,130" class="arrow-sw" marker-end="url(#a6)"/>
+
+        <rect x="450" y="94" width="80" height="60" rx="30" class="b-swfill"/>
+        <text x="490" y="129" text-anchor="middle" class="swink">AND</text>
+
+        <line x1="530" y1="110" x2="618" y2="70" class="arrow-good" marker-end="url(#a6g)"/>
+        <line x1="530" y1="138" x2="618" y2="180" class="arrow-bad" marker-end="url(#a6b)"/>
+        <text x="556" y="80" class="small goodink">all three</text>
+        <text x="556" y="176" class="small badink">any missing</text>
+
+        <rect x="620" y="30" width="320" height="80" rx="10" class="b-good"/>
+        <text x="636" y="54" class="goodink">On for this workspace</text>
+        <text x="636" y="74" class="small">routes answer, tools listed, guide listed,</text>
+        <text x="636" y="90" class="small">chat line added, sidebar item and screens show</text>
+        <rect x="620" y="140" width="320" height="80" rx="10" class="b-bad"/>
+        <text x="636" y="164" class="badink">Off</text>
+        <text x="636" y="184" class="small">routes 404, nothing listed or shown;</text>
+        <text x="636" y="200" class="small">its data stays. Settings → Experiments says why</text>
+      </svg>
+      </div>
+      <figcaption>Whoever runs Retainer chooses which experiments to offer, because deleting one later deletes its data.</figcaption>
+    </figure>
+    <div class="two">
+      <div class="panel">
+        <h3>Settings → Experiments</h3>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:14px;background:var(--bg)">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <b style="font-size:0.95rem">Dashboards</b>
+            <span style="font-size:0.82rem;color:var(--muted)">Live dashboards the agent writes and people pin.</span>
+          </div>
+          <span aria-hidden="true" style="width:40px;height:22px;border-radius:999px;background:var(--mod-line);position:relative;flex:0 0 auto"><span style="position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--surface)"></span></span>
+        </div>
+        <p class="sub">Lists the modules the instance offers, each with its description and a switch. A workspace <code>admin</code> flips it. An illustration, not the final screen.</p>
+      </div>
+      <div class="panel">
+        <h3>When it's switched off</h3>
+        <ul class="ticks">
+          <li class="yes"><span>Screens, sidebar item and tools disappear at once, even in chats already open.</span></li>
+          <li class="yes"><span>Its data waits untouched. Switch it back on and everything is there.</span></li>
+          <li class="yes"><span>Admins switch one module at a time, so two admins never undo each other.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="lifecycle">
+    <span class="eyebrow">11 · Keep or delete</span>
+    <h2>Try it, then keep it or delete it</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 250" role="img" aria-label="A module is added with its folders and registry lines. It runs as an experiment, offered by the instance and switched on per workspace. If it succeeds, it graduates by setting alwaysOn true: on everywhere, its folders stay, and its routes join the API promise and the SDK. If it fails, it is first switched off by taking it out of RETAINER_MODULES, then in a later release its folders are deleted and a drop migration removes its tables. Records and events it wrote stay.">
+        <defs>
+          <marker id="a8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a8g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-good"/></marker>
+          <marker id="a8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-bad"/></marker>
+        </defs>
+        <rect x="20" y="90" width="160" height="70" rx="10" class="b-mod"/>
+        <text x="100" y="116" text-anchor="middle" class="modink">Add</text>
+        <text x="100" y="136" text-anchor="middle" class="small">folders + registry lines</text>
+        <text x="100" y="150" text-anchor="middle" class="small">its extension points</text>
+        <rect x="240" y="80" width="200" height="90" rx="10" class="b-swfill"/>
+        <text x="340" y="106" text-anchor="middle" class="swink">Experiment</text>
+        <text x="340" y="126" text-anchor="middle" class="small">offered by the instance</text>
+        <text x="340" y="141" text-anchor="middle" class="small">switched on per workspace</text>
+        <text x="340" y="156" text-anchor="middle" class="small">routes and tools experimental</text>
+        <line x1="180" y1="125" x2="238" y2="125" class="arrow" marker-end="url(#a8)"/>
+
+        <rect x="530" y="14" width="410" height="80" rx="10" class="b-good"/>
+        <text x="546" y="38" class="goodink">Graduate · alwaysOn: true</text>
+        <text x="546" y="58" class="small">On in every workspace that has what it requires; leaves Experiments.</text>
+        <text x="546" y="74" class="small">Folders stay. Routes join the API promise, the SDK, rest-api.md;</text>
+        <text x="546" y="88" class="small">ARCHITECTURE.md and FRONTEND.md describe it.</text>
+
+        <rect x="530" y="130" width="190" height="96" rx="10" class="b-sw"/>
+        <text x="546" y="154" class="swink">1 · Switch off</text>
+        <text x="546" y="174" class="small">take it out of</text>
+        <text x="546" y="189" class="mono">RETAINER_MODULES</text>
+        <text x="546" y="208" class="small">on the hosted service too</text>
+        <rect x="750" y="130" width="190" height="96" rx="10" class="b-bad"/>
+        <text x="766" y="154" class="badink">2 · Remove</text>
+        <text x="766" y="174" class="small">a later release:</text>
+        <text x="766" y="189" class="small">delete modules/&lt;id&gt; paths,</text>
+        <text x="766" y="204" class="small">db:generate drop_&lt;id&gt;</text>
+        <line x1="720" y1="178" x2="748" y2="178" class="arrow-bad" marker-end="url(#a8b)"/>
+
+        <path d="M440,110 C490,110 490,54 528,54" class="arrow-good" marker-end="url(#a8g)"/>
+        <text x="458" y="76" class="small goodink">succeeds</text>
+        <path d="M440,140 C490,140 490,178 528,178" class="arrow-bad" marker-end="url(#a8b)"/>
+        <text x="462" y="176" class="small badink">fails</text>
+      </svg>
+      </div>
+      <figcaption>A module that works stays a module. It just stops being optional. Being a module keeps a feature tidy; it doesn&#39;t mean temporary.</figcaption>
+    </figure>
+    <div class="warnbox">
+      <span><b>Deleting a module deletes its tables in every workspace.</b> So switch it off first, and delete it in a later release. Records and events it wrote stay.</span>
+    </div>
+  </section>
+
+  <section id="dashboards">
+    <span class="eyebrow">12 · The worked example</span>
+    <h2>Dashboards, if it had been a module</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 300" role="img" aria-label="Dashboards brings the module system with it. In the core, staying if Dashboards is removed: aggregate_records as an MCP tool and in the agent's fixed read tools, grouping by date and relation, and a client field on chat creation. In the server module folder: the dashboards table, routes, save and read checks, name-and-key translation, the dashboards guide, check_dashboard and the chat context line. In the web module folder: rendering in the chat, pin and update, the Dashboards screens and charts. In the shared module folder: the component list and data tool descriptions. The dashboards table's chat_id points at the agent's sessions with on delete set null.">
+        <defs>
+          <marker id="a9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-mod"/></marker>
+        </defs>
+        <rect x="10" y="10" width="300" height="280" rx="12" class="z-core"/>
+        <text x="24" y="32" class="zlabel">CORE · STAYS IF REMOVED</text>
+        <rect x="28" y="48" width="264" height="60" rx="8" class="b-core"/>
+        <text x="42" y="72" class="mono">aggregate_records</text>
+        <text x="42" y="92" class="small">MCP tool; joins the agent's fixed read tools</text>
+        <rect x="28" y="118" width="264" height="60" rx="8" class="b-core"/>
+        <text x="42" y="142">Group by date and relation</text>
+        <text x="42" y="162" class="small">serves views and every agent</text>
+        <rect x="28" y="188" width="264" height="44" rx="8" class="b-core"/>
+        <text x="42" y="215"><tspan class="mono">client</tspan> on chat creation</text>
+        <rect x="28" y="242" width="264" height="36" rx="8" class="b-core"/>
+        <text x="42" y="265" class="small">agent sessions (chats)</text>
+
+        <rect x="330" y="10" width="620" height="280" rx="12" class="z-mod"/>
+        <text x="344" y="32" class="zlabel">MODULE FOLDERS · modules/dashboards/</text>
+        <rect x="348" y="48" width="290" height="230" rx="8" class="b-mod"/>
+        <text x="362" y="70" class="modink">server · AGPL</text>
+        <text x="362" y="94" class="small">dashboards table</text>
+        <text x="362" y="114" class="small">/v1/dashboards routes · 404 when off</text>
+        <text x="362" y="134" class="small">save check · read issues</text>
+        <text x="362" y="154" class="small">field names ⇄ keys, so renames survive</text>
+        <text x="362" y="174" class="small">dashboards guide</text>
+        <text x="362" y="194" class="small">check_dashboard tool</text>
+        <text x="362" y="214" class="small">chat context line, web chats only</text>
+        <text x="362" y="242" class="mono" style="fill:var(--muted)">requires: ['agent']</text>
+        <text x="362" y="262" class="small">dep: @openuidev/lang-core</text>
+
+        <rect x="652" y="48" width="284" height="140" rx="8" class="b-mod"/>
+        <text x="666" y="70" class="modink">web · MIT</text>
+        <text x="666" y="94" class="small">openui-lang chat renderer</text>
+        <text x="666" y="114" class="small">Pin · Update · Save as new</text>
+        <text x="666" y="134" class="small">/app/dashboards list and page</text>
+        <text x="666" y="154" class="small">sidebar item, chart components</text>
+        <text x="666" y="174" class="small">deps: @openuidev/react-lang, Recharts</text>
+        <rect x="652" y="198" width="284" height="80" rx="8" class="b-mod"/>
+        <text x="666" y="220" class="modink">shared · MIT</text>
+        <text x="666" y="244" class="small">component list (zod props)</text>
+        <text x="666" y="264" class="small">data tool descriptions</text>
+
+        <path d="M346,98 C320,98 320,260 294,260" class="arrow-mod" marker-end="url(#a9)"/>
+        <text x="300" y="182" class="small" style="fill:var(--mod-ink)" transform="rotate(-90 300 182)">chat_id · set null</text>
+      </svg>
+      </div>
+      <figcaption>Not a plan: Dashboards is core now. The picture stays because it shows, on a real feature, what would move into a module's folders and what would stay in the core.</figcaption>
+    </figure>
+  </section>
+
+  <section id="points">
+    <span class="eyebrow">13 · Plug points</span>
+    <h2>Where a module can plug in</h2>
+    <div class="two">
+      <div class="panel mod">
+        <h3>Built with the first module</h3>
+        <div class="chiplist mod"><span>Tables</span><span>API routes</span><span>Agent tools</span><span>Guide</span><span>Chat context line</span><span>Web pages</span><span>Sidebar item</span><span>Chat blocks</span></div>
+        <p class="sub">The places a module can plug into on day one.</p>
+      </div>
+      <div class="panel">
+        <h3>Built later, by the module that needs it</h3>
+        <div class="chiplist"><span style="border-style:dashed">Record page panel <small>· Reminders, Recording</small></span><span style="border-style:dashed">Background jobs <small>· CSV import</small></span><span style="border-style:dashed">On merge <small>· Reminders</small></span><span style="border-style:dashed">On forget</span><span style="border-style:dashed">Member left <small>· Reminders</small></span><span style="border-style:dashed">Record summary</span><span style="border-style:dashed">Settings section</span><span style="border-style:dashed">Tools for Routines</span><span style="border-style:dashed">Sidebar count <small>· Notifications</small></span><span style="border-style:dashed">Agent task <small>· a module that needs AI</small></span></div>
+        <p class="sub">Each one is added in its own reviewed PR, and goes away again with the last module that uses it.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Full design, with code shapes, decisions and tests: <code>docs/specs/modules.md</code>. Dashboards as the first module: <code>docs/specs/dashboards.md</code>. The four places: <code>docs/research/extension-levels.md</code>.</span>
+  </footer>
+</main>
