@@ -195,6 +195,35 @@ it('exposes the read tools over MCP and keeps the dashboard guide hint in web ch
   }
 });
 
+it('rejects invalid record and event filters when creating or editing a dashboard', async () => {
+  const created = await create(keys.owner);
+  expect(created.status).toBe(201);
+  const { id, updatedAt } = created.body;
+  const program = (tool: string, object: string, filter: object) =>
+    `root = Dashboard("Filtered", [])
+rows = Query("${tool}", { object: "${object}", filter: ${JSON.stringify(filter)} }, {})`;
+  const cases = [
+    program('aggregate_records', 'deal', { stage: { bogus: 'won' } }),
+    program('query_records', 'deal', { stage: 42 }),
+    program('aggregate_records', 'event', { type: { eq: ['conversation'] } }),
+  ];
+  for (const invalid of cases) {
+    for (const result of await Promise.all([
+      create(keys.owner, { program: invalid }),
+      patch(keys.owner, id, { program: invalid, expectedUpdatedAt: updatedAt }),
+    ])) {
+      expect(result.status).toBe(422);
+      expect(result.body).toMatchObject({
+        error: {
+          code: 'invalid_dashboard',
+          details: { problems: [{ statement: 'rows' }] },
+        },
+      });
+    }
+  }
+  expect((await get(keys.owner, id)).body.updatedAt).toBe(updatedAt);
+});
+
 it('keeps saved queries through renames and reports removed fields', async () => {
   const query = `root = Dashboard("Todos", [table, count])
 rows = Query("query_records", {object: "task", fields: {due: "reminder", created: "createdAt"}, filter: {not: {reminder: {isNull: true}}}, sort: [{field: "reminder", direction: "asc"}]}, {records: []})

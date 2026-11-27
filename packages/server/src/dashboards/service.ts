@@ -89,7 +89,7 @@ async function present(
   row: Row,
 ): Promise<SavedDashboard> {
   const chat = row.chat_id && (await ownedChat(tx, caller, row.chat_id)) ? row.chat_id : null;
-  const { program, issues } = translateDashboard(row.program, schema, 'read');
+  const { program, issues } = translateDashboard(tx, row.program, schema, 'read');
   return { ...summary(row, chat), program, issues };
 }
 
@@ -114,8 +114,8 @@ async function load(tx: Tx, caller: Caller, id: string, lock = false): Promise<R
   return row;
 }
 
-function storedProgram(program: string, schema: CompiledSchema) {
-  const result = translateDashboard(program, schema, 'store');
+function storedProgram(tx: Tx, program: string, schema: CompiledSchema) {
+  const result = translateDashboard(tx, program, schema, 'store');
   if (result.issues.length)
     throw new AppError(422, 'invalid_dashboard', 'Dashboard program is invalid', {
       problems: result.issues,
@@ -151,7 +151,7 @@ export function createDashboard(
   return workspace(sql, caller, 'write', async (tx) => {
     await validateChat(tx, caller, input.chatId);
     const schema = await getSchema(tx, caller.workspaceId);
-    const program = storedProgram(input.program, schema);
+    const program = storedProgram(tx, input.program, schema);
     const [row] = await tx<Row[]>`
       insert into dashboards (workspace_id, name, program, visibility, position, chat_id, created_by, updated_by)
       values (${caller.workspaceId}, ${input.name}, ${program}, ${input.visibility},
@@ -183,7 +183,7 @@ export function updateDashboard(
       throw forbidden('Only the dashboard creator can change visibility');
     const schema = await getSchema(tx, caller.workspaceId);
     const program =
-      input.program === undefined ? before.program : storedProgram(input.program, schema);
+      input.program === undefined ? before.program : storedProgram(tx, input.program, schema);
     const [row] = await tx<Row[]>`
       update dashboards set name = ${input.name ?? before.name}, program = ${program},
         visibility = ${input.visibility ?? before.visibility}, position = ${input.position ?? before.position},
@@ -207,7 +207,7 @@ export function deleteDashboard(sql: Sql, caller: Caller, id: string) {
 
 export async function checkDashboard(sql: Sql, caller: Caller, program: string) {
   const { issues: problems, queries } = await workspace(sql, caller, 'readSchema', async (tx) =>
-    translateDashboard(program, await getSchema(tx, caller.workspaceId), 'store'),
+    translateDashboard(tx, program, await getSchema(tx, caller.workspaceId), 'store'),
   );
   const checked: { statement: string; rows: number }[] = [];
   if (problems.length) return { ok: false, problems, queries: checked };

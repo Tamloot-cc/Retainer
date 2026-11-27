@@ -1,7 +1,14 @@
 import type { DashboardIssue } from '@retainer/shared';
-import { builtInNames, EVENT_FILTER_NAMES, EVENT_QUERY_OBJECT } from '../records/query.js';
+import type { Tx } from '../db/tx.js';
+import { AppError } from '../errors.js';
+import {
+  builtInNames,
+  compileEventFilter,
+  compileFilter,
+  EVENT_FILTER_NAMES,
+  EVENT_QUERY_OBJECT,
+} from '../records/query.js';
 import { type CompiledSchema, objectNamed } from '../schema/compiled.js';
-import type { FieldState } from '../schema/types.js';
 import { inspectDashboard, rewriteQueries } from './program.js';
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
@@ -11,6 +18,7 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 }
 
 export function translateDashboard(
+  tx: Tx,
   program: string,
   schema: CompiledSchema,
   mode: 'store' | 'read',
@@ -47,20 +55,6 @@ export function translateDashboard(
       // Keep an invalid reference so a viewer cannot accidentally run a broader query.
       return mode === 'read' ? (removed?.name ?? key) : key;
     };
-    const checkOptions = (field: FieldState | undefined, condition: unknown) => {
-      if (field?.type !== 'select' && field?.type !== 'multi_select') return;
-      const predicates = asObject(condition);
-      const values = predicates
-        ? Object.entries(predicates)
-            .filter(([op]) => op !== 'isNull')
-            .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
-        : [condition];
-      const options = new Set(field.settings.options?.map(({ value }) => value));
-      for (const value of values) {
-        if (typeof value === 'string' && !options.has(value))
-          issue(`"${field.name}" has no option "${value}"`);
-      }
-    };
     const eventType = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(eventType);
       const predicates = asObject(value);
@@ -94,15 +88,27 @@ export function translateDashboard(
           const nested = key === 'not' && asObject(value);
           if (nested) return [key, filter(nested)];
           if (events && key === 'type') return [key, eventType(value)];
-          checkOptions(fields.get(key), value);
           return [translateField(key), value];
         }),
       );
     const { args } = query;
+    const issuesBeforeFilter = issues.length;
+    const translatedFilter = args.filter && filter(args.filter);
+    const namedFilter = mode === 'store' ? args.filter : translatedFilter;
+    if (namedFilter && issues.length === issuesBeforeFilter) {
+      // Compile the same filter the records tool receives, without executing a query.
+      try {
+        if (object) compileFilter(tx, object, namedFilter);
+        else compileEventFilter(tx, schema, namedFilter);
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'invalid_filter') throw error;
+        issue(error.message);
+      }
+    }
     const common = {
       ...args,
       object: object ? (mode === 'store' ? object.id : object.name) : name,
-      ...(args.filter ? { filter: filter(args.filter) } : {}),
+      ...(translatedFilter ? { filter: translatedFilter } : {}),
     };
     if (query.tool === 'query_records') {
       return {

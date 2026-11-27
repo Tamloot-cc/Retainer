@@ -701,6 +701,12 @@ function eventSort(tx: Tx, sort: QueryInput['sort']): Fragment {
   return parts.reduce((a, b) => tx`${a}, ${b}`);
 }
 
+export function compileEventFilter(tx: Tx, schema: CompiledSchema, filter: unknown): Fragment {
+  return compileTree(tx, filter, 0, (name, condition) =>
+    eventCondition(tx, schema, name, condition),
+  );
+}
+
 /** Matching events across types, shared with the aggregate path. */
 export function matchingEvents(
   tx: Tx,
@@ -708,11 +714,7 @@ export function matchingEvents(
   schema: CompiledSchema,
   input: Pick<QueryInput, 'filter' | 'search' | 'linked'>,
 ): Fragment {
-  const where = input.filter
-    ? compileTree(tx, input.filter, 0, (name, condition) =>
-        eventCondition(tx, schema, name, condition),
-      )
-    : tx`true`;
+  const where = input.filter ? compileEventFilter(tx, schema, input.filter) : tx`true`;
   return tx`r.workspace_id = ${workspaceId}
     and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
     and r.deleted_at is null and ${currentActivityEvidence(tx, tx`r.id`)} and ${where}
