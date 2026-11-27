@@ -10,6 +10,7 @@ import {
 } from '@openuidev/lang-core';
 import {
   DASHBOARD_COMPONENT_NAMES,
+  DASHBOARD_FORBIDDEN_KEYS,
   DASHBOARD_MAX_BYTES,
   DASHBOARD_MAX_QUERIES,
   type DashboardComponentName,
@@ -32,7 +33,6 @@ export const dashboardLibrary = createLibrary({
   ),
 });
 const parser = createParser(dashboardLibrary.toJSONSchema(), 'Dashboard');
-const forbiddenKeys = new Set(['__proto__', 'constructor', 'prototype']);
 // OpenUI Lang 1.0 built-ins that operate on values. Its action steps are
 // deliberately excluded, including when they are in an unused statement.
 const valueFunctions = new Set([
@@ -67,7 +67,7 @@ function completeExpression(tokens: ReturnType<typeof tokenize>) {
     : undefined;
 }
 
-export type DashboardQuery = {
+type DashboardQuery = {
   statement: string;
   start: number;
   end: number;
@@ -96,7 +96,10 @@ function literal(node: ASTNode | null | undefined): unknown {
       return node.els.map(literal);
     case 'Obj': {
       const keys = node.entries.map(([key]) => key);
-      if (new Set(keys).size !== keys.length || keys.some((key) => forbiddenKeys.has(key))) {
+      if (
+        new Set(keys).size !== keys.length ||
+        keys.some((key) => DASHBOARD_FORBIDDEN_KEYS.has(key))
+      ) {
         throw new Error('Object keys must be unique, valid names');
       }
       return Object.fromEntries(node.entries.map(([key, value]) => [key, literal(value)]));
@@ -185,7 +188,8 @@ export function inspectDashboard(program: string, stored = false) {
     for (const [id, node] of declarations) {
       const dependencies = new Set<string>();
       references.set(id, dependencies);
-      if (id.startsWith('$') || forbiddenKeys.has(id)) report(id, 'Invalid statement name');
+      if (id.startsWith('$') || DASHBOARD_FORBIDDEN_KEYS.has(id))
+        report(id, 'Invalid statement name');
       walkAST(node, (part) => {
         if (part.k === 'Ref') {
           if (declarations.has(part.n)) dependencies.add(part.n);
@@ -199,7 +203,7 @@ export function inspectDashboard(program: string, stored = false) {
             : part.k === 'Index' && part.index.k === 'Str'
               ? part.index.v
               : undefined;
-        if (member && forbiddenKeys.has(member)) report(id, 'Invalid property name');
+        if (member && DASHBOARD_FORBIDDEN_KEYS.has(member)) report(id, 'Invalid property name');
         if (part.k !== 'Comp') return;
         if (part.name === 'Query') {
           if (part !== node) report(id, 'Query must be its own statement');

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { AGGREGATE_OPS } from '../api.js';
+import {
+  AGGREGATE_GRANULARITIES,
+  AGGREGATE_MAX_GROUPS,
+  AGGREGATE_OPS,
+  type SavedViewVisibility,
+} from '../api.js';
 
 /**
  * Dashboards the workspace agent writes in OpenUI Lang. One set of
@@ -179,7 +184,7 @@ export function dashboardComponents<C, D extends Defined>(
 
 export const DASHBOARD_MAX_BYTES = 20 * 1024;
 export const DASHBOARD_MAX_QUERIES = 20;
-export const DASHBOARD_MIN_REFRESH = 60;
+const DASHBOARD_MIN_REFRESH = 60;
 // Browser timers store millisecond delays in a signed 32-bit integer.
 const DASHBOARD_MAX_REFRESH = Math.floor(0x7fffffff / 1000);
 export const validDashboardRefresh = (seconds: unknown): seconds is number =>
@@ -187,15 +192,16 @@ export const validDashboardRefresh = (seconds: unknown): seconds is number =>
   seconds >= DASHBOARD_MIN_REFRESH &&
   seconds <= DASHBOARD_MAX_REFRESH;
 
-const reserved = new Set([
-  'id',
-  'label',
-  'total',
-  'value',
+/** Object keys a dashboard program may never use: they reach object prototypes. */
+export const DASHBOARD_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   '__proto__',
   'constructor',
   'prototype',
 ]);
+/** The only tools a dashboard Query may call. */
+export const DASHBOARD_QUERY_TOOLS = ['query_records', 'aggregate_records'] as const;
+
+const reserved = new Set(['id', 'label', 'total', 'value', ...DASHBOARD_FORBIDDEN_KEYS]);
 const alias = z
   .string()
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
@@ -206,7 +212,7 @@ const base = {
   object: z.string().min(1),
   search: z.string().trim().min(1).max(500).optional(),
   filter: z.record(z.string(), z.unknown()).optional(),
-  limit: z.number().int().min(1).max(200).optional(),
+  limit: z.number().int().min(1).max(AGGREGATE_MAX_GROUPS).optional(),
 };
 export const dashboardRecordsSchema = z.strictObject({
   ...base,
@@ -224,7 +230,7 @@ export const dashboardAggregateSchema = z
       .max(50)
       .optional(),
     groupBy: z.string().optional(),
-    granularity: z.enum(['day', 'week', 'month', 'quarter', 'year']).optional(),
+    granularity: z.enum(AGGREGATE_GRANULARITIES).optional(),
   })
   .refine(
     ({ aggregates = [] }) => new Set(aggregates.map((item) => item.as)).size === aggregates.length,
@@ -263,7 +269,7 @@ export const DASHBOARD_TOOLS = [
 ];
 
 export type DashboardIssue = { statement: string; message: string };
-export type DashboardVisibility = 'private' | 'workspace';
+export type DashboardVisibility = SavedViewVisibility;
 export type DashboardSummary = {
   id: string;
   name: string;

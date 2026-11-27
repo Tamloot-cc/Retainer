@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { dashboardGuide } from '../dashboards/guide.js';
 
 /**
  * How to shape a schema. Shared by discover_schema, which designs one, and
@@ -444,9 +445,6 @@ follow-ups" and "Writes to Israeli clients in Hebrew" go in me.
   with log_event, as for any fact. A fact you learned in the chat itself
   needs no source.
 - You cannot delete a fact. Your user removes one in Settings → Memory.`;
-
-import { dashboardGuide } from '../dashboards/guide.js';
-
 export const GUIDES = {
   discover_schema: {
     title: 'Discover the schema',

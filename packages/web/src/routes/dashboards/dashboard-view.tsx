@@ -1,9 +1,8 @@
-import './quiet.js';
 import { type OpenUIError, Renderer } from '@openuidev/react-lang';
 import type { DashboardIssue } from '@retainer/shared';
 import { useMemo, useState } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
-import { DashboardIssues, dashboardLibrary } from './library.js';
+import { DashboardIssues, Details, dashboardLibrary } from './library.js';
 import { renderableProgram } from './program.js';
 import { dashboardTools } from './tools.js';
 
@@ -58,14 +57,9 @@ export function DashboardView({
         </Renderer>
       )}
       {!streaming && messages.length > 0 && (
-        <details className="mt-2 text-sm text-muted-foreground">
-          <summary className="cursor-pointer">Some dashboard data is unavailable</summary>
-          <ul className="mt-1 list-disc ps-5">
-            {messages.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
-        </details>
+        <div className="mt-2">
+          <Details label="Some dashboard data is unavailable" messages={messages} />
+        </div>
       )}
     </DashboardIssues.Provider>
   );

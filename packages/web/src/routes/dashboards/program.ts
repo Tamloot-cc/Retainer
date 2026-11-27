@@ -7,8 +7,10 @@ import {
   walkAST,
 } from '@openuidev/lang-core';
 import {
+  DASHBOARD_FORBIDDEN_KEYS,
   DASHBOARD_MAX_BYTES,
   DASHBOARD_MAX_QUERIES,
+  DASHBOARD_QUERY_TOOLS,
   type DashboardIssue,
   validDashboardRefresh,
 } from '@retainer/shared';
@@ -83,8 +85,7 @@ function isLiteral(node: ASTNode | undefined): boolean {
       return node.els.every(isLiteral);
     case 'Obj':
       return node.entries.every(
-        ([key, value]) =>
-          !['__proto__', 'constructor', 'prototype'].includes(key) && isLiteral(value),
+        ([key, value]) => !DASHBOARD_FORBIDDEN_KEYS.has(key) && isLiteral(value),
       );
     default:
       return false;
@@ -129,7 +130,7 @@ export function renderableProgram(
       count <= DASHBOARD_MAX_QUERIES &&
       node.args.length <= 4 &&
       tool?.k === 'Str' &&
-      (tool.v === 'query_records' || tool.v === 'aggregate_records') &&
+      (DASHBOARD_QUERY_TOOLS as readonly string[]).includes(tool.v) &&
       args?.k === 'Obj' &&
       isLiteral(args) &&
       isLiteral(defaults) &&

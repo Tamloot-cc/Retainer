@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Ellipsis, LayoutDashboard } from 'lucide-react';
 import { lazy, Suspense, useId, useState } from 'react';
 import { api, hasScope, useWorkspace } from '../../api/client.js';
+import { actorLabel } from '../../provenance/index.js';
 import {
   Button,
   Dialog,
@@ -18,7 +19,7 @@ import {
 import { Menu, MenuAction } from '../../ui/menu.js';
 import { type BlockHistory, extendMessageBlockHistory } from '../agent/chat-blocks.js';
 import { firstMessages } from '../agent/first-message.js';
-import type { ChatMessage } from '../agent/model.js';
+import { agentKey, type ChatMessage } from '../agent/model.js';
 import { QueryError } from '../state.js';
 import { dashboardKey } from './keys.js';
 
@@ -109,8 +110,12 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
       client.setQueryData(detail, current);
       if (current.chatId && !current.issues.length) {
         try {
-          const chat = await api.agentChat(current.chatId);
-          const { matchesDashboardHistory } = await import('./program.js');
+          const [chat, { matchesDashboardHistory }] = await Promise.all([
+            api.agentChat(current.chatId),
+            import('./program.js'),
+          ]);
+          // The chat page reads this instead of downloading the chat again.
+          client.setQueryData([...agentKey(session.workspace.id), 'chat', chat.id], chat);
           const history = (chat.messages as ChatMessage[]).reduce<BlockHistory>(
             (blocks, message) => extendMessageBlockHistory(blocks, message),
             {},
@@ -138,11 +143,7 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
     },
   });
   const change = useMutation({
-    mutationFn: (input: Omit<UpdateDashboard, 'expectedUpdatedAt'>) =>
-      api.updateDashboard(dashboard.id, {
-        ...input,
-        expectedUpdatedAt: dialog === 'rename' ? renameRevision : dashboard.updatedAt,
-      }),
+    mutationFn: (input: UpdateDashboard) => api.updateDashboard(dashboard.id, input),
     onSuccess: (updated) => {
       client.setQueryData(detail, updated);
       void client.invalidateQueries({ queryKey: [...base, 'list'] });
@@ -202,6 +203,7 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
                   onSelect={() =>
                     change.mutate({
                       visibility: dashboard.visibility === 'private' ? 'workspace' : 'private',
+                      expectedUpdatedAt: dashboard.updatedAt,
                     })
                   }
                 >
@@ -234,7 +236,7 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          Created by {dashboard.createdBy.name ?? dashboard.createdBy.id} ·{' '}
+          Created by {actorLabel(dashboard.createdBy)} ·{' '}
           {dashboard.visibility === 'workspace' ? 'Shared with workspace' : 'Private'}
         </p>
         {error && !dialog ? <Notice error>{error.message}</Notice> : null}
@@ -259,7 +261,8 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
             className="flex flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              if (draft.trim()) change.mutate({ name: draft.trim() });
+              if (draft.trim())
+                change.mutate({ name: draft.trim(), expectedUpdatedAt: renameRevision });
             }}
           >
             <div className="flex flex-col gap-1 text-sm">

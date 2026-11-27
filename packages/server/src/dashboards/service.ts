@@ -2,6 +2,7 @@ import {
   type Actor,
   type DashboardSummary,
   type DashboardVisibility,
+  SAVED_VIEW_VISIBILITIES,
   type SavedDashboard,
   sameActor,
 } from '@retainer/shared';
@@ -18,7 +19,7 @@ import { aggregate, findRecords } from '../records/service.js';
 import { type CompiledSchema, getSchema } from '../schema/compiled.js';
 import { translateDashboard } from './translate.js';
 
-const visibility = z.enum(['private', 'workspace']);
+const visibility = z.enum(SAVED_VIEW_VISIBILITIES);
 const name = z.string().trim().min(1).max(100);
 const chatId = z.uuid().nullable().optional();
 export const dashboardChatFilter = z.uuid().optional();
@@ -217,12 +218,7 @@ export async function checkDashboard(sql: Sql, caller: Caller, program: string) 
       let rows: number;
       if (query.tool === 'query_records') {
         const { object, fields: _fields, ...input } = query.args;
-        const result = await findRecords(
-          sql,
-          caller,
-          object,
-          queryInputSchema.parse({ ...input, include: ['relationReferences'] }),
-        );
+        const result = await findRecords(sql, caller, object, queryInputSchema.parse(input));
         rows = result.records.length;
       } else {
         const { object, ...input } = query.args;

@@ -8,9 +8,9 @@ import {
   type RecordReference,
   type SchemaDescription,
 } from '@retainer/shared';
+import { primaryCopyValue } from '../../fields/copy-value.js';
 
 export type DashboardMoney = { amount: number; currency: string };
-export type DashboardValue = number | string | null | DashboardMoney | { mixedCurrencies: true };
 
 export function plainValue(
   value: unknown,
@@ -29,14 +29,13 @@ export function plainValue(
       ? value.map(label).filter(Boolean).join(', ') || null
       : label(value);
   }
+  if (field?.type === 'emails' || field?.type === 'phones' || field?.type === 'links')
+    return primaryCopyValue(field.type, value) ?? null;
   if (typeof value !== 'object') return value;
   const v = value as Record<string, unknown>;
   if (typeof v.amountMicros === 'number' && typeof v.currency === 'string')
     return { amount: v.amountMicros / 1_000_000, currency: v.currency };
   if ('first' in v || 'last' in v) return [v.first, v.last].filter(Boolean).join(' ') || null;
-  for (const key of ['primaryEmail', 'primaryPhoneNumber', 'primaryLinkUrl']) {
-    if (typeof v[key] === 'string') return v[key];
-  }
   return value;
 }
 
@@ -82,12 +81,15 @@ export function dashboardTools(
           ...input,
           include: ['relationReferences'],
         });
+        const definitions = new Map(
+          schema.objects.map((entry) => [
+            entry.nameSingular,
+            new Map(entry.fields.map((field) => [field.name, field])),
+          ]),
+        );
         return {
           records: page.records.map((record) => {
-            const objectSchema = schema.objects.find(
-              (entry) => entry.nameSingular === record.object,
-            );
-            const definitions = new Map(objectSchema?.fields.map((field) => [field.name, field]));
+            const fieldsOf = definitions.get(record.object);
             return {
               id: record.id,
               label: record.label,
@@ -96,7 +98,7 @@ export function dashboardTools(
                   alias,
                   plainValue(
                     readField(record, name, object === 'event'),
-                    definitions.get(name),
+                    fieldsOf?.get(name),
                     page.relationReferences,
                   ),
                 ]),

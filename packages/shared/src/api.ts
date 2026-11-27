@@ -914,13 +914,17 @@ export function aggregateOps(field: {
   if (FILTER_OPERATORS[field.type].includes('gt')) ops.push('min', 'max');
   return ops;
 }
+/** How a date grouping buckets its periods. */
+export const AGGREGATE_GRANULARITIES = ['day', 'week', 'month', 'quarter', 'year'] as const;
+/** The most groups one grouped aggregate returns. */
+export const AGGREGATE_MAX_GROUPS = 200;
 /** `POST /v1/objects/:object/aggregate`. */
 export type AggregateInput = {
   search?: string;
   filter?: Record<string, unknown>;
   aggregates?: { field: string; op: AggregateOp; as?: string }[];
   groupBy?: string;
-  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year';
+  granularity?: (typeof AGGREGATE_GRANULARITIES)[number];
   limit?: number;
 };
 export type AggregateValue = {

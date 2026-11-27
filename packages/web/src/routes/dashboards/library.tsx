@@ -1,4 +1,3 @@
-import './quiet.js';
 import { isElementNode } from '@openuidev/lang-core';
 import {
   type ComponentRenderer,
@@ -9,6 +8,7 @@ import {
   useRendererQuery,
 } from '@openuidev/react-lang';
 import {
+  DASHBOARD_FORMATS,
   type DashboardComponentName,
   type DashboardFormat,
   type DashboardIssue,
@@ -19,10 +19,13 @@ import type { ChartDatum, ChartKind } from './charts.js';
 import { formatValue, isMixed, isMoney } from './format.js';
 import { DashboardTable } from './table.js';
 
+// The renderer checks this flag before mounting its development inspector.
+(globalThis as Record<symbol, unknown>)[Symbol.for('openui.devtools.autoMount')] = true;
+
 const Chart = lazy(() => import('./charts.js'));
 export const DashboardIssues = createContext<DashboardIssue[]>([]);
 
-function Details({ label, messages }: { label: string; messages: string[] }) {
+export function Details({ label, messages }: { label: string; messages: string[] }) {
   return (
     <details className="text-sm text-muted-foreground">
       <summary className="cursor-pointer">{label}</summary>
@@ -97,7 +100,7 @@ function Tile({ id, label, children }: { id?: string; label: string; children: R
 }
 
 function formatOf(value: unknown): DashboardFormat | undefined {
-  return value === 'percent' || value === 'date' || value === 'number' ? value : undefined;
+  return DASHBOARD_FORMATS.find((format) => format === value);
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '');

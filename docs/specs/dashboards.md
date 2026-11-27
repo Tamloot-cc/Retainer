@@ -486,8 +486,9 @@ one record would count in several groups.
 
 ### 7.3 Many groups
 
-At most 50 groups come back by default (`limit`, at most 200, so that a
-chart can show a quarter by day). Past the limit, the response sets
+Date and relation groupings return at most 50 groups by default (`limit`,
+at most 200, so that a chart can show a quarter by day); a select grouping
+returns all its options unless `limit` is set. Past the limit, the response sets
 `tooManyGroups: true` and the tile says how many it shows. Which groups
 stay depends on the grouping: for options and relations, the largest; for
 dates, the latest periods, still shown oldest first, since a chart over

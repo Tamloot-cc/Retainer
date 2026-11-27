@@ -229,7 +229,8 @@ built-in timestamp such as `createdAt` or an event's `occurredAt`. Use
 `/v1/objects/event/aggregate` to aggregate across event types. Date groups use
 the workspace time zone and fill empty periods. `granularity` accepts
 `day`, `week` (starting Monday), `month` (default), `quarter` or `year`.
-Group limits default to 50 and accept up to 200. `tooManyGroups` marks
+Date and relation groupings default to 50 groups, and a select grouping
+returns every option; `limit` accepts up to 200. `tooManyGroups` marks
 truncation. Date groups keep the latest periods, and select or relation
 groups keep the largest groups. Missing values have the label “No value”.
 

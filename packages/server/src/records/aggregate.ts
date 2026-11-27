@@ -1,4 +1,6 @@
 import {
+  AGGREGATE_GRANULARITIES,
+  AGGREGATE_MAX_GROUPS,
   AGGREGATE_OPS,
   type AggregateGroup,
   type AggregateOp,
@@ -41,8 +43,8 @@ export const aggregateInputSchema = queryInputSchema.pick({ search: true, filter
     .describe(
       'Group by a filterable select, date or single relation, or by createdAt, updatedAt or occurredAt.',
     ),
-  granularity: z.enum(['day', 'week', 'month', 'quarter', 'year']).optional(),
-  limit: z.number().int().min(1).max(200).optional(),
+  granularity: z.enum(AGGREGATE_GRANULARITIES).optional(),
+  limit: z.number().int().min(1).max(AGGREGATE_MAX_GROUPS).optional(),
 });
 export type AggregateInput = z.infer<typeof aggregateInputSchema>;
 
@@ -115,15 +117,23 @@ function planAggregateRequests(
   });
 }
 
+function aggregateGrouping(
+  tx: Tx,
+  object: CompiledObject | undefined,
+  input: Pick<AggregateInput, 'groupBy' | 'granularity'>,
+) {
+  const grouping = planAggregateGrouping(tx, object, input);
+  if (input.granularity && grouping?.kind !== 'date')
+    throw invalidAggregate('granularity requires a date grouping');
+  return grouping;
+}
+
 function planAggregateGrouping(
   tx: Tx,
   object: CompiledObject | undefined,
   input: Pick<AggregateInput, 'groupBy' | 'granularity'>,
 ) {
-  if (input.groupBy === undefined) {
-    if (input.granularity) throw invalidAggregate('granularity requires a date grouping');
-    return null;
-  }
+  if (input.groupBy === undefined) return null;
   const name = input.groupBy;
   const field = object?.fieldsByName.get(name);
   const builtin = object ? builtInColumn(tx, object, name) : eventQueryColumn(tx, name);
@@ -138,8 +148,6 @@ function planAggregateGrouping(
     field.isFilterable &&
     field.settings.relationCardinality === 'many_to_one' &&
     !field.settings.isInverse;
-  if (!dateColumn && input.granularity)
-    throw invalidAggregate('granularity requires a date grouping');
   if (dateColumn) return { kind: 'date' as const, dateColumn, field };
   if (field && relation) return { kind: 'relation' as const, field };
   if (field && canGroupBy(field)) return { kind: 'select' as const, field };
@@ -160,7 +168,7 @@ export function checkAggregate(
     if (object) compileFilter(tx, object, input.filter);
     else compileEventFilter(tx, schema, input.filter);
   }
-  planAggregateGrouping(tx, object, input);
+  aggregateGrouping(tx, object, input);
 }
 
 /**
@@ -186,7 +194,7 @@ export async function aggregateRecords(
   const where = object
     ? matchingRecords(tx, workspaceId, schema, object, input)
     : matchingEvents(tx, workspaceId, schema, input);
-  const grouping = planAggregateGrouping(tx, object, input);
+  const grouping = aggregateGrouping(tx, object, input);
   if (!grouping) {
     const [row] = await tx<AggregateRow[]>`select ${selected} from ${from} where ${where}`;
     return valuesOf(requests, row);
@@ -194,15 +202,16 @@ export async function aggregateRecords(
   const { field } = grouping;
   const date = grouping.kind === 'date';
   const granularity = input.granularity ?? 'month';
-  const limit = input.limit ?? 50;
+  // A select's groups are bounded by its options; the others take a default limit.
+  const limit = input.limit ?? (grouping.kind === 'select' ? null : 50);
   let expression: Fragment;
   if (grouping.kind === 'date') {
-    const [workspace] = await tx<{ zone: string | null }[]>`
-      select settings ->> 'timeZone' as zone from workspaces where id = ${workspaceId}`;
+    const zone = tx`coalesce((select settings ->> 'timeZone' from workspaces
+      where id = ${workspaceId}), 'UTC')`;
     const local =
       field?.type === 'date'
         ? grouping.dateColumn
-        : tx`(${grouping.dateColumn} at time zone ${workspace?.zone ?? 'UTC'})`;
+        : tx`(${grouping.dateColumn} at time zone ${zone})`;
     expression = tx`date_trunc(${granularity}::text, ${local}::timestamp)::date`;
   } else if (grouping.kind === 'relation') {
     expression = tx`(select l.target_record_id ${liveLinks(tx, grouping.field)}
@@ -219,7 +228,7 @@ export async function aggregateRecords(
     from (select r.*, ${expression} as g from ${from} where ${where}) r
     group by grouping sets ((r.g), ())
     order by grouping(r.g) desc, ${next}
-    limit ${limit + 2}`;
+    ${limit === null ? tx`` : tx`limit ${limit + 2}`}`;
   const [overall, ...groupRows] = rows;
   const groups: AggregateGroup[] = groupRows.map((row) => ({
     value: row.g === null ? null : String(row.g),
@@ -233,7 +242,7 @@ export async function aggregateRecords(
         groups,
         typeof overall?.earliest === 'string' ? overall.earliest : null,
         granularity,
-        limit,
+        limit ?? 50,
         requests,
       ),
     };
@@ -245,11 +254,11 @@ export async function aggregateRecords(
   }
   return {
     ...valuesOf(requests, overall),
-    groups: groups.slice(0, limit).map((group) => ({
+    groups: groups.slice(0, limit ?? undefined).map((group) => ({
       ...group,
       label: group.value === null ? group.label : (options.get(group.value) ?? group.label),
     })),
-    ...(groups.length > limit ? { tooManyGroups: true as const } : {}),
+    ...(limit !== null && groups.length > limit ? { tooManyGroups: true as const } : {}),
   };
 }
 

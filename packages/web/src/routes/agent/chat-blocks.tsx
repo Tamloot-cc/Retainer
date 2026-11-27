@@ -90,16 +90,25 @@ export function extendBlockHistory(
   return next;
 }
 
+// The chat keeps finished message objects stable while the last one streams,
+// so an unchanged message with an unchanged history reuses its result. That
+// keeps each earlier message's history the same object, and its memo intact.
+const messageHistories = new WeakMap<ChatMessage, { before: BlockHistory; after: BlockHistory }>();
+
 export function extendMessageBlockHistory(
   history: BlockHistory,
   message: ChatMessage,
 ): BlockHistory {
-  if (message.role === 'user') return extendBlockHistory(history, messageText(message), true);
-  if (message.role !== 'assistant') return history;
-  for (const part of message.parts) {
-    if (part.type === 'text') history = extendBlockHistory(history, part.text);
-  }
-  return history;
+  const cached = messageHistories.get(message);
+  if (cached?.before === history) return cached.after;
+  let after = history;
+  if (message.role === 'user') after = extendBlockHistory(history, messageText(message), true);
+  else if (message.role === 'assistant')
+    for (const part of message.parts) {
+      if (part.type === 'text') after = extendBlockHistory(after, part.text);
+    }
+  messageHistories.set(message, { before: history, after });
+  return after;
 }
 
 export function ChatAnswer({

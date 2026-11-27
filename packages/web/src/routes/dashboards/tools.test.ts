@@ -10,7 +10,16 @@ it('converts composite values, options and relations for display', () => {
     currency: 'EUR',
   });
   expect(plainValue({ first: 'Dana', last: 'Doe' })).toBe('Dana Doe');
-  expect(plainValue({ primaryEmail: 'dana@example.test' })).toBe('dana@example.test');
+  expect(plainValue({ primary: 'dana@example.test', additional: [] }, field('emails'))).toBe(
+    'dana@example.test',
+  );
+  expect(plainValue({ primary: { number: '+15551234567' }, additional: [] }, field('phones'))).toBe(
+    '+15551234567',
+  );
+  expect(
+    plainValue({ primary: { url: 'https://dana.example' }, additional: [] }, field('links')),
+  ).toBe('https://dana.example');
+  expect(plainValue({ primary: null, additional: [] }, field('emails'))).toBeNull();
   const options = [
     { value: 'open', label: 'In progress' },
     { value: 'won', label: 'Won' },

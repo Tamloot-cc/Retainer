@@ -90,7 +90,7 @@
         "visibility": {
           "default": "private",
           "type": "string",
-          "enum": ["private", "workspace"]
+          "enum": ["workspace", "private"]
         },
         "chatId": {
           "anyOf": [
@@ -1600,7 +1600,7 @@
         },
         "visibility": {
           "type": "string",
-          "enum": ["private", "workspace"]
+          "enum": ["workspace", "private"]
         },
         "chatId": {
           "anyOf": [

@@ -505,3 +505,6 @@ export const MOOD_TEXT: Partial<Record<LogoMood, string>> = {
   working: 'Writing the answer…',
   stopping: 'Stopping…',
 };
+
+/** The query-cache prefix for a workspace's agent chats. */
+export const agentKey = (workspace: string) => [workspace, 'agent'] as const;

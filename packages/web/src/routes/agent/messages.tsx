@@ -66,7 +66,6 @@ import {
 } from './model.js';
 
 const EMPTY_BLOCK_HISTORY: BlockHistory = {};
-type LatestBlock = ReturnType<typeof latestChatBlock>;
 
 const KIND_ICONS: Record<ToolKind, typeof Search> = {
   search: Search,
@@ -406,13 +405,16 @@ function AssistantParts({
   stopping,
   history,
   chatId,
-  latestBlock,
+  latestBlockPart,
+  latestBlockOffset,
   hasMark,
 }: {
   message: ChatMessage;
   history: BlockHistory;
   chatId?: string;
-  latestBlock: LatestBlock;
+  /** Where the chat's latest block is, when it is in this message. */
+  latestBlockPart?: number | undefined;
+  latestBlockOffset?: number | undefined;
   streaming: boolean;
   stopping: boolean;
   hasMark: boolean;
@@ -442,9 +444,7 @@ function AssistantParts({
               text={part.text}
               history={previous}
               chatId={chatId}
-              latestBlockOffset={
-                latestBlock?.partIndex === segment.index ? latestBlock.offset : undefined
-              }
+              latestBlockOffset={latestBlockPart === segment.index ? latestBlockOffset : undefined}
               streaming={streaming && last}
             />
           );
@@ -517,12 +517,14 @@ const AgentMessage = memo(function AgentMessage({
   onRetry,
   history,
   chatId,
-  latestBlock,
+  latestBlockPart,
+  latestBlockOffset,
 }: {
   message: ChatMessage;
   history: BlockHistory;
   chatId?: string;
-  latestBlock: LatestBlock;
+  latestBlockPart?: number | undefined;
+  latestBlockOffset?: number | undefined;
   answering: boolean;
   last: boolean;
   actions: boolean;
@@ -540,7 +542,8 @@ const AgentMessage = memo(function AgentMessage({
         stopping={stopping}
         history={history}
         chatId={chatId}
-        latestBlock={latestBlock}
+        latestBlockPart={latestBlockPart}
+        latestBlockOffset={latestBlockOffset}
         hasMark={Boolean(mood)}
       />
       {actions && !answering && (answer || onRetry) ? (
@@ -625,7 +628,9 @@ export function ChatMessages({
             message={message}
             history={histories[index] ?? EMPTY_BLOCK_HISTORY}
             chatId={chatId}
-            latestBlock={latestBlock?.messageIndex === index ? latestBlock : undefined}
+            {...(latestBlock?.messageIndex === index
+              ? { latestBlockPart: latestBlock.partIndex, latestBlockOffset: latestBlock.offset }
+              : {})}
             answering={streaming && last}
             last={last}
             actions={mark}

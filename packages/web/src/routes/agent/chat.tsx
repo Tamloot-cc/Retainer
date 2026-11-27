@@ -29,6 +29,7 @@ import { QueryError } from '../state.js';
 import { firstMessages } from './first-message.js';
 import { ChatMessages } from './messages.js';
 import {
+  agentKey,
   avatarMood,
   CHAT_OVER,
   type ChatMessage,
@@ -39,8 +40,6 @@ import {
   turnEnd,
 } from './model.js';
 import { chatTransport } from './transport.js';
-
-export const agentKey = (workspace: string) => [workspace, 'agent'] as const;
 
 const ABOUT =
   'Ask the agent about your workspace. It reads your records, searches the web and saves what it learns, as an agent working for you. Its changes never outrank a person’s.';
