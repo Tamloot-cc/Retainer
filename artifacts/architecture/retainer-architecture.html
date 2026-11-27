@@ -222,7 +222,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <div class="card">
         <span class="q">Rule · no model in the core</span>
         <h3>Deterministic</h3>
-        <p>Writes, conflicts, search and consolidation never call a language model. Only extensions may, through the model proxy.</p>
+        <p>Writes, conflicts, search and consolidation never call a language model. Extensions and routines may, through the model proxy; the workspace agent runs outside the core.</p>
       </div>
     </div>
   </section>
@@ -235,7 +235,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <p class="prose">Everything goes through the API server, which enforces the write rules. Postgres is the only dependency: data, jobs and tenant isolation all live there.</p>
     <div class="figure">
       <div class="scroll">
-      <svg viewBox="0 0 960 470" role="img" aria-label="AI agents connect over MCP, apps and the SDK over REST, people through the web app, and standalone apps over REST with an installation token. All reach the API server. The API server and background workers read and write one Postgres database. Workers run extension functions and routines in a sandbox, which calls the API back and calls a model only through the model proxy.">
+      <svg viewBox="0 0 960 470" role="img" aria-label="AI agents connect over MCP, apps and the SDK over REST, people through the web app, and standalone apps over REST with an installation token. All reach the API server. The API server and background workers read and write one Postgres database. Workers run extension functions and routines in a sandbox, which calls the API back and calls a model only through the model proxy. The workspace agent runs in its own function: it uses Retainer through the API with a turn token, calls Anthropic directly, and reaches only the mastra schema in Postgres.">
         <defs>
           <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
           <marker id="a2k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-key"/></marker>
@@ -244,8 +244,16 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <text x="24" y="34" class="zlabel">WHO USES IT</text>
         <rect x="220" y="12" width="470" height="446" rx="12" class="z-trusted"/>
         <text x="236" y="34" class="zlabel">RETAINER · TRUSTED</text>
-        <rect x="710" y="12" width="240" height="446" rx="12" class="z-ext"/>
-        <text x="724" y="34" class="zlabel">SANDBOX · ONE INSTALLATION</text>
+        <rect x="710" y="12" width="240" height="150" rx="12" class="z-trusted"/>
+        <text x="724" y="34" class="zlabel">AGENT · OWN FUNCTION</text>
+        <rect x="710" y="172" width="240" height="286" rx="12" class="z-ext"/>
+        <text x="724" y="194" class="zlabel">SANDBOX · ONE INSTALLATION</text>
+
+        <rect x="730" y="48" width="200" height="100" rx="8" class="b-trusted"/>
+        <text x="830" y="72" text-anchor="middle" style="font-weight:600">Workspace agent</text>
+        <text x="830" y="92" text-anchor="middle" class="small">Mastra loop · chats and tasks</text>
+        <text x="830" y="110" text-anchor="middle" class="small">calls Anthropic directly</text>
+        <text x="830" y="128" text-anchor="middle" class="small">DB: mastra schema only</text>
 
         <rect x="26" y="54" width="158" height="56" rx="8" class="b-out"/>
         <text x="105" y="78" text-anchor="middle">AI agents</text>
@@ -286,18 +294,18 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
 
         <rect x="470" y="356" width="200" height="56" rx="8" class="b-key"/>
         <text x="570" y="380" text-anchor="middle">Model proxy</text>
-        <text x="570" y="398" text-anchor="middle" class="small">extensions only · holds the key</text>
+        <text x="570" y="398" text-anchor="middle" class="small">extensions, routines · holds the key</text>
 
-        <rect x="730" y="190" width="200" height="130" rx="8" class="b-ext"/>
-        <text x="830" y="216" text-anchor="middle" style="font-weight:600">Extension functions</text>
-        <text x="830" y="236" text-anchor="middle" class="small">and routine code</text>
-        <text x="830" y="258" text-anchor="middle" class="small">Lambda (hosted)</text>
-        <text x="830" y="276" text-anchor="middle" class="small">fresh container (Compose)</text>
-        <text x="830" y="298" text-anchor="middle" class="small">short-lived run token</text>
+        <rect x="730" y="206" width="200" height="120" rx="8" class="b-ext"/>
+        <text x="830" y="230" text-anchor="middle" style="font-weight:600">Extension functions</text>
+        <text x="830" y="248" text-anchor="middle" class="small">and routine code</text>
+        <text x="830" y="268" text-anchor="middle" class="small">Lambda (hosted)</text>
+        <text x="830" y="286" text-anchor="middle" class="small">fresh container (Compose)</text>
+        <text x="830" y="306" text-anchor="middle" class="small">short-lived run token</text>
 
         <rect x="730" y="370" width="200" height="56" rx="8" class="b-out"/>
         <text x="830" y="394" text-anchor="middle">Anthropic</text>
-        <text x="830" y="412" text-anchor="middle" class="small">via the proxy only</text>
+        <text x="830" y="412" text-anchor="middle" class="small">via the proxy, or the agent</text>
 
         <line x1="186" y1="82" x2="238" y2="96" class="arrow" marker-end="url(#a2)"/>
         <line x1="186" y1="154" x2="238" y2="130" class="arrow" marker-end="url(#a2)"/>
@@ -305,19 +313,21 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <line x1="186" y1="298" x2="238" y2="172" class="arrow" marker-end="url(#a2)"/>
         <line x1="340" y1="184" x2="340" y2="298" class="arrow" marker-end="url(#a2)" marker-start="url(#a2)"/>
         <line x1="468" y1="270" x2="442" y2="320" class="arrow" marker-end="url(#a2)" marker-start="url(#a2)"/>
-        <line x1="672" y1="250" x2="728" y2="250" class="arrow" marker-end="url(#a2)"/>
-        <text x="676" y="242" class="small">invoke</text>
-        <path d="M770,188 C770,120 600,100 442,110" class="arrow" marker-end="url(#a2)"/>
-        <text x="560" y="94" class="small">read, write through the API</text>
-        <line x1="760" y1="322" x2="672" y2="378" class="arrow-key" marker-end="url(#a2k)"/>
+        <line x1="672" y1="262" x2="728" y2="262" class="arrow" marker-end="url(#a2)"/>
+        <text x="676" y="254" class="small">invoke</text>
+        <line x1="728" y1="206" x2="442" y2="164" class="arrow" marker-end="url(#a2)"/>
+        <text x="500" y="160" class="small">read, write through the API</text>
+        <line x1="728" y1="90" x2="442" y2="90" class="arrow" marker-end="url(#a2)" marker-start="url(#a2)"/>
+        <text x="470" y="80" class="small">turn token: tools, as the caller</text>
+        <line x1="760" y1="328" x2="672" y2="378" class="arrow-key" marker-end="url(#a2k)"/>
         <line x1="672" y1="398" x2="728" y2="398" class="arrow-key" marker-end="url(#a2k)"/>
-        <path d="M730,300 C500,470 200,470 186,412" class="arrow" marker-end="url(#a2)"/>
-        <text x="420" y="452" class="small">fetch from providers</text>
+        <path d="M730,318 C700,446 680,446 640,446 L230,446 C200,446 188,436 186,414" class="arrow" marker-end="url(#a2)"/>
+        <text x="470" y="438" class="small">fetch from providers</text>
       </svg>
       </div>
       <div class="legend">
         <span><i class="sw" style="background:var(--outside)"></i>Outside Retainer</span>
-        <span><i class="sw" style="background:var(--trusted)"></i>Retainer, trusted, sees every workspace</span>
+        <span><i class="sw" style="background:var(--trusted)"></i>Retainer code</span>
         <span><i class="sw" style="background:var(--ext)"></i>Sandboxed code, one installation per run</span>
         <span><i class="sw" style="background:var(--key-bg);border:1px dashed var(--key)"></i>Model calls</span>
       </div>
@@ -332,7 +342,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
           <div class="node t"><code>all</code><small>everything in one</small></div>
         </div>
         <p class="sub">Docker Compose only. Extension code runs in fresh runner containers behind an egress proxy.</p>
-        <p class="note">Two more roles split work out: <code>extensions</code> (the extension control API and secret broker) and <code>files</code> (the worker loops, with file storage maintenance).</p>
+        <p class="note">More roles split work out: <code>extensions</code> (the extension control API and secret broker), <code>files</code> (the worker loops, with file storage maintenance) and <code>agent</code> (the workspace agent, its own container from <code>compose.agent.yml</code>, with only the <code>retainer_mastra</code> database role).</p>
       </div>
       <div class="panel">
         <h3>Hosted: the same code as Lambda functions</h3>
@@ -343,9 +353,21 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
           <div class="node t"><code>control</code><small>sign-in, has internet</small></div>
         </div>
         <p class="sub">Infrastructure lives in the private <code>retainer-cloud</code> repo; the entry points live here in <code>packages/server/src/lambda/</code>.</p>
-        <p class="note">Six more: <code>executor</code> (extension jobs and routine runs), <code>changes</code> (change dispatch, routine matching), <code>files</code>, <code>extensions</code>, <code>maintenance</code> (the "updating" page during a deploy) and <code>model</code>, the model proxy, outside the database's network.</p>
+        <p class="note">Seven more: <code>executor</code> (extension jobs and routine runs), <code>changes</code> (change dispatch, routine matching), <code>files</code>, <code>extensions</code>, <code>maintenance</code> (the "updating" page during a deploy), <code>model</code>, the model proxy, outside the database's network, and <code>agent</code>, the workspace agent, streaming chats through its function URL.</p>
+        <p class="note">Writer admission: every hosted process tags its Postgres connections with its build ID, and a statement trigger lets only builds enrolled in the active deployment generation write, so a deploy can close writes before a migration.</p>
       </div>
     </div>
+    <h3>The workspace agent</h3>
+    <div class="chain" aria-label="Workspace agent flow">
+      <div class="node o">Caller<small>a person's chat, or a task from a routine (<code>retainer.ai.agent</code>) or an extension (<code>agentClient</code>)</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Retainer API<small>opens the session, mints a turn token bound to one turn</small></div>
+      <span class="arr">→</span>
+      <div class="node t">Agent runtime<small><code>packages/agent</code>, Mastra, Claude Sonnet 5.5, history in the <code>mastra</code> schema</small></div>
+      <span class="arr">→</span>
+      <div class="node e">Tools via the API<small>the caller's access, never more; writes as an <code>agent</code> acting for the caller</small></div>
+    </div>
+    <p class="note">Callers talk to Retainer, never to the agent. A task's run suspends while the agent works and resumes with its typed answer. The model proxy is unchanged; the agent holds its own Anthropic key.</p>
   </section>
 
   <!-- 3 -->
@@ -365,7 +387,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       </div>
       <div class="layer l-mem">
         <div class="name">Memory<small>Claims and evidence, kept forever</small></div>
-        <div class="tags"><span class="tag">field_assertions</span><span class="tag">facts</span><span class="tag">fact_sources</span><span class="tag">event_records</span><span class="tag">event_links</span><span class="tag">event_moves</span><span class="tag">event_identity_tombstones</span></div>
+        <div class="tags"><span class="tag">field_assertions</span><span class="tag">facts</span><span class="tag">fact_sources</span><span class="tag">event_records</span><span class="tag">event_links</span><span class="tag">event_moves</span><span class="tag">event_identity_tombstones</span><span class="tag">event_bodies</span></div>
       </div>
     </div>
 
@@ -457,7 +479,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <li class="t"><span class="n">1 · log_event</span><h3>Log the event</h3><p>Type, channel, external ID, time, title, summary, participants (emails, phones or IDs), <code>about</code> records.</p></li>
       <li class="t"><span class="n">2 · upsert_record</span><h3>Update records</h3><p>Cite the event as <code>source</code>, so values carry its date and an older email can't overwrite a newer claim.</p></li>
       <li class="t"><span class="n">3 · remember</span><h3>Store facts</h3><p>Plain-language facts citing the same event, with an optional quote.</p></li>
-      <li class="t"><span class="n">4 · upsert_record</span><h3>Create tasks</h3><p>Commitments someone made, as <code>task</code> records.</p></li>
+      <li class="t"><span class="n">4 · upsert_record</span><h3>Create tasks</h3><p>Commitments someone made, as task records, where the workspace tracks tasks.</p></li>
     </ol>
     <div class="figure">
       <div class="scroll">
@@ -513,7 +535,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       </div>
       <p class="note">Privacy lock first, then schema (<code>lockForWrite</code> in <code>db/tx.ts</code>), the same order extension imports use.</p>
     </div>
-    <div class="chain">
+    <div class="chain" aria-label="Participant resolution">
       <div class="node o">Handle<small><code>Dana@Acme.com</code></small></div>
       <span class="arr">→</span>
       <div class="node t">Normalize<small>lowercase email, E.164 phone</small></div>
@@ -525,6 +547,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <div class="node k">unmatched<small><code>no_match</code> · <code>phone_only</code> · <code>ambiguous</code> · <code>deleted_record</code> · <code>suppressed</code></small></div>
     </div>
     <p class="note">The agent creates the people worth keeping, then logs the same event again with the new record ID. A retry with the same <code>(channel, externalId)</code> returns the same event and only adds links.</p>
+    <p class="note">Several records at once: <code>upsert_records</code> (<code>POST /v1/records/upsert</code>) takes 1–50 items and returns one result or error per item, in order. Each item runs in its own short transaction, so locks are released between items; give each create its own <code>idempotencyKey</code>.</p>
   </section>
 
   <!-- 5 -->
@@ -533,7 +556,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span class="on">Rules</span><span>Code</span></div>
     <h2>Who wins a field</h2>
     <p class="prose">First by who wrote it, then by when it was true at the source. The server sets that time: the cited event's time, or the write time.</p>
-    <div class="ladder">
+    <div class="ladder" aria-label="Precedence: user, then integration, then agent, then system">
       <div class="rung r1"><b>user</b><small>a person</small></div><span class="gt">&gt;</span>
       <div class="rung r2"><b>integration</b><small>a sync or standalone app</small></div><span class="gt">&gt;</span>
       <div class="rung"><b>agent</b><small>an AI agent's key</small></div><span class="gt">&gt;</span>
@@ -580,10 +603,11 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <p class="caption">Accepting a pending claim re-asserts it as the reviewing person, keeping its source and time. Agents never silently overwrite people, and are never silently ignored.</p>
     </div>
 
-    <div class="three">
+    <div class="two">
       <div class="card"><span class="q">Rule 1</span><h3>Actor and source</h3><p>Every write has an actor. Every fact cites an event; without one, <code>remember</code> logs a hidden internal note to cite.</p></div>
       <div class="card"><span class="q">Rule 4</span><h3>Always recomputable</h3><p>Pending and rejected claims never count. Deleting an event retracts what cites it and recomputes the fields it was winning.</p></div>
-      <div class="card"><span class="q">Rule 5</span><h3>Serialized per record</h3><p>A row lock around insert + recompute, so two agents never lose each other's values. Deadlocks retry up to three times.</p></div>
+      <div class="card"><span class="q">Rule 5</span><h3>Serialized per record</h3><p>A row lock around insert + recompute, so two agents never lose each other's values. Deadlocks retry up to three times. <code>updatedAt</code> has microsecond precision, so a stale-write check can't pass twice.</p></div>
+      <div class="card"><span class="q">Rule 7</span><h3>Installation-owned fields</h3><p>A binding can mark a field the app controls, such as an order's status. Anyone else, a person included, gets <code>403 installation_owned</code>; others see it <code>readOnly</code>. Only an admin's <code>forget</code> overrides it.</p></div>
     </div>
   </section>
 
@@ -592,8 +616,8 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <span class="eyebrow">6 · Events</span>
     <div class="zoom"><span>Concept</span><span>System</span><span class="on">Data</span><span>Rules</span><span>Code</span></div>
     <h2>Things that happened are records too</h2>
-    <p class="prose">An object type is an <code>entity</code> (it has state people change) or an <code>event</code> (it happened and is cited as evidence). Only <code>log_event</code> creates events. The base type is <code>conversation</code>, with a <code>medium</code>: meeting, call, email, message.</p>
-    <p class="note">A hosted workspace created without a template starts from scratch, with only the hidden types; its first agent designs the rest.</p>
+    <p class="prose">An object type is an <code>entity</code> (it has state people change) or an <code>event</code> (it happened and is cited as evidence). Only <code>log_event</code> creates events. No event type is built in: the Starter template adds <code>conversation</code>, with a <code>medium</code> (meeting, call, email, message) and a <code>transcript</code>. Every event has a <code>channel</code>, the source system or account, which is part of its identity.</p>
+    <p class="note">Every new workspace starts with only the hidden types. A person picks a template at creation, or its first agent designs the schema with the <code>discover_schema</code> guide.</p>
     <div class="figure">
       <div class="scroll">
       <svg viewBox="0 0 960 300" role="img" aria-label="An event attaches to records in three ways: participant, about, and through one of its relation fields. A rollup then shows it one hop further on records those records point to, such as a company seeing calls about its deals.">
@@ -632,7 +656,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       </div>
       <p class="caption">Every list of a record's events says <code>via</code> how it got there. An event appears once: direct beats rollup.</p>
     </div>
-    <div class="two">
+    <div class="three">
       <div class="panel">
         <h3>Object or event?</h3>
         <ul class="ticks dot">
@@ -647,6 +671,14 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
           <li><span><strong>Internal note</strong>: what <code>remember</code> cites when no event is given.</span></li>
           <li><span><strong>Workspace profile</strong> (<code>workspace</code>): how the business works.</span></li>
           <li><span><strong>Member profile</strong> (<code>me</code>): private to one person, enforced by RLS.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Full text and threads</h3>
+        <ul class="ticks dot">
+          <li><span>An email's body or a meeting's transcript goes in <code>event_bodies</code>: one immutable row per event, outside field history.</span></li>
+          <li><span>Events sharing a <code>thread_id</code> read as one conversation, shown through the newest.</span></li>
+          <li><span><code>get_event_content</code> returns it, five parts per page; search matches it.</span></li>
         </ul>
       </div>
     </div>
@@ -679,12 +711,13 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="two">
       <div class="panel">
         <h3>Protected elements</h3>
-        <p class="sub">Server code finds what it depends on by universal ID: <code>person</code>, <code>company</code>, <code>task</code>, <code>task.status</code> (its <code>done</code> option), <code>task.dueDate</code>, every event type's <code>title</code> and <code>summary</code>, and the internal-note type. They can be renamed, never deleted or reshaped.</p>
+        <p class="sub">Server code depends only on the hidden types (internal note, workspace and member profiles) and every event type's <code>title</code> and <code>summary</code>. They can be renamed, never deleted or reshaped. No visible object is built in or protected: person, company and task belong to the workspace.</p>
       </div>
       <div class="panel">
         <h3>Templates</h3>
-        <div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tag">sales</span><span class="tag">services</span><span class="tag">clinic</span><span class="tag">real_estate</span><span class="tag">recruiting</span><span class="tag">blank</span></div>
-        <p class="sub">Additive only, so applying one needs no approval. Upgrades add what a workspace never had, matched by universal ID, and never re-create what it deleted.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tag">starter</span><span class="tag">sales</span><span class="tag">services</span><span class="tag">clinic</span><span class="tag">real_estate</span><span class="tag">recruiting</span></div>
+        <p class="sub">A one-time copy into an empty workspace. Starter has Person, Company, Task and Conversation; the others extend it. Chosen at creation, it applies at once. An agent's <code>apply_template</code> is a proposal, refused with <code>409 workspace_not_empty</code> once the workspace has visible schema.</p>
+        <p class="sub">Release upgrades only add missing hidden elements. They never extend a workspace's visible schema.</p>
       </div>
     </div>
   </section>
@@ -699,7 +732,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <div class="card"><span class="q">describe_schema</span><p>Objects, fields, built-ins, value formats, whether the workspace is initialized.</p></div>
       <div class="card"><span class="q">query_records</span><p>Filter, sort, page one object; <code>event</code> for every event type at once.</p></div>
       <div class="card"><span class="q">get_record</span><p>One record with links; an event with participants and <code>about</code>; newest comments.</p></div>
-      <div class="card"><span class="q">search</span><p>Keywords across records, events and facts. Postgres full-text only.</p></div>
+      <div class="card"><span class="q">search</span><p>Keywords across records, events (with their full text) and facts. Postgres full-text only.</p></div>
       <div class="card"><span class="q">get_context</span><p>A pack fitted to a token budget: fields, linked records, facts, recent events.</p></div>
       <div class="card"><span class="q">get_timeline</span><p>How a record got here: events, field changes and facts, newest first.</p></div>
     </div>
@@ -712,16 +745,16 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <span class="arr">→</span>
       <div class="node t">Fold + prefix<small>accents off, <code>'jose':* &amp; 'meet':*</code></small></div>
       <span class="arr">→</span>
-      <div class="node t">3 queries<small>entities · events · facts, ranked by <code>ts_rank_cd</code></small></div>
+      <div class="node t">3 queries<small>entities · events and their full text · facts, ranked by <code>ts_rank_cd</code></small></div>
       <span class="arr">→</span>
       <div class="node k">No record hits?<small>trigram on labels: "Dana Levy" finds "Dana Levi"</small></div>
     </div>
-    <p class="note">Beyond these, MCP has tools for the change feed, files, extensions and routines: 35 tools in all.</p>
+    <p class="note">A hit found only in an event's full text says <code>match: "content"</code> and ranks below title and summary matches. Beyond these six, MCP has tools for workspaces, the change feed, event full text, files, extensions and routines: 37 tools in all.</p>
     <p class="note">No embeddings and no BM25: plain Postgres with <code>pg_trgm</code>, <code>btree_gin</code> and <code>unaccent</code>. Every index leads with <code>workspace_id</code>.</p>
 
     <h3>How a context pack fills its budget</h3>
     <div class="figure">
-      <div class="budget">
+      <div class="budget" aria-label="Context pack: current field values always, then linked records, facts and recent events until the budget is spent">
         <div class="f">Field values (always)</div>
         <div class="t">Linked records</div>
         <div class="fa">Current facts</div>
@@ -739,7 +772,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <p class="prose">Deleting hides a record and retracts what its events supported. <code>forget</code> erases a person for real, and only a person with <code>admin</code> can run it.</p>
     <ol class="track" style="--n:5">
       <li class="k"><span class="n">1</span><h3>Suppress</h3><p>Emails and phones as keyed HMACs, so they can't come back.</p></li>
-      <li class="k"><span class="n">2</span><h3>Erase events</h3><p>Events they took part in, with what rested only on them. Tombstone the identity.</p></li>
+      <li class="k"><span class="n">2</span><h3>Erase events</h3><p>Events they took part in, with what rested only on them, and whole threads. Tombstone the identity.</p></li>
       <li class="k"><span class="n">3</span><h3>Fix the rest</h3><p>Remove inbound relations and recompute surviving records.</p></li>
       <li class="k"><span class="n">4</span><h3>Hard delete</h3><p>Record, claims, facts, links, identifiers, comments, stored responses.</p></li>
       <li class="t"><span class="n">5</span><h3>Audit</h3><p>Actor, time and counts only. No names or values.</p></li>
@@ -751,7 +784,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
           <li><span>A workspace privacy lock: writes take it shared, <code>forget</code> exclusively</span></li>
           <li><span>The HMAC key lives outside the database (<code>RETAINER_SUPPRESSION_KEY</code>)</span></li>
           <li><span>Routines: stored tool and model results are cleared, and queued or running runs end as <code>erased</code></span></li>
-          <li><span>Candidates for human review: other records mentioning the name</span></li>
+          <li><span>Candidates for human review: other records mentioning the name, and events whose full text names them or carries their handles</span></li>
         </ul>
       </div>
       <div class="panel">
@@ -759,6 +792,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <ul class="ticks no">
           <li><span>Finding every fact that mentions the person on another record</span></li>
           <li><span>Redacting only one person from a shared meeting: the whole event goes</span></li>
+          <li><span>Agent chats: a chat's history goes only when its person deletes it (tasks after 7 days, everything with the workspace)</span></li>
           <li><span>Backups: the operator's responsibility</span></li>
         </ul>
       </div>
@@ -789,7 +823,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         </ul>
       </div>
     </div>
-    <div class="chain">
+    <div class="chain" aria-label="Merge B into A">
       <div class="node t">Lock A and B<small><code>FOR UPDATE</code>, sorted IDs</small></div>
       <span class="arr">→</span>
       <div class="node t">Move B's claims<small>assertions, facts, links, comments, participant matches</small></div>
@@ -798,7 +832,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
       <span class="arr">→</span>
       <div class="node e">B soft-deleted<small><code>merged_into_id = A</code>; reads of B return A</small></div>
     </div>
-    <p class="note">Workers also run the extension and routine executors, change dispatch and file maintenance. Routine code runs in the same closed sandbox, with a run token of agent rank (ARCHITECTURE.md 4.7).</p>
+    <p class="note">Workers also run the extension and routine executors, change dispatch and file maintenance. Routine code runs in the same closed sandbox, with a run token of agent rank (ARCHITECTURE.md 4.7). Routines and extensions can hand a task to the workspace agent and wait for its answer (section 2).</p>
   </section>
 
   <!-- 11 -->
@@ -809,7 +843,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <p class="prose">The workspace is the security boundary. The application checks access, and Postgres row-level security checks it again on every query.</p>
     <div class="figure">
       <div class="scroll">
-      <svg viewBox="0 0 960 290" role="img" aria-label="Five credentials, an API key, a web session cookie, an MCP OAuth token, an installation OAuth token or key, and a run token, are authenticated into one Caller with a workspace, actor, scopes and optional person. The Caller sets app.workspace_id and app.user_id, which row-level security uses.">
+      <svg viewBox="0 0 960 340" role="img" aria-label="Six credentials, an API key, a web session cookie, an MCP OAuth token, an installation OAuth token or key, a run token and an agent turn token, are authenticated into one Caller with a workspace, actor, scopes and optional person. The Caller sets app.workspace_id and app.user_id, which row-level security uses.">
         <defs>
           <marker id="a11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
         </defs>
@@ -820,7 +854,8 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <rect x="20" y="84" width="300" height="40" rx="8" class="b-out"/><text x="34" y="109">Session cookie <tspan class="small">· people in the web app</tspan></text>
         <rect x="20" y="134" width="300" height="40" rx="8" class="b-out"/><text x="34" y="159">MCP OAuth token <tspan class="small">· /mcp, actor agent</tspan></text>
         <rect x="20" y="184" width="300" height="40" rx="8" class="b-out"/><text x="34" y="209">Installation token or key <tspan class="small">· /v1</tspan></text>
-        <rect x="20" y="234" width="300" height="40" rx="8" class="b-ext"/><text x="34" y="259">Run token <tspan class="small">· one extension run</tspan></text>
+        <rect x="20" y="234" width="300" height="40" rx="8" class="b-ext"/><text x="34" y="259">Run token <tspan class="small">· one extension or routine run</tspan></text>
+        <rect x="20" y="284" width="300" height="40" rx="8" class="b-trusted"/><text x="34" y="309">Agent turn token <tspan class="small">· one turn, the caller's access</tspan></text>
 
         <rect x="400" y="94" width="220" height="120" rx="10" class="b-trusted"/>
         <text x="510" y="122" text-anchor="middle" style="font-weight:600">Caller</text>
@@ -841,6 +876,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <line x1="322" y1="154" x2="398" y2="154" class="arrow" marker-end="url(#a11)"/>
         <line x1="322" y1="204" x2="398" y2="174" class="arrow" marker-end="url(#a11)"/>
         <line x1="322" y1="254" x2="398" y2="190" class="arrow" marker-end="url(#a11)"/>
+        <line x1="322" y1="304" x2="398" y2="206" class="arrow" marker-end="url(#a11)"/>
         <line x1="622" y1="154" x2="698" y2="154" class="arrow" marker-end="url(#a11)"/>
         <text x="630" y="146" class="small">inWorkspace</text>
       </svg>
@@ -849,7 +885,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <div class="two">
       <div class="panel">
         <h3>Key mode (default)</h3>
-        <p class="sub">An operator creates workspaces and keys with the CLI. Self-hosted starts with one workspace and an admin key printed on first boot. The web app signs in with a key, kept in an HTTP-only cookie.</p>
+        <p class="sub">An operator creates workspaces and keys with <code>retainer-ops</code>. Self-hosted starts with one workspace and an admin key printed on first boot. The web app signs in with a key, kept in an HTTP-only cookie.</p>
       </div>
       <div class="panel">
         <h3>Accounts mode</h3>
@@ -857,6 +893,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
         <div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tag">viewer = read</span><span class="tag">editor = read, write</span><span class="tag">admin = all four</span></div>
       </div>
     </div>
+    <p class="note">An MCP connection works in one workspace: picked when connecting to <code>/mcp</code>, or pinned by <code>/mcp/w/&lt;workspace ID&gt;</code>. <code>list_workspaces</code> gives each workspace's pinned address.</p>
     <p class="note">Human-only actions check the actor, not the scope: <code>forget</code>, destructive schema changes, merges, accepting review items and moving events all need a <code>user</code>. An agent with an admin key still can't do them.</p>
   </section>
 
@@ -865,7 +902,7 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
     <span class="eyebrow">12 · Code layout</span>
     <div class="zoom"><span>Concept</span><span>System</span><span>Data</span><span>Rules</span><span class="on">Code</span></div>
     <h2>Packages, then the server's six layers</h2>
-    <p class="prose">Server code is AGPL; everything a client imports is MIT. Inside the server, a module imports only its own layer and those below. <code>pnpm lint</code> enforces both.</p>
+    <p class="prose">Server code is AGPL; everything a client imports is MIT. Inside the server, a folder imports only its own layer and those below. <code>pnpm lint</code> enforces both.</p>
     <div class="tablewrap">
       <table>
         <thead><tr><th>Package</th><th>License</th><th>Holds</th></tr></thead>
@@ -874,21 +911,23 @@ svg .keytxt { fill: var(--key); font-weight: 600; }
           <tr><th><code>shared</code></th><td>MIT</td><td>Field types, composite shapes, actor, schema types</td></tr>
           <tr><th><code>sdk</code></th><td>MIT</td><td>TypeScript client</td></tr>
           <tr><th><code>web</code></th><td>MIT</td><td>Optional React app for people</td></tr>
+          <tr><th><code>cli</code></th><td>MIT</td><td><code>retainer</code>: browser-authenticated CLI for workspace administration</td></tr>
           <tr><th><code>mcp</code></th><td>MIT</td><td>stdio bridge to the hosted MCP endpoint</td></tr>
           <tr><th><code>extension</code></th><td>MIT</td><td>SDK for writing extension functions</td></tr>
           <tr><th><code>runner</code></th><td>MIT</td><td>First-party extension and routine code that runs in the sandbox</td></tr>
+          <tr><th><code>agent</code></th><td>MIT</td><td>The workspace agent: Mastra's loop, its store, tools and the chat stream</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="stack">
-      <div class="layer"><div class="name">Entry<small>start the server, CLI, Lambda</small></div><div class="tags"><span class="tag">index</span><span class="tag">cli</span><span class="tag">lambda</span><span class="tag">egress-proxy</span><span class="tag">extension-launcher</span><span class="tag">file-server</span></div></div>
+    <div class="stack" aria-label="Server layers from top to bottom">
+      <div class="layer"><div class="name">Entry<small>start the server, CLI, Lambda</small></div><div class="tags"><span class="tag">index</span><span class="tag">cli</span><span class="tag">migrate</span><span class="tag">lambda</span><span class="tag">egress-proxy</span><span class="tag">extension-launcher</span><span class="tag">file-server</span></div></div>
       <div class="layer"><div class="name">Interfaces<small>the ways in</small></div><div class="tags"><span class="tag">api</span><span class="tag">mcp</span><span class="tag">worker</span><span class="tag">operator</span><span class="tag">auth</span><span class="tag">http</span><span class="tag">accounts</span><span class="tag">egress</span><span class="tag">model</span><span class="tag">launcher</span><span class="tag">extension-control</span><span class="tag">webhooks</span></div></div>
-      <div class="layer l-meta"><div class="name">Admin<small>schema, workspaces, extensions</small></div><div class="tags"><span class="tag">schema-engine</span><span class="tag">templates</span><span class="tag">workspaces</span><span class="tag">extensions</span><span class="tag">routines</span></div></div>
+      <div class="layer l-meta"><div class="name">Admin<small>schema, workspaces, extensions, agent sessions</small></div><div class="tags"><span class="tag">schema-engine</span><span class="tag">templates</span><span class="tag">workspaces</span><span class="tag">extensions</span><span class="tag">routines</span><span class="tag">agent-sessions</span></div></div>
       <div class="layer"><div class="name">Features<small>built on records and memory</small></div><div class="tags"><span class="tag">views</span><span class="tag">comments</span><span class="tag">retrieval</span><span class="tag">reads</span></div></div>
       <div class="layer l-rec"><div class="name">Core<small>the write rules</small></div><div class="tags"><span class="tag">records</span><span class="tag">memory</span><span class="tag">privacy</span><span class="tag">files</span><span class="tag">sources</span><span class="tag">changes</span></div></div>
-      <div class="layer l-mem"><div class="name">Foundation<small>database, reading a schema</small></div><div class="tags"><span class="tag">db</span><span class="tag">schema</span><span class="tag">caller</span><span class="tag">idempotency</span><span class="tag">stable-json</span><span class="tag">config</span><span class="tag">errors</span><span class="tag">log</span><span class="tag">version</span><span class="tag">extension-runtime</span><span class="tag">routine-runtime</span><span class="tag">file-storage</span></div></div>
+      <div class="layer l-mem"><div class="name">Foundation<small>database, reading a schema</small></div><div class="tags"><span class="tag">db</span><span class="tag">schema</span><span class="tag">caller</span><span class="tag">idempotency</span><span class="tag">stable-json</span><span class="tag">config</span><span class="tag">errors</span><span class="tag">log</span><span class="tag">version</span><span class="tag">extension-runtime</span><span class="tag">routine-runtime</span><span class="tag">agent-runtime</span><span class="tag">file-storage</span></div></div>
     </div>
-    <p class="note">Imports point down only. Core modules may import each other (events are records); nothing else may form a cycle. Only <code>api</code>, <code>extension-control</code>, <code>operator</code> and <code>lambda</code> may import <code>model</code>.</p>
+    <p class="note">Imports point down only. Core folders may import each other (events are records); nothing else may form a cycle. Only <code>api</code>, <code>extension-control</code>, <code>operator</code> and <code>lambda</code> may import <code>model</code>. The core never imports <code>agent-sessions</code> or <code>agent-runtime</code>, so <code>forget</code> doesn't reach agent chats.</p>
   </section>
 
 </main>
