@@ -1,0 +1,63 @@
+---
+title: Access and approvals
+description: Review a schema change from the terminal and understand when Retainer asks for browser approval.
+---
+
+A signed-in CLI can read what your workspace and organization roles allow. To act on a review item or make other administrative changes, approve a temporary elevation or confirm the individual action in the browser.
+
+| Browser step | When it applies |
+| --- | --- |
+| Temporary elevation | Decisions such as approving schema changes or accepting pending field values. The window covers one workspace or organization, lasts 30 minutes by default, and can last up to 60 minutes. |
+| Individual approval | Actions such as creating an API key, deleting a workspace, or granting or removing owner access. After confirming, rerun the same command with `--approval <id>` when its syntax supports that flag. |
+| Review in the web app | Approving a routine or installing, configuring, or upgrading an extension. Finish the action on the page the CLI returns. |
+
+<Callout type="warn" title="Elevation applies to the local login">
+Other processes using the same local login can use the window. End it when you're done. Your account also lists active windows and lets you end them. An enrolled passkey requires device verification for approval. Otherwise, approval requires a recent sign-in.
+</Callout>
+
+## Review a proposed schema change
+
+<Steps>
+<Step>
+
+### Find the proposal
+
+```sh
+retainer schema-changes --workspace sales
+```
+
+Read the proposal and copy its ID. Use your own workspace slug in the commands below.
+
+</Step>
+<Step>
+
+### Approve a short window
+
+```sh
+retainer elevate --workspace sales --minutes 10 --reason "Review the proposed schema change"
+```
+
+Open the returned URL, confirm the target and duration, and approve. Then check that the browser step completed using the printed ID.
+
+```sh
+retainer wait <approval-id>
+```
+
+</Step>
+<Step>
+
+### Make the decision and close the window
+
+```sh
+retainer schema-changes approve <change-id> --workspace sales
+retainer elevate --end --workspace sales
+```
+
+Choose `schema-changes reject` with the same ID if the proposal should be declined.
+
+</Step>
+</Steps>
+
+<Card title="Check what a command requires" href="/docs/cli/commands/">
+  See the target, approval requirements, and an example for every command.
+</Card>

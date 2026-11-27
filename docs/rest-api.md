@@ -1,7 +1,7 @@
 # REST API
 
 Everything an agent can do over MCP, and the review operations people use, is
-available over REST under `/v1`. The [TypeScript SDK](sdk.md) wraps every
+available over REST under `/v1`. The [TypeScript SDK](sdk.mdx) wraps every
 route.
 
 ## Authentication

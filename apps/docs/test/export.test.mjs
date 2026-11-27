@@ -187,3 +187,35 @@ test('privacy erasure exposes its named counts', async () => {
   assert.equal(counts.properties.files.type, 'integer');
   assert.equal(counts.properties.sourceItems.type, 'integer');
 });
+
+test('the CLI section and SDK reference are exported and searchable', async () => {
+  const cli = await readFile('out/docs/cli/index.html', 'utf8');
+  const sdk = await readFile('out/docs/sdk/index.html', 'utf8');
+  assert.match(cli, /href="\/docs\/cli\/approvals\//);
+  assert.match(cli, /href="\/docs\/cli\/commands\//);
+  assert.match(sdk, /href="\/docs\/api\/records\/query-records\//);
+
+  const commandReference = await readFile('out/llms.mdx/docs/cli/commands.md', 'utf8');
+  const { commandGroups } = await import('../../../packages/cli/src/commands.ts');
+  for (const { commands } of commandGroups) {
+    for (const [name, args] of commands) {
+      assert.ok(commandReference.includes(`### \`${name}\``), name);
+      assert.ok(commandReference.includes(`retainer ${name}${args ? ` ${args}` : ''}\n`), name);
+    }
+  }
+
+  const sdkReference = await readFile('out/llms.mdx/docs/sdk.md', 'utf8');
+  assert.match(sdkReference, /### RetainerClientOptions[\s\S]*\x60baseUrl\x60/);
+  assert.match(sdkReference, /Keep workspace API keys on the server/);
+
+  const data = await readFile('out/search-index.json');
+  const from = `data:application/json;base64,${data.toString('base64')}`;
+  const cliSearch = staticClient({ from, tag: 'cli' });
+  const apiSearch = staticClient({ from, tag: 'api' });
+  assert.ok(
+    (await cliSearch.search('key create')).some(({ url }) => url.includes('/docs/cli/commands')),
+  );
+  assert.ok(
+    (await apiSearch.search('RetainerClientOptions')).some(({ url }) => url.includes('/docs/sdk')),
+  );
+});

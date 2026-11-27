@@ -1,4 +1,5 @@
 import api from '../../../docs/api/meta.json' with { type: 'json' };
+import cli from '../../../docs/cli/meta.json' with { type: 'json' };
 import guides from '../../../docs/guides/meta.json' with { type: 'json' };
 import mcp from '../../../docs/mcp/meta.json' with { type: 'json' };
 
@@ -8,6 +9,7 @@ import mcp from '../../../docs/mcp/meta.json' with { type: 'json' };
 const sections = [
   ['guides', guides.pages, []],
   ['mcp', mcp.pages, ['mcp']],
+  ['cli', cli.pages, ['cli']],
   ['api', api.pages, ['api']],
 ] as const;
 
@@ -18,7 +20,11 @@ for (const [folder, pages, prefix] of sections) {
     if (entry.startsWith('---')) continue;
     const path = entry.startsWith('../') ? entry.slice(3) : `${folder}/${entry}`;
     const name = path.slice(path.lastIndexOf('/') + 1);
-    guideSlugs.set(path, name === 'index' ? [...prefix] : [...prefix, name]);
+    // Preserve the existing SDK permalink when moving it into the API sidebar.
+    guideSlugs.set(
+      path,
+      path === 'sdk' ? ['sdk'] : name === 'index' ? [...prefix] : [...prefix, name],
+    );
   }
 }
 

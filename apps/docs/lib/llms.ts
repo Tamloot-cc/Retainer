@@ -35,6 +35,10 @@ export const docsLlms = llms(source, {
       (await renderPlaceholder(await page.data.getText('processed'), {
         Card: ({ attributes, children }) =>
           `\n- [${attributes.title}](${attributes.href})${children.trim() ? ` — ${children.trim()}` : ''}\n`,
+        Callout: ({ attributes, children }) =>
+          `\n\n**${attributes.title}**\n\n${children.trim()}\n\n`,
+        Accordion: ({ attributes, children }) =>
+          `\n\n**${attributes.title}**\n\n${children.trim()}\n\n`,
         Tab: ({ attributes, children }) => `\n\n**${attributes.value}**\n\n${children.trim()}\n\n`,
       }))
     );

@@ -1,0 +1,5 @@
+{
+  "title": "CLI",
+  "root": true,
+  "pages": ["index", "approvals", "commands"]
+}

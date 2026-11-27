@@ -338,4 +338,4 @@ Give each agent its own key. Every write is attributed to the agent that made
 it; between agents the most recent observation wins, and the full history of
 each field stays available through the REST API and the web app.
 
-For workspace administration and human review decisions, see the [Retainer CLI guide](cli.md).
+For workspace administration and human review decisions, see the [Retainer CLI guide](cli/index.mdx).

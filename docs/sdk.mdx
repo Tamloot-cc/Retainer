@@ -1,42 +1,107 @@
-# TypeScript SDK
+---
+title: TypeScript SDK
+description: Install @retainer/sdk, make a first API request, and work with typed Retainer records.
+---
 
-`@retainer/sdk` is a typed client for the [REST API](rest-api.md), one method
-per route. It runs anywhere `fetch` does (Node 24+, browsers, edge runtimes)
-and is MIT-licensed. Response and schema types come from `@retainer/shared`.
+`@retainer/sdk` is a typed client for the [Retainer REST API](rest-api.md). It uses `fetch` and supports Node.js 24+, browsers, and edge runtimes. Response and schema types come from `@retainer/shared`.
 
-```sh
+## Quickstart
+
+<Steps>
+<Step>
+
+### Install the package
+
+```npm
 npm install @retainer/sdk
 ```
 
-The package is not on npm until the first release is published; see
-[Releasing](releasing.md).
+</Step>
+<Step>
 
-## Create a client
+### Create a client
 
-```ts
+Create a read-scoped workspace API key in Retainer and set it as `RETAINER_API_KEY` in your server or script environment. Use your instance's origin as `baseUrl`.
+
+```ts title="retainer.ts"
 import { RetainerClient } from '@retainer/sdk';
 
+const apiKey = process.env.RETAINER_API_KEY;
+if (!apiKey) throw new Error('Set RETAINER_API_KEY before running this example.');
+
 const retainer = new RetainerClient({
-  baseUrl: 'https://retainer.example',
-  apiKey: process.env.RETAINER_API_KEY,
+  baseUrl: 'https://retainer.tamloot.cc', // [!code highlight]
+  apiKey,
 });
 ```
 
-| Option           | Purpose                                                                                                         |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| `baseUrl`        | The server's origin. Required.                                                                                  |
-| `apiKey`         | Sent as `Authorization: Bearer <key>`.                                                                          |
-| `fetch`          | A custom `fetch`, e.g. for proxies, retries or tests.                                                           |
-| `credentials`    | Browser only: `'include'` to authenticate with the web session cookie instead of an API key.                    |
-| `workspace`      | Accounts mode, with a session cookie: the workspace ID sent as `X-Retainer-Workspace`. Ignored with an API key. |
-| `onUnauthorized` | Called on any 401, e.g. to send a browser back to sign-in.                                                      |
+<Callout type="warn" title="Keep workspace API keys on the server">
+Use your server or a local script for this example. When running in the browser with a signed-in Retainer session, use the session cookie flow.
+</Callout>
 
-Like MCP, the key decides the workspace and the actor its writes are
-attributed to.
+</Step>
+<Step>
+
+### Verify access and read the schema
+
+Using the same client, make these read-only calls. Check the caller identity and use the schema to find the object and field names your workspace accepts.
+
+```ts title="retainer.ts"
+console.log(await retainer.me());
+console.log(await retainer.schema());
+```
+
+</Step>
+</Steps>
+
+<Cards>
+  <Card title="Caller identity" href="/docs/api/workspace/get-caller/">
+    See the workspace, actor, and scopes returned by the API.
+  </Card>
+  <Card title="Workspace schema" href="/docs/api/schema/get-schema/">
+    Inspect the objects and fields you can read and write.
+  </Card>
+</Cards>
+
+## Client options
+
+Pass a `RetainerClientOptions` object to `new RetainerClient(...)`. A workspace API key determines the workspace, scopes, and actor that receives attribution for writes.
+
+<auto-type-table path="../packages/sdk/src/index.ts" name="RetainerClientOptions" />
+
+<Accordions>
+<Accordion title="Use a signed-in web session">
+
+Serve the browser client on the Retainer origin, or use a reverse proxy that serves both the client and Retainer API on the same configured public origin. Use that origin as `baseUrl` and let the SDK send the session cookie with its default `credentials: 'same-origin'`. In accounts mode, pass the workspace ID as `workspace`. See [REST authentication](rest-api.md#authentication).
+
+</Accordion>
+<Accordion title="Use a standalone app installation token">
+
+For a separately hosted app, call Retainer from the app’s server with a REST installation OAuth token as `apiKey`. The installation grant determines which workspace and operations the app can access. See [Standalone apps](standalone-apps.md).
+
+</Accordion>
+</Accordions>
+
+## Query and paginate records
+
+Use the object name from `retainer.schema()`. Pass the returned `nextCursor` to the next request with the same query and stop when it is null. See [Query records](/docs/api/records/query-records/) for the request and response contract.
+
+```ts title="Read all company pages"
+const query = { limit: 50 };
+let cursor: string | undefined;
+
+do {
+  const page = await retainer.queryRecords('company', { ...query, cursor });
+  for (const company of page.records) console.log(company.id);
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+```
 
 ## Write what happened
 
-```ts
+Use a workspace key with write access for this example. Log the event first, then cite its ID as the source of a record update. See [Log an event](/docs/api/events/log-event/) for the event request and response.
+
+```ts title="Write with provenance"
 const acme = await retainer.createRecord('company', { values: { name: 'Acme' } });
 const dana = await retainer.upsertRecord('person', {
   match: { emails: 'dana@acme.com' },
@@ -222,7 +287,7 @@ try {
 }
 ```
 
-The client does not retry by itself. A workspace over its
+Outside the maintenance behavior below, handle retries in the caller. A workspace over its
 [rate limit](rest-api.md#rate-limits) gets a 429 `rate_limited`, whose
 `details.retryAfter` is the number of seconds to wait; a query stopped by the
 server's statement timeout gets a 503 `timeout`.

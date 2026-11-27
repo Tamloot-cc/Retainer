@@ -4,6 +4,7 @@
   "pages": [
     "index",
     "../rest-api",
+    "../sdk",
     "workspace",
     "schema",
     "records",

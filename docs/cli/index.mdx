@@ -1,0 +1,126 @@
+---
+title: Retainer CLI
+description: Sign in from your terminal, select a workspace, and review changes with the Retainer CLI.
+---
+
+Use `retainer` to inspect workspaces, manage access, review proposed changes, and chat with a workspace agent from your terminal. The CLI signs in through your browser and uses your Retainer account's workspace and organization roles.
+
+<Callout title="Requires Node.js 24+ and a Retainer account">
+The CLI works with hosted Retainer and self-hosted servers running in accounts mode. Use [Retainer MCP](../mcp/index.mdx) for direct record work and [`retainer-ops`](../self-hosting.md) for server operations that connect directly to Postgres.
+</Callout>
+
+## Get started
+
+<Steps>
+<Step>
+
+### Install the CLI
+
+<Tabs items={['npm', 'pnpm', 'bun']}>
+
+<Tab value="npm">
+
+```sh
+npm install --global @retainer/cli
+```
+
+</Tab>
+
+<Tab value="pnpm">
+
+```sh
+pnpm add --global @retainer/cli
+```
+
+</Tab>
+
+<Tab value="bun">
+
+```sh
+bun add --global @retainer/cli
+```
+
+</Tab>
+
+</Tabs>
+
+Run `retainer --help` to confirm the command is available.
+
+</Step>
+<Step>
+
+### Sign in through the browser
+
+<Tabs items={['Hosted', 'Self-hosted']}>
+
+<Tab value="Hosted">
+
+```sh
+retainer login --server https://retainer.tamloot.cc
+```
+
+</Tab>
+
+<Tab value="Self-hosted">
+
+Use the origin of your accounts-mode Retainer instance.
+
+```sh
+retainer login --server https://retainer.example.com
+```
+
+</Tab>
+
+</Tabs>
+
+The command prints a URL and a login ID, then returns. Open the URL in a browser on the same machine, sign in, and allow the connection. Use the printed ID to confirm when it finishes.
+
+```sh
+retainer wait <login-id>
+```
+
+</Step>
+<Step>
+
+### Select a workspace and inspect its review queue
+
+```sh
+retainer workspaces
+retainer use sales
+retainer whoami
+retainer review --workspace sales
+```
+
+Replace `sales` with the slug or ID from `retainer workspaces`. `retainer use` saves a default workspace for that server. Pass `--workspace` explicitly to target a different workspace or to make the target clear in a script. Run `retainer review` without a target to see the account-wide overview.
+
+</Step>
+</Steps>
+
+<Cards>
+  <Card title="Access and approvals" href="/docs/cli/approvals/">
+    Approve a schema change and learn when a command opens the browser.
+  </Card>
+  <Card title="Command reference" href="/docs/cli/commands/">
+    Find commands, syntax, examples, and exit codes.
+  </Card>
+</Cards>
+
+## Troubleshooting
+
+<Accordions>
+<Accordion title="The login URL opens on the wrong machine">
+
+Open the link on the machine running `retainer login`. The browser sends the result to the local CLI process.
+
+</Accordion>
+<Accordion title="The CLI is using a different server or workspace">
+
+Run `retainer whoami` to inspect the selected server, account, and workspace. Pass `--server` and `--workspace` explicitly when switching targets. `RETAINER_URL` and `RETAINER_WORKSPACE` can also set defaults.
+
+</Accordion>
+<Accordion title="I need to disconnect this machine">
+
+Run `retainer logout` or revoke the login from **Your account → Connected apps**. The CLI stores credentials per server in `~/.config/retainer/credentials.json` and honors `XDG_CONFIG_HOME`.
+
+</Accordion>
+</Accordions>

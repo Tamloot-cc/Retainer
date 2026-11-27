@@ -39,6 +39,7 @@ export default function DocsSearch(props: SharedProps) {
             <TagsListItem value="all">All</TagsListItem>
             <TagsListItem value="guides">Guides</TagsListItem>
             <TagsListItem value="mcp">MCP</TagsListItem>
+            <TagsListItem value="cli">CLI</TagsListItem>
             <TagsListItem value="api">API Reference</TagsListItem>
           </TagsList>
         </SearchDialogFooter>

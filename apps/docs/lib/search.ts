@@ -2,6 +2,12 @@ import { createFromSource } from 'fumadocs-core/search/server';
 import { operationLabel } from './doc-page';
 import { source } from './source';
 
+function searchTag(section?: string) {
+  if (section === 'sdk') return 'api';
+  if (section === 'mcp' || section === 'cli' || section === 'api') return section;
+  return 'guides';
+}
+
 export const docsSearch = createFromSource(source, {
   language: 'english',
   // Search results keep their relevance order, so skip the sort index it would ship.
@@ -16,7 +22,7 @@ export const docsSearch = createFromSource(source, {
       description: [alias, page.data.description].filter(Boolean).join(' '),
       url: page.url,
       id: page.url,
-      tag: page.slugs[0] === 'mcp' ? 'mcp' : page.slugs[0] === 'api' ? 'api' : 'guides',
+      tag: searchTag(page.slugs[0]),
       structuredData: page.data.structuredData,
     };
   },
