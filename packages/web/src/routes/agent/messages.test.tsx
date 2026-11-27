@@ -17,6 +17,7 @@ describe('ChatMessages', () => {
     render(
       <ChatMessages
         streaming
+        mood="reading"
         messages={[
           asked('Who is Dana?'),
           answered([
@@ -34,9 +35,30 @@ describe('ChatMessages', () => {
     const now = screen.getByRole('button', { name: /Searching for “Dana”\s*2 steps/ });
     expect(now.getAttribute('aria-expanded')).toBe('true');
     expect(now.querySelector('[data-status=running]')).toBeTruthy();
+    expect(now.querySelector('.lucide-loader-circle')).toBeNull();
+    expect(now.querySelector('.lucide-chevron-right')).toBeTruthy();
     // The running call inside is a plain line: nothing to open until its result is in.
     const inside = screen.getAllByText('Searching for “Dana”').at(-1);
     expect(inside?.closest('button')).toBeNull();
+    expect(
+      inside?.closest('[data-status=running]')?.querySelector('.lucide-loader-circle'),
+    ).toBeTruthy();
+  });
+
+  it('uses the logo for a single running first step and keeps its finished icon', () => {
+    const messages = [
+      answered([{ type: 'reasoning', text: 'Check the workspace.', state: 'streaming' }]),
+    ];
+    const { rerender } = render(<ChatMessages streaming mood="thinking" messages={messages} />);
+    const thinking = screen.getByRole('button', { name: 'Thinking' });
+    expect(thinking.querySelector('[data-status=running]')).toBeTruthy();
+    expect(thinking.querySelector('.lucide-loader-circle')).toBeNull();
+    expect(thinking.querySelector('.lucide-chevron-right')).toBeTruthy();
+
+    rerender(<ChatMessages mood="done" messages={messages} />);
+    expect(
+      screen.getByRole('button', { name: 'Thought' }).querySelector('.lucide-brain'),
+    ).toBeTruthy();
   });
 
   it('folds finished steps into what the agent did, and marks a failure', async () => {
