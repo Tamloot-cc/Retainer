@@ -23,7 +23,7 @@ export function translateDashboard(
   schema: CompiledSchema,
   mode: 'store' | 'read',
 ) {
-  const { queries, problems } = inspectDashboard(program, mode === 'read');
+  const { queries, problems, parsed } = inspectDashboard(program, mode === 'read');
   const issues: DashboardIssue[] = [...problems];
   const rewritten = rewriteQueries(program, queries, (query) => {
     const name = query.args.object;
@@ -150,5 +150,5 @@ export function translateDashboard(
     validate(() => checkAggregate(tx, schema, object, mode === 'store' ? args : translated));
     return translated;
   });
-  return { program: rewritten, issues, queries };
+  return { program: rewritten, issues, queries, parsed };
 }

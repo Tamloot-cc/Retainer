@@ -132,6 +132,85 @@ it('allows only one concurrent update for a revision', async () => {
   expect(attempts.map(({ status }) => status).sort()).toEqual([200, 409]);
 });
 
+it('checks live metric values, catches option and pagination mistakes, and accepts a zero count', async () => {
+  const mcp = await app.mcpClient(keys.viewer);
+  try {
+    const metricProgram = `root = Dashboard("Won deals", [Metric("Mismatch", count), Metric("Valid", @Count(@Filter(rows.records, "stageName", "==", "Won"))), Metric("Zero", empty.total), Metric("Bad value", empty.groups)])
+rows = Query("query_records", {object: "deal", fields: {stageName: "stage"}}, {records: []})
+count = @Count(filtered)
+filtered = @Filter(rows.records, "stageName", "==", "won")
+empty = Query("aggregate_records", {object: "deal", search: "no-matching-deal"}, {total: 9})`;
+    const result = (await mcp.call('check_dashboard', { program: metricProgram })).body;
+    expect(result).toEqual({
+      ok: false,
+      problems: [
+        {
+          statement: 'root.0',
+          message: expect.stringContaining('uses the stored option "won"'),
+        },
+        {
+          statement: 'root.3',
+          message: 'The metric value does not resolve to a supported display value.',
+        },
+      ],
+      queries: [
+        { statement: 'rows', rows: 1 },
+        { statement: 'empty', rows: 0 },
+      ],
+    });
+
+    const key = keys.owner;
+    // Use a separate object so this fixture does not change the baseline deal totals.
+    expect(
+      (
+        await schemaChange([
+          {
+            op: 'create_field',
+            object: 'company',
+            field: {
+              name: 'dashboardTags',
+              label: 'Dashboard tags',
+              type: 'multi_select',
+              isFilterable: true,
+              settings: { options: [{ value: 'competitor', label: 'Competitor' }] },
+            },
+          },
+        ])
+      ).body.status,
+    ).toBe('applied');
+    for (const name of ['First', 'Second']) {
+      expect(
+        (
+          await app.request('/v1/objects/company/records', {
+            key,
+            body: { values: { name, dashboardTags: ['competitor'] } },
+          })
+        ).status,
+      ).toBe(201);
+    }
+    const pageProgram = `root = Dashboard("Companies", [count, Metric("Competitors", competitors.total)])
+rows = Query("query_records", {object: "company", limit: 1, fields: {tagLabels: "dashboardTags"}}, {records: []})
+count = Metric("Companies", @Count(@Filter(rows.records, "tagLabels", "contains", "competitor")))
+competitors = Query("aggregate_records", {object: "company", filter: {dashboardTags: {contains: "competitor"}}}, {total: null})`;
+    expect((await mcp.call('check_dashboard', { program: pageProgram })).body).toEqual({
+      ok: false,
+      problems: [
+        { statement: 'count', message: expect.stringContaining('partial page of records') },
+        {
+          statement: 'count',
+          message: expect.stringContaining('uses the stored option "competitor"'),
+        },
+      ],
+      queries: [
+        { statement: 'rows', rows: 1 },
+        { statement: 'competitors', rows: 2 },
+      ],
+    });
+  } finally {
+    await mcp.close();
+  }
+});
+
 it('exposes the read tools over MCP and keeps the dashboard guide hint in web chat context', async () => {
   const mcp = await app.mcpClient(keys.viewer);
   try {

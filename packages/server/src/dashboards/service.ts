@@ -2,6 +2,8 @@ import {
   type Actor,
   type DashboardSummary,
   type DashboardVisibility,
+  dashboardAggregateData,
+  dashboardRecordData,
   SAVED_VIEW_VISIBILITIES,
   type SavedDashboard,
   sameActor,
@@ -16,7 +18,8 @@ import { admitCaller } from '../extension-runtime/admission.js';
 import { aggregateInputSchema } from '../records/aggregate.js';
 import { queryInputSchema } from '../records/query.js';
 import { aggregate, findRecords } from '../records/service.js';
-import { type CompiledSchema, getSchema } from '../schema/compiled.js';
+import { type CompiledSchema, getSchema, objectNamed } from '../schema/compiled.js';
+import { checkDashboardMetrics, type DashboardRecordRead } from './check.js';
 import { translateDashboard } from './translate.js';
 
 const visibility = z.enum(SAVED_VIEW_VISIBILITIES);
@@ -207,26 +210,49 @@ export function deleteDashboard(sql: Sql, caller: Caller, id: string) {
 }
 
 export async function checkDashboard(sql: Sql, caller: Caller, program: string) {
-  const { issues: problems, queries } = await workspace(sql, caller, 'readSchema', async (tx) =>
-    translateDashboard(tx, program, await getSchema(tx, caller.workspaceId), 'store'),
-  );
+  const {
+    issues: problems,
+    queries,
+    parsed,
+    schema,
+  } = await workspace(sql, caller, 'readSchema', async (tx) => {
+    const schema = await getSchema(tx, caller.workspaceId);
+    return { ...translateDashboard(tx, program, schema, 'store'), schema };
+  });
   const checked: { statement: string; rows: number }[] = [];
   if (problems.length) return { ok: false, problems, queries: checked };
+  const results = new Map<string, unknown>();
+  const recordReads = new Map<string, DashboardRecordRead>();
   for (const query of queries) {
     const { statement } = query;
     try {
-      let rows: number;
       if (query.tool === 'query_records') {
-        const { object, fields: _fields, ...input } = query.args;
-        const result = await findRecords(sql, caller, object, queryInputSchema.parse(input));
-        rows = result.records.length;
+        const { object, fields, ...input } = query.args;
+        const page = await findRecords(
+          sql,
+          caller,
+          object,
+          queryInputSchema.parse({
+            ...input,
+            include: ['relationReferences'],
+          }),
+        );
+        results.set(
+          statement,
+          dashboardRecordData(page, object, fields, (type, name) =>
+            objectNamed(schema, type)?.fieldsByName.get(name),
+          ),
+        );
+        recordReads.set(statement, { args: query.args, truncated: page.nextCursor !== null });
+        checked.push({ statement, rows: page.records.length });
+        if (!page.records.length)
+          problems.push({ statement, message: 'The query returned no records' });
       } else {
         const { object, ...input } = query.args;
         const result = await aggregate(sql, caller, object, aggregateInputSchema.parse(input));
-        rows = result.total;
+        results.set(statement, dashboardAggregateData(result));
+        checked.push({ statement, rows: result.total });
       }
-      checked.push({ statement, rows });
-      if (!rows) problems.push({ statement, message: 'The query returned no records' });
     } catch (error) {
       const message =
         error instanceof AppError || error instanceof z.ZodError
@@ -235,5 +261,6 @@ export async function checkDashboard(sql: Sql, caller: Caller, program: string) 
       problems.push({ statement, message });
     }
   }
+  if (parsed) problems.push(...checkDashboardMetrics(parsed, results, recordReads, schema));
   return { ok: problems.length === 0, problems, queries: checked };
 }

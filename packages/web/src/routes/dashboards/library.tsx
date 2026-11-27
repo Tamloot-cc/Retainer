@@ -18,6 +18,7 @@ import { createContext, lazy, type ReactNode, Suspense, useContext } from 'react
 import type { ChartDatum, ChartKind } from './charts.js';
 import { formatValue, isMixed, isMoney } from './format.js';
 import { DashboardTable } from './table.js';
+import { isDashboardResult } from './tools.js';
 
 // The renderer checks this flag before mounting its development inspector.
 (globalThis as Record<symbol, unknown>)[Symbol.for('openui.devtools.autoMount')] = true;
@@ -60,7 +61,8 @@ function Tile({ id, label, children }: { id?: string; label: string; children: R
       return [data.groups.length];
     return [];
   });
-  const loading = queries.some((name) => {
+  const waiting = queries.some((name) => !isDashboardResult(sources?.queries[name]?.data));
+  const refreshing = queries.some((name) => {
     const query = sources?.queries[name];
     return query?.loading === true;
   });
@@ -69,7 +71,7 @@ function Tile({ id, label, children }: { id?: string; label: string; children: R
       aria-label={label}
       className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4"
     >
-      {unavailable.length || failures.length ? (
+      {unavailable.length || failures.length || waiting ? (
         <h3 className="text-sm font-semibold">{label}</h3>
       ) : null}
       {unavailable.length ? (
@@ -82,11 +84,23 @@ function Tile({ id, label, children }: { id?: string; label: string; children: R
           label="This part couldn’t load"
           messages={[...new Set(failures.map((item) => item.message))]}
         />
+      ) : waiting ? (
+        <span
+          className="text-sm text-muted-foreground"
+          role="progressbar"
+          aria-label="Loading data"
+        >
+          Loading data…
+        </span>
       ) : (
         <>
           {children}
-          {loading ? (
-            <span className="text-xs text-muted-foreground" role="status">
+          {refreshing ? (
+            <span
+              className="text-xs text-muted-foreground"
+              role="progressbar"
+              aria-label="Refreshing"
+            >
               Refreshing…
             </span>
           ) : null}

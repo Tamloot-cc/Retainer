@@ -12,6 +12,46 @@ const program = [
 test.describe('saved dashboards', () => {
   test.use({ agentFixture: true, workspaceTemplate: 'sales' });
 
+  test('hides a metric default while loading and displays a successful zero', async ({
+    page,
+    retainer,
+  }) => {
+    const key = retainer.keys.user;
+    const dashboard = await retainer.request(
+      '/dashboards',
+      {
+        name: 'Company count',
+        program: [
+          'root = Dashboard("Company count", [Metric("Companies tracked", companies.total)])',
+          'companies = Query("aggregate_records", {object: "company"}, {total: 0})',
+        ].join('\n'),
+      },
+      key,
+    );
+    await signIn(page, retainer.url, key);
+    let release: () => void = () => {};
+    const delayed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/v1/objects/company/aggregate', async (route) => {
+      await delayed;
+      await route.continue();
+    });
+    try {
+      await page.getByRole('link', { name: 'Dashboards', exact: true }).click();
+      await page.getByRole('link', { name: /Company count/ }).click();
+      const metric = page.getByRole('region', { name: 'Companies tracked' });
+      await expect(metric.getByRole('progressbar', { name: 'Loading data' })).toBeVisible();
+      await expect(metric.getByText('0', { exact: true })).toHaveCount(0);
+      release();
+      await expect(metric.getByText('0', { exact: true })).toBeVisible();
+      await expect(metric.getByRole('progressbar')).toHaveCount(0);
+      await expect(page).toHaveURL(new RegExp(`/dashboards/${dashboard.id}$`));
+    } finally {
+      release();
+    }
+  });
+
   test('streams, pins, refreshes and edits a shared dashboard in the viewer’s own chat', async ({
     page,
     browser,
@@ -74,6 +114,7 @@ test.describe('saved dashboards', () => {
       const denied = second.getByRole('region', { name: 'Deals tracked' });
       await denied.getByText('This part couldn’t load').click();
       await expect(denied.getByText('You can’t read deals')).toBeVisible();
+      await expect(denied.getByText('0', { exact: true })).toHaveCount(0);
 
       retainer.anthropic?.enqueue({
         blocks: [
