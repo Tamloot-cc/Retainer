@@ -1,13 +1,16 @@
 import { EXAMPLE_DASHBOARD, type SavedDashboard } from '@retainer/shared';
-import { beforeAll, expect, it } from 'vitest';
+import { beforeAll, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/api/app.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
+import { inWorkspace } from '../../src/db/tx.js';
+import { runSchemaChange } from '../../src/schema-engine/engine.js';
 import { RUNTIME_SECRET } from '../helpers/agent.js';
 import { startTestApp, type TestApp } from '../helpers/app.js';
 import { useTestDatabase } from '../helpers/db.js';
 
 const database = useTestDatabase();
 let app: TestApp;
+let workspaceId: string;
 let keys: Record<'owner' | 'editor' | 'viewer' | 'outside', string>;
 
 beforeAll(async () => {
@@ -32,6 +35,7 @@ beforeAll(async () => {
       outside: { actor: { type: 'user', id: 'outside' }, scopes: ['admin'] },
     },
   );
+  workspaceId = workspace.workspace.id;
   keys = { ...workspace.keys, ...outside.keys };
   expect(
     (
@@ -221,13 +225,29 @@ count = Metric("Count", totals.total)`;
   >`select program from dashboards where id = ${created.body.id}`;
   expect(stored[0]?.program).not.toContain('"task"');
   expect(stored[0]?.program).toContain('"createdAt"');
-  const change = await schemaChange([
-    { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
-    { op: 'rename_field', object: 'todo', field: 'reminder', name: 'followUpDate' },
-  ]);
-  expect(change.status, JSON.stringify(change.body)).toBe(200);
-  expect(change.body.status).toBe('applied');
-  const renamed = await get(keys.owner, created.body.id);
+  const { change, reading } = await inWorkspace(app.sql, workspaceId, async (tx) => {
+    const change = await runSchemaChange(tx, {
+      workspaceId,
+      actor: { type: 'user', id: 'owner' },
+      scopes: ['admin'],
+      operations: [
+        { op: 'rename_object', object: 'task', nameSingular: 'todo', namePlural: 'todos' },
+        { op: 'rename_field', object: 'todo', field: 'reminder', name: 'followUpDate' },
+      ],
+    });
+    const reading = get(keys.owner, created.body.id);
+    // The read must queue while the schema change is still uncommitted.
+    await vi.waitFor(async () => {
+      const [lock] = await tx<{ waiting: boolean }[]>`
+        select exists(select 1 from pg_locks where locktype = 'advisory' and not granted
+          and pg_backend_pid() = any(pg_blocking_pids(pid))) as waiting`;
+      expect(lock?.waiting).toBe(true);
+    });
+    return { change, reading };
+  });
+  expect(change.status).toBe('applied');
+  const renamed = await reading;
+  expect(renamed.status).toBe(200);
   expect(renamed.body.program).toContain('"todo"');
   expect(renamed.body.program).toContain('"due":"followUpDate"');
   expect(renamed.body.program).toContain('TableColumn("Reminder", "due")');

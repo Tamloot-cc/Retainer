@@ -187,7 +187,10 @@ test.describe('saved dashboards', () => {
     await page.getByRole('button', { name: 'Edit with the agent' }).click();
     await expect(page.getByRole('region', { name: 'Clients tracked' })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe(chat);
-    await page.getByRole('button', { name: 'Update “Company snapshot”' }).last().click();
+    const updates = page.getByRole('button', { name: 'Update “Company snapshot”' });
+    // The preview streams before its save actions appear.
+    await expect(updates).toHaveCount(2);
+    await updates.last().click();
     const lastSaved = page.getByRole('link', { name: 'Saved' }).last();
     await expect(lastSaved).toBeVisible();
     await lastSaved.click();

@@ -93,10 +93,15 @@ async function present(
   return { ...summary(row, chat), program, issues };
 }
 
-async function workspace<T>(sql: Sql, caller: Caller, write: boolean, fn: (tx: Tx) => Promise<T>) {
+async function workspace<T>(
+  sql: Sql,
+  caller: Caller,
+  mode: 'read' | 'readSchema' | 'write',
+  fn: (tx: Tx) => Promise<T>,
+) {
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
-    if (write) await lockSchemaShared(tx, caller.workspaceId);
-    await admitCaller(tx, caller, write);
+    if (mode !== 'read') await lockSchemaShared(tx, caller.workspaceId);
+    await admitCaller(tx, caller, mode === 'write');
     return fn(tx);
   });
 }
@@ -119,7 +124,7 @@ function storedProgram(program: string, schema: CompiledSchema) {
 }
 
 export async function listDashboards(sql: Sql, caller: Caller, chat?: string) {
-  return workspace(sql, caller, false, async (tx) => {
+  return workspace(sql, caller, 'read', async (tx) => {
     if (chat !== undefined && !(await ownedChat(tx, caller, chat))) throw notFound('chat');
     const rows = await tx<Omit<Row, 'program'>[]>`
       select d.id, d.name, d.visibility, d.position, d.created_by, d.updated_by, d.created_at, d.updated_at,
@@ -133,7 +138,7 @@ export async function listDashboards(sql: Sql, caller: Caller, chat?: string) {
 }
 
 export function readDashboard(sql: Sql, caller: Caller, id: string) {
-  return workspace(sql, caller, false, async (tx) =>
+  return workspace(sql, caller, 'readSchema', async (tx) =>
     present(tx, caller, await getSchema(tx, caller.workspaceId), await load(tx, caller, id)),
   );
 }
@@ -143,7 +148,7 @@ export function createDashboard(
   caller: Caller,
   input: z.infer<typeof createDashboardSchema>,
 ) {
-  return workspace(sql, caller, true, async (tx) => {
+  return workspace(sql, caller, 'write', async (tx) => {
     await validateChat(tx, caller, input.chatId);
     const schema = await getSchema(tx, caller.workspaceId);
     const program = storedProgram(input.program, schema);
@@ -164,7 +169,7 @@ export function updateDashboard(
   id: string,
   input: z.infer<typeof updateDashboardSchema>,
 ) {
-  return workspace(sql, caller, true, async (tx) => {
+  return workspace(sql, caller, 'write', async (tx) => {
     // Chat deletion locks the chat, then clears the dashboard's foreign key.
     await validateChat(tx, caller, input.chatId);
     const before = await load(tx, caller, id, true);
@@ -193,7 +198,7 @@ export function updateDashboard(
 }
 
 export function deleteDashboard(sql: Sql, caller: Caller, id: string) {
-  return workspace(sql, caller, true, async (tx) => {
+  return workspace(sql, caller, 'write', async (tx) => {
     const rows =
       await tx`delete from dashboards d where d.id = ${id} and ${visible(tx, caller)} returning id`;
     if (!rows.length) throw notFound('dashboard');
@@ -201,7 +206,7 @@ export function deleteDashboard(sql: Sql, caller: Caller, id: string) {
 }
 
 export async function checkDashboard(sql: Sql, caller: Caller, program: string) {
-  const { issues: problems, queries } = await workspace(sql, caller, false, async (tx) =>
+  const { issues: problems, queries } = await workspace(sql, caller, 'readSchema', async (tx) =>
     translateDashboard(program, await getSchema(tx, caller.workspaceId), 'store'),
   );
   const checked: { statement: string; rows: number }[] = [];
