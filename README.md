@@ -20,10 +20,9 @@ provenance, edit fields, and retract facts and events.
   history and makes it searchable.
 - **Self-hosted**: one Docker image and Postgres.
 
-Status: 0.1.0, the first release, is on npm (`@retainer/*`) and GitHub
-Container Registry; see the [changelog](CHANGELOG.md). Guides
-are in [docs/](docs/README.md); the design is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+Retainer is available on npm (`@retainer/*`) and GitHub Container Registry.
+See the [changelog](CHANGELOG.md) for release details, [docs/](docs/README.md)
+for guides, and [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
 
 ## Run it
 
