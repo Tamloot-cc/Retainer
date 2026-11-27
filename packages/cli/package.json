@@ -1,6 +1,6 @@
 {
   "name": "@retainer/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Retainer's browser-authenticated administration CLI.",
   "license": "MIT",
   "repository": {

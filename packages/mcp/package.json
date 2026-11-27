@@ -1,6 +1,6 @@
 {
   "name": "@retainer/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "stdio bridge to a Retainer server's MCP endpoint, for MCP clients that only speak stdio.",
   "keywords": [
     "retainer",

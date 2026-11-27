@@ -1,6 +1,6 @@
 {
   "name": "@retainer/extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Build-time contracts for reviewed Retainer extensions",
   "license": "MIT",
   "homepage": "https://github.com/Tamloot-cc/Retainer/tree/main/packages/extension#readme",
