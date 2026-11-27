@@ -959,12 +959,20 @@ export class RetainerClient {
       `/v1/extensions/${encodeURIComponent(id)}/connections/${encodeURIComponent(connection)}`,
     );
   }
-  extensionRuns(id: string, options: PageOptions & { connection?: string } = {}) {
+  extensionRuns(
+    id: string,
+    options: PageOptions & {
+      connection?: string;
+      status?: 'active' | 'succeeded' | 'failed' | 'cancelled';
+    } = {},
+  ) {
     const { signal, ...params } = options;
     return this.get<{
       runs: {
         id: string;
         functionId: string;
+        functionName?: string | null;
+        triggerKind?: string;
         connectionId: string | null;
         status: string;
         attempt: number;

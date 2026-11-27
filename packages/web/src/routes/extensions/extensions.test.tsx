@@ -6,6 +6,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
+import { exaRegistrationId } from './branding.js';
 import { ExtensionPage, InstallationCredentials, SourceSyncStatus } from './detail.js';
 import { ExtensionsPage } from './list.js';
 import { ExtensionSetup } from './setup.js';
@@ -704,6 +705,78 @@ describe('extension pages and human approval', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Uninstall' }));
     const confirm = await screen.findByRole('dialog', { name: 'Uninstall Fixture?' });
     expect(within(confirm).queryByText(/Connected apps/)).toBeNull();
+  });
+  it('shows what Exa ran, how it started, and why the result had no changes', async () => {
+    const exaRelease: Release = {
+      ...release,
+      manifest: { ...release.manifest, universalId: exaRegistrationId },
+    };
+    vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [exaRelease] });
+    vi.spyOn(api, 'extensions').mockResolvedValue({
+      installations: [{ ...installation, registrationId: exaRegistrationId }],
+    });
+    const run = {
+      id: 'run',
+      functionId: 'function',
+      functionName: 'enrichCompanyNow',
+      triggerKind: 'recordButton',
+      connectionId: null,
+      status: 'succeeded',
+      attempt: 1,
+      generation: 1,
+      releaseDigest: release.digest,
+      code: 'nothing_to_fill',
+      createdAt: '2026-11-27T10:00:00Z',
+      updatedAt: '2026-11-27T10:00:05Z',
+    };
+    const failed = {
+      ...run,
+      id: 'older',
+      functionName: null,
+      triggerKind: 'change',
+      status: 'failed',
+      code: 'unexpected_error',
+    };
+    const history = vi.spyOn(api, 'extensionRuns').mockImplementation(async (_id, options) => ({
+      runs: options?.status === 'failed' ? [failed] : options?.cursor ? [failed] : [run],
+      nextCursor: options?.status || options?.cursor ? null : 'older-cursor',
+    }));
+    const retry = vi.spyOn(api, 'retryExtensionRun').mockResolvedValue({
+      id: failed.id,
+      status: 'queued',
+    });
+    router.params = { id: installation.id };
+    router.search = { tab: 'runs' };
+    mount(<ExtensionPage />);
+
+    const list = await screen.findByRole('list', { name: 'Extension runs' });
+    const manual = within(list).getByRole('listitem');
+    expect(within(manual).getByText('No mapped fields were eligible to fill.')).toBeTruthy();
+    const details = manual.querySelector('details');
+    expect(details?.open).toBe(false);
+    expect(within(manual).getByText('Record button')).toBeTruthy();
+    await userEvent.click(within(manual).getByText('Enrich company'));
+    expect(details?.open).toBe(true);
+    expect(within(manual).getByRole('button', { name: 'Copy run ID' })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Older runs' }));
+    expect(await screen.findByText('Unexpected error')).toBeTruthy();
+    expect(history).toHaveBeenLastCalledWith(
+      installation.id,
+      expect.objectContaining({ cursor: 'older-cursor' }),
+    );
+    const filter = screen.getByRole('group', { name: 'Filter by run status' });
+    await userEvent.click(within(filter).getByRole('button', { name: 'Failed' }));
+    expect(await screen.findByText('Unexpected error')).toBeTruthy();
+    expect(history).toHaveBeenLastCalledWith(
+      installation.id,
+      expect.objectContaining({ status: 'failed' }),
+    );
+    expect(history.mock.lastCall?.[1]).not.toHaveProperty('cursor');
+    await userEvent.click(screen.getByText('Record change'));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry run' }));
+    expect(await screen.findByText('Run queued for retry.')).toBeTruthy();
+    expect(retry).toHaveBeenCalledWith(installation.id, failed.id, expect.any(String));
   });
   it('saves settings on the Settings tab and sends credential changes to Reconnect', async () => {
     vi.spyOn(api, 'extensionCatalog').mockResolvedValue({ releases: [release] });

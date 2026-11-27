@@ -12,6 +12,7 @@ import {
   commitInputSchema,
   type Extensions,
   installInputSchema,
+  runStatusFilterSchema,
 } from '../../extensions/service.js';
 import { idParam, limitParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
@@ -251,6 +252,7 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
         limitParam(c, 50, 100),
         c.req.query('cursor'),
         c.req.query('connection') ? z.uuid().parse(c.req.query('connection')) : undefined,
+        runStatusFilterSchema.optional().parse(c.req.query('status')),
       ),
     ),
   );

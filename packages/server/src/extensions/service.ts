@@ -198,6 +198,8 @@ function present(
   };
 }
 
+export const runStatusFilterSchema = z.enum(['active', 'succeeded', 'failed', 'cancelled']);
+
 export class Extensions {
   constructor(
     private readonly sql: Sql,
@@ -441,7 +443,14 @@ export class Extensions {
     });
   }
 
-  async runs(caller: Caller, id: string, limit = 50, cursor?: string, connectionId?: string) {
+  async runs(
+    caller: Caller,
+    id: string,
+    limit = 50,
+    cursor?: string,
+    connectionId?: string,
+    status?: z.infer<typeof runStatusFilterSchema>,
+  ) {
     scope(caller, 'read');
     if (
       (caller.run || caller.installation) &&
@@ -460,7 +469,7 @@ export class Extensions {
       await lockSchemaShared(tx, caller.workspaceId);
       await admitCaller(tx, caller, false, 'runtime');
       const [installation] =
-        await tx`select id,registration_id,version from extension_installations where id=${id}`;
+        await tx`select registration_id from extension_installations where id=${id}`;
       if (!installation) throw notFound('extension installation');
       const [member] =
         await tx`select 1 from extension_connections where installation_id=${id} limit 1`;
@@ -470,6 +479,7 @@ export class Extensions {
         {
           id: string;
           functionId: string;
+          triggerKind: string;
           connectionId: string | null;
           status: string;
           attempt: number;
@@ -480,17 +490,28 @@ export class Extensions {
           updatedAt: Date;
         }[]
       >`
-        select id,function_id as "functionId",connection_id as "connectionId",status,attempt,generation,release_digest as "releaseDigest",code,
+        select id,function_id as "functionId",trigger_kind as "triggerKind",connection_id as "connectionId",status,attempt,generation,release_digest as "releaseDigest",code,
           created_at as "createdAt",updated_at as "updatedAt" from extension_jobs where installation_id=${id}
           ${connectionId ? tx`and connection_id=${connectionId}` : tx``}
           ${caller.run ? tx`and connection_id is not distinct from ${caller.run.connectionId ?? null}::uuid` : tx``}
           ${member && !all && !caller.run ? tx`and connection_id in(select id from extension_connections where installation_id=${id} and owner_id=${owner})` : tx``}
+          ${status === 'active' ? tx`and status in ('queued','running','waiting')` : status ? tx`and status=${status}` : tx``}
           ${after ? tx`and id<${after}::uuid` : tx``} order by id desc limit ${limit + 1}`;
       const page = rows.slice(0, limit),
         last = page.at(-1);
+      const functionsByRelease = new Map<string, Map<string, string>>();
+      for (const { releaseDigest } of page) {
+        if (functionsByRelease.has(releaseDigest)) continue;
+        const release = this.catalog.byDigest(installation.registration_id, releaseDigest);
+        functionsByRelease.set(
+          releaseDigest,
+          new Map(release?.manifest.functions.map((fn) => [fn.universalId, fn.name])),
+        );
+      }
       return {
         runs: page.map((r) => ({
           ...r,
+          functionName: functionsByRelease.get(r.releaseDigest)?.get(r.functionId) ?? null,
           createdAt: r.createdAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
         })),

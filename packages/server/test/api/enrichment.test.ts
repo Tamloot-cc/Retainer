@@ -526,9 +526,53 @@ describe('Exa enrichment through a fake Exa', () => {
       code: 'matched_shortcut',
     });
 
+    const history = await h.app.request(`/v1/extensions/${h.id}/runs`, { key: h.keys.reader });
+    expect(history.status).toBe(200);
+    expect(history.body.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.body.id,
+          functionId: ENRICHMENT.enrichCompanyNow,
+          functionName: 'enrichCompanyNow',
+          triggerKind: 'recordButton',
+          code: 'matched_shortcut',
+        }),
+        expect.objectContaining({
+          functionId: ENRICHMENT.enrich,
+          functionName: 'enrich',
+          triggerKind: 'change',
+          code: 'no_match',
+        }),
+      ]),
+    );
+    expect(
+      history.body.runs.find((run: { id: string }) => run.id === first.body.id),
+    ).not.toHaveProperty('input');
+
     const again = await press(ENRICHMENT.enrichCompanyNow);
     expect(again.status).toBe(202);
     expect(again.body.id).not.toBe(first.body.id);
+    const active = await h.app.request(`/v1/extensions/${h.id}/runs?status=active`, {
+      key: h.keys.reader,
+    });
+    expect(active.body).toMatchObject({
+      runs: [expect.objectContaining({ id: again.body.id, status: 'queued' })],
+      nextCursor: null,
+    });
+    const successful = await h.app.request(`/v1/extensions/${h.id}/runs?status=succeeded&limit=1`, {
+      key: h.keys.reader,
+    });
+    expect(successful.body).toMatchObject({
+      runs: [expect.objectContaining({ id: first.body.id, status: 'succeeded' })],
+      nextCursor: expect.any(String),
+    });
+    const previous = await h.app.request(
+      `/v1/extensions/${h.id}/runs?status=succeeded&limit=1&cursor=${successful.body.nextCursor}`,
+      { key: h.keys.reader },
+    );
+    expect(previous.body.runs).toEqual([
+      expect.objectContaining({ code: 'no_match', status: 'succeeded' }),
+    ]);
     expect(await h.drain()).toEqual([{ status: 'succeeded', code: 'nothing_to_fill' }]);
     expect(h.exa.requests).toHaveLength(3);
 

@@ -1,3 +1,4 @@
+import { ENRICHMENT } from '@retainer/runner/enrichment-contract';
 import { expect, test } from './fixtures.js';
 import { signIn } from './helpers.js';
 
@@ -56,3 +57,41 @@ for (const [label, code, message] of [
     await expect(sheet.getByRole('status')).toHaveText(message);
   });
 }
+
+test('filters run history and opens run details on a narrow screen', async ({
+  page,
+  retainer: r,
+}) => {
+  const installation = await r.installRecordButton();
+  const { record: company } = await r.request('/objects/company/records', {
+    values: { name: 'Acme Systems' },
+  });
+  await r.request(
+    `/extensions/${installation}/record-buttons/${ENRICHMENT.enrichCompanyNow}`,
+    { recordId: company.id },
+    r.keys.writer,
+  );
+
+  await signIn(page, r.url, r.keys.user);
+  await page.goto(`${r.url}/app/extensions/${installation}?tab=runs`);
+  const history = page.getByRole('region', { name: 'Run history' });
+  await expect(history.getByText('Queued', { exact: true })).toBeVisible();
+  await history.getByRole('button', { name: 'In progress' }).click();
+  await expect(history.getByRole('listitem')).toHaveCount(1);
+  await expect(history.getByText('Queued', { exact: true })).toBeVisible();
+  await r.finishRecordButton(installation, company.id, 'no_match');
+  await expect(history.getByText('No runs in progress')).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const filters = history.getByRole('group', { name: 'Filter by run status' });
+  await filters.getByRole('button', { name: 'Succeeded' }).click();
+  const row = history.getByRole('listitem').filter({ hasText: 'Enrich company now' });
+  await expect(row.getByText('No match', { exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Copy run ID' })).toBeHidden();
+  await row.locator('summary').press('Enter');
+  await expect(row.getByRole('button', { name: 'Copy run ID' })).toBeVisible();
+  await expect(row.getByText('Record button', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => history.evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .toBe(true);
+});
