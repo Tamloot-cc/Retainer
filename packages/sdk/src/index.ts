@@ -103,7 +103,7 @@ export type RetainerClientOptions = {
   accessToken?: string;
   /** The browser approval ID for a CLI action that requires individual confirmation. */
   approval?: string;
-  /** Fetch credential mode. Defaults to same-origin. Use include to send a cross-origin session cookie. */
+  /** Fetch credential mode. Defaults to same-origin, which works for Retainer session cookies. */
   credentials?: 'omit' | 'same-origin' | 'include';
   /**
    * The workspace ID for session-cookie or CLI requests. A person
@@ -113,7 +113,7 @@ export type RetainerClientOptions = {
   workspace?: string;
   /** Override fetch, for example to route requests through a proxy. */
   fetch?: typeof fetch;
-  /** Called on HTTP 401, except when creating a session. */
+  /** Called on HTTP 401, except for requests to /auth/session. */
   onUnauthorized?: () => void;
 };
 export type HealthResponse = {

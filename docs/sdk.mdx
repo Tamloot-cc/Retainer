@@ -72,12 +72,12 @@ Pass a `RetainerClientOptions` object to `new RetainerClient(...)`. A workspace 
 <Accordions>
 <Accordion title="Use a signed-in web session">
 
-Set `credentials: 'include'` for a cross-origin session-cookie request. In accounts mode, pass the workspace ID as `workspace` to scope the request. See [REST authentication](rest-api.md#authentication).
+Serve the browser client on the Retainer origin, or use a reverse proxy that serves both the client and Retainer API on the same configured public origin. Use that origin as `baseUrl` and let the SDK send the session cookie with its default `credentials: 'same-origin'`. In accounts mode, pass the workspace ID as `workspace`. See [REST authentication](rest-api.md#authentication).
 
 </Accordion>
 <Accordion title="Use a standalone app installation token">
 
-Pass a REST installation OAuth token as `apiKey`. The installation grant determines which workspace and operations the app can access. See [Standalone apps](standalone-apps.md).
+For a separately hosted app, call Retainer from the app’s server with a REST installation OAuth token as `apiKey`. The installation grant determines which workspace and operations the app can access. See [Standalone apps](standalone-apps.md).
 
 </Accordion>
 </Accordions>
