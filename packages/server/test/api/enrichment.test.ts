@@ -1217,6 +1217,19 @@ describe('enrichment configure and backfill', () => {
   });
 });
 
+/** The lookup's two searches (spec 7.3): the whole record, email included, then the name alone. */
+function expectPeopleSearches(requests: { body: unknown }[]) {
+  expect(requests.slice(-2).map((request) => request.body)).toEqual([
+    expect.objectContaining({
+      category: 'people',
+      query: expect.stringMatching(
+        /^Ada Example Fixture Co fixture\.example ada@fixture\.example .*Chief Executive/,
+      ),
+    }),
+    expect.objectContaining({ category: 'people', query: 'Ada Example' }),
+  ]);
+}
+
 describe('people enrichment (enrichment spec 7)', () => {
   const people = {
     action: 'existing',
@@ -1234,7 +1247,7 @@ describe('people enrichment (enrichment spec 7)', () => {
     },
   };
 
-  it('enriches an existing person from their record button without sharing email', async () => {
+  it('enriches an existing person from their record button, searching with their record', async () => {
     const h = await setup({ person: people });
     await h.drain();
     const company = await h.company({ name: 'Fixture Co', domain: 'fixture.example' });
@@ -1268,11 +1281,7 @@ describe('people enrichment (enrichment spec 7)', () => {
       jobTitle: 'Chief Executive',
       seniority: 'C-Level',
     });
-    expect(h.exa.requests.at(-1)?.body).toMatchObject({
-      category: 'people',
-      query: 'Ada Example Fixture Co fixture.example',
-    });
-    expect(JSON.stringify(h.exa.requests)).not.toContain('ada@');
+    expectPeopleSearches(h.exa.requests);
   });
 
   it('fills a new person from their linked company, keeping what a person set', async () => {
@@ -1293,13 +1302,7 @@ describe('people enrichment (enrichment spec 7)', () => {
     expect(filled.linkedinUrl).toMatchObject({
       primary: { url: 'https://www.linkedin.com/in/ada-example-fixture' },
     });
-    const search = h.exa.requests.at(-1);
-    expect(search?.body).toMatchObject({
-      category: 'people',
-      query: 'Ada Example Fixture Co fixture.example',
-    });
-    // The email address never leaves Retainer; only its company's domain does.
-    expect(JSON.stringify(h.exa.requests)).not.toContain('ada@');
+    expectPeopleSearches(h.exa.requests);
   });
 
   it('writes nothing looked up for an email the person no longer has', async () => {

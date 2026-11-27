@@ -6,6 +6,7 @@ import { MEDIUM_CONFIDENCE } from './enrichment-model.js';
 import {
   acceptPersonPick,
   lookUpPerson,
+  mergeCandidates,
   type PersonRecord,
   workEmailDomain,
 } from './enrichment-person.js';
@@ -253,17 +254,32 @@ describe('person profiles (enrichment spec 7.2)', () => {
     expect(normalizePersonName(name)).toBe(normalized);
   });
 
-  it('searches by name and company only', () => {
-    expect(exaPeopleRequest(' Ada  Example ', { name: 'Acme', domain: 'acme.example' })).toEqual({
-      query: 'Ada Example Acme acme.example',
+  it('joins the query parts, whole ones only up to 1,000 characters', () => {
+    expect(exaPeopleRequest([' Ada  Example ', null, 'Acme', 'ada@acme.example'])).toEqual({
+      query: 'Ada Example Acme ada@acme.example',
       type: 'auto',
       category: 'people',
       numResults: 5,
-      contents: { text: { maxCharacters: 4000 } },
+      contents: { text: { maxCharacters: 6000 } },
     });
-    expect(exaPeopleRequest('Ada', { name: null, domain: 'acme.example' }).query).toBe(
-      'Ada acme.example',
-    );
+    const long = exaPeopleRequest(['Ada', ...Array(10).fill('x'.repeat(200))]).query;
+    expect(long).toBe(['Ada', ...Array(4).fill('x'.repeat(200))].join(' '));
+  });
+
+  it('keeps the profile text for the model', () => {
+    const [candidate] = personCandidates({ results: [person()] });
+    expect(candidate?.profile).toBe(PERSON_PROFILE);
+  });
+
+  it('merges the two searches into one list, one entry per profile', () => {
+    const [ada, other] = personCandidates({
+      results: [person(), person({ url: 'https://linkedin.com/in/ada-2' })],
+    });
+    const merged = ada && other ? mergeCandidates([other], [{ ...ada, index: 0 }, other]) : [];
+    expect(merged.map((c) => [c.index, c.linkedin])).toEqual([
+      [0, 'https://www.linkedin.com/in/ada-2'],
+      [1, 'https://www.linkedin.com/in/ada-example'],
+    ]);
   });
 });
 
@@ -288,6 +304,7 @@ const candidate = (overrides: Partial<PersonCandidate> = {}): PersonCandidate =>
   location: null,
   linkedin: 'https://www.linkedin.com/in/ada',
   roles: [{ title: 'CEO', company: 'Acme', current: true, department: null, level: null }],
+  profile: '',
   ...overrides,
 });
 
@@ -351,8 +368,14 @@ const record = (overrides: Partial<PersonRecord> = {}): PersonRecord => ({
   email: 'ada@acme.example',
   linkedin: null,
   company: { name: 'Acme', domain: 'acme.example' },
+  details: { role: 'Founder', notes: 'Met at the anvil conference' },
   ...overrides,
 });
+const other = (name = 'Ada Example') =>
+  person({
+    url: `https://linkedin.com/in/${name.replace(' ', '-').toLowerCase()}-2`,
+    properties: { name },
+  });
 
 describe('the people lookup (spec 7.3)', () => {
   it('reads a LinkedIn profile on the record directly, without a search or the model', async () => {
@@ -372,7 +395,7 @@ describe('the people lookup (spec 7.3)', () => {
   });
 
   it('accepts the one candidate with the same name and a current role at the company', async () => {
-    const f = fakes([person({ properties: { name: 'Ada Other' } }), person()]);
+    const f = fakes([other('Ada Other'), person()]);
     const found = await lookUpPerson(f.run, record());
     expect(found).toMatchObject({
       status: 'match',
@@ -383,15 +406,23 @@ describe('the people lookup (spec 7.3)', () => {
     expect(f.calls.model).toEqual([]);
   });
 
-  it('never sends the email address, only its domain when there is no linked company', async () => {
+  it('searches with the whole record, email included, and with the name alone', async () => {
     const f = fakes([person()]);
     await lookUpPerson(f.run, record({ company: null }));
-    expect(JSON.stringify(f.calls)).not.toContain('ada@');
-    expect(f.calls.exa[0]?.body).toMatchObject({ query: 'Ada Example acme.example' });
+    expect(f.calls.exa.map((call) => (call.body as { query: string }).query)).toEqual([
+      'Ada Example ada@acme.example Founder Met at the anvil conference',
+      'Ada Example',
+    ]);
+  });
+
+  it('searches once when the record holds only the name', async () => {
+    const f = fakes([person()]);
+    await lookUpPerson(f.run, record({ company: null, email: null, details: {} }), true);
+    expect(f.calls.exa).toHaveLength(1);
   });
 
   it('asks the model when the shortcut can’t decide, and applies a medium pick at reduced confidence', async () => {
-    const f = fakes([person(), person()], () => message({ index: 1, certainty: 'medium' }));
+    const f = fakes([person(), other()], () => message({ index: 1, certainty: 'medium' }));
     const found = await lookUpPerson(f.run, record());
     expect(found).toMatchObject({
       status: 'match',
@@ -400,7 +431,13 @@ describe('the people lookup (spec 7.3)', () => {
     });
     const prompt = JSON.stringify(f.calls.model[0]);
     expect(prompt).toContain('<profiles>');
-    expect(prompt).not.toContain('ada@acme.example');
+    // The whole record and each profile's text.
+    for (const text of [
+      'ada@acme.example',
+      'Met at the anvil conference',
+      'Department: Consulting',
+    ])
+      expect(prompt).toContain(text);
   });
 
   it.each([
@@ -424,14 +461,26 @@ describe('the people lookup (spec 7.3)', () => {
     });
   });
 
-  it('skips a name-only search with multiple matching people before calling the model', async () => {
-    const f = fakes([person(), person({ url: 'https://linkedin.com/in/ada-other-profile' })]);
-    expect(await lookUpPerson(f.run, record({ company: null, email: null }), true)).toEqual({
+  it('lets the model choose between namesakes when Enrich now has no company', async () => {
+    const f = fakes([person(), other()], () => message({ index: 1, certainty: 'high' }));
+    const found = await lookUpPerson(f.run, record({ company: null, email: null }), true);
+    expect(found).toMatchObject({ status: 'match', confidence: 1, code: 'matched_model_high' });
+    expect(f.calls.model).toHaveLength(1);
+  });
+
+  it('takes a medium pick without a company only from Enrich now, at reduced confidence', async () => {
+    const medium = () => message({ index: 0, certainty: 'medium' });
+    const automatic = fakes([person(), other()], medium);
+    expect(await lookUpPerson(automatic.run, record({ company: null }))).toEqual({
       status: 'no_match',
-      code: 'no_match',
+      code: 'no_match_model',
     });
-    expect(f.calls.exa[0]?.body).toMatchObject({ query: 'Ada Example' });
-    expect(f.calls.model).toEqual([]);
+    const button = fakes([person(), other()], medium);
+    expect(await lookUpPerson(button.run, record({ company: null }), true)).toMatchObject({
+      status: 'match',
+      confidence: MEDIUM_CONFIDENCE,
+      code: 'matched_model_medium',
+    });
   });
 
   it('is no match when the LinkedIn profile has no person', async () => {
@@ -474,7 +523,7 @@ describe('a person change run (spec 7.5)', () => {
     },
   };
 
-  function run(fields: Record<string, unknown>) {
+  function run(fields: Record<string, unknown>, relationReferences: Record<string, unknown> = {}) {
     const writes: unknown[] = [];
     const exa: unknown[] = [];
     const orgId = id();
@@ -489,7 +538,12 @@ describe('a person change run (spec 7.5)', () => {
       if (target.pathname.startsWith('/v1/changes/'))
         return json({ position: '7', recordId: 'p1', operation: 'create' });
       if (target.pathname === '/v1/records/p1')
-        return json({ id: 'p1', label: 'Ada', fields: { ...fields, employer: orgId } });
+        return json({
+          id: 'p1',
+          label: 'Ada',
+          fields: { ...fields, employer: orgId },
+          relationReferences,
+        });
       if (target.pathname === `/v1/records/${orgId}`)
         return json({
           id: orgId,
@@ -521,15 +575,43 @@ describe('a person change run (spec 7.5)', () => {
     };
   }
 
-  it('looks the person up by name and linked company and fills only their open fields', async () => {
-    const r = run({
-      fullName: { first: 'Ada', last: 'Example' },
-      emails: { primary: 'Ada@Acme.example', additional: [] },
-      level: 'Senior',
-    });
+  it('looks the person up with their record, a linked record by its label, and fills only open fields', async () => {
+    const schoolId = id();
+    const r = run(
+      {
+        fullName: { first: 'Ada', last: 'Example' },
+        emails: { primary: 'Ada@Acme.example', additional: [] },
+        level: 'Senior',
+        school: schoolId,
+        // A link the run can't see, a yes/no value and money are left out.
+        mentor: id(),
+        vip: true,
+        dealSize: { amountMicros: 5_000_000, currency: 'USD' },
+        followers: 1200,
+        address: { city: 'Lyon', country: 'France' },
+        otherEmails: { primary: 'ada@beta.example', additional: ['ada@gamma.example'] },
+        sites: {
+          primary: { url: 'https://ada.example' },
+          additional: [{ url: 'https://blog.ada.example', label: 'Blog' }],
+        },
+      },
+      { [schoolId]: { id: schoolId, object: 'school', label: 'Anvil Institute' } },
+    );
     expect(await r.result).toEqual({ status: 'succeeded', code: 'matched_shortcut' });
     expect(r.exa).toEqual([
-      exaPeopleRequest('Ada Example', { name: 'Acme', domain: 'acme.example' }),
+      exaPeopleRequest([
+        'Ada Example',
+        'Acme',
+        'acme.example',
+        'ada@acme.example',
+        'Senior',
+        'Anvil Institute',
+        '1200',
+        'Lyon, France',
+        'ada@beta.example, ada@gamma.example',
+        'https://ada.example, https://blog.ada.example, Blog',
+      ]),
+      exaPeopleRequest(['Ada Example']),
     ]);
     expect(r.writes).toEqual([
       {

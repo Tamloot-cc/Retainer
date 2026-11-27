@@ -9,6 +9,7 @@ import {
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import {
+  isRecordId,
   normalizeDomain,
   normalizeEmail,
   type ObjectView,
@@ -70,6 +71,69 @@ function nameOf(value: unknown): string | null {
     (part): part is string => typeof part === 'string' && !!part.trim(),
   );
   return parts.length ? parts.join(' ').trim() : null;
+}
+
+/** Characters of one record value, and of all of them, sent to the model with a person lookup. */
+const DETAIL_CHARS = 500;
+const DETAILS_CHARS = 3000;
+
+/**
+ * A field value as text: its text, number, list, name, every email and link
+ * (with its label), or the parts of an address. A related record is its label, from the references
+ * the record was read with; one it can't see is left out, not sent as an ID.
+ */
+function textOf(value: unknown, references: PresentedRecord['relationReferences']): string | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null;
+  if (typeof value === 'string') {
+    const reference = references?.[value];
+    if (reference) return reference.label?.trim() || null;
+    const text = value.trim();
+    return text && !isRecordId(text as unknown) ? text : null;
+  }
+  if (Array.isArray(value))
+    return (
+      value
+        .map((item) => textOf(item, references))
+        .filter(Boolean)
+        .join(', ') || null
+    );
+  // A boolean or an amount of money says nothing about who someone is.
+  if (!value || typeof value !== 'object' || 'amountMicros' in value) return null;
+  // Emails and links: the primary value and the additional ones.
+  const { primary, additional } = value as { primary?: unknown; additional?: unknown };
+  if (primary !== undefined || Array.isArray(additional))
+    return textOf([primary, ...(Array.isArray(additional) ? additional : [])], references);
+  const text =
+    nameOf(value) ??
+    Object.values(value)
+      .filter((part): part is string => typeof part === 'string' && !!part.trim())
+      .join(', ');
+  return text || null;
+}
+
+/**
+ * The person's other values for the lookup (spec 7.3), by field: everything
+ * but the lookup fields it sends on its own and the LinkedIn output, each cut
+ * at 500 characters and 3,000 in all.
+ */
+function personDetails(mapping: Mapping, record: PresentedRecord): Record<string, string> {
+  const own = new Set(
+    [
+      mapping.lookups.name,
+      mapping.lookups.email,
+      mapping.lookups.company,
+      mapping.outputs.find(({ output }) => output === 'linkedin_url')?.field,
+    ].filter(Boolean),
+  );
+  const details: Record<string, string> = {};
+  let budget = DETAILS_CHARS;
+  for (const [field, value] of Object.entries(record.fields)) {
+    const text = own.has(field) ? null : textOf(value, record.relationReferences);
+    if (!text || budget <= 0) continue;
+    details[field] = text.slice(0, Math.min(DETAIL_CHARS, budget));
+    budget -= details[field].length;
+  }
+  return details;
 }
 
 type Run = {
@@ -222,6 +286,7 @@ async function enrichRecord(
       email,
       linkedin: linkedin ? primaryUrl(record.fields[linkedin.field]) : null,
       company: null,
+      details: personDetails(mapping, record),
     };
     // The company is read only when the lookup can use it.
     if (person.name || person.linkedin) person.company = await linkedCompany(ctx, mapping, record);
