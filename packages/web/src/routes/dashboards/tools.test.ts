@@ -1,6 +1,10 @@
-import type { FieldView, SchemaDescription } from '@retainer/shared';
+import {
+  type FieldView,
+  dashboardValue as plainValue,
+  type SchemaDescription,
+} from '@retainer/shared';
 import { expect, it, vi } from 'vitest';
-import { dashboardTools, plainValue } from './tools.js';
+import { dashboardTools, isDashboardResult } from './tools.js';
 
 const field = (type: FieldView['type'], settings = {}) => ({ type, settings }) as FieldView;
 
@@ -85,12 +89,13 @@ it('projects record fields and group measures under the program’s aliases', as
     ],
   } as SchemaDescription;
   const reads = dashboardTools(api, schema);
-  expect(
-    await reads.query_records({
-      object: 'deal',
-      fields: { dealAmount: 'amount', stageName: 'stage' },
-    }),
-  ).toEqual({
+  const result = await reads.query_records({
+    object: 'deal',
+    fields: { dealAmount: 'amount', stageName: 'stage' },
+  });
+  expect(isDashboardResult(result)).toBe(true);
+  expect(isDashboardResult({ records: [] })).toBe(false);
+  expect(result).toEqual({
     records: [
       {
         id: 'deal-1',

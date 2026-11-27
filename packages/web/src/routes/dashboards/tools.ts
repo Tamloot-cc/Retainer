@@ -1,75 +1,30 @@
 import type { RetainerClient } from '@retainer/sdk';
 import {
-  type AggregateValue,
+  dashboardAggregateData,
   dashboardAggregateSchema,
+  dashboardRecordData,
   dashboardRecordsSchema,
-  type FieldView,
-  type PresentedRecord,
-  type RecordReference,
   type SchemaDescription,
 } from '@retainer/shared';
-import { primaryCopyValue } from '../../fields/copy-value.js';
 
-export type DashboardMoney = { amount: number; currency: string };
+// OpenUI exposes defaults through the same accessor as live data. Track
+// successful results by identity so arbitrary defaults cannot look loaded.
+const results = new WeakSet<object>();
 
-export function plainValue(
-  value: unknown,
-  field?: FieldView,
-  references?: Record<string, RecordReference>,
-): unknown {
-  if (value === null || value === undefined) return null;
-  const option = (name: unknown) =>
-    field?.settings.options?.find((item) => item.value === name)?.label ?? name;
-  if (field?.type === 'select') return option(value);
-  if (field?.type === 'multi_select' && Array.isArray(value)) return value.map(option).join(', ');
-  if (field?.type === 'relation') {
-    const label = (id: unknown) =>
-      typeof id === 'string' ? (references?.[id]?.label ?? null) : null;
-    return Array.isArray(value)
-      ? value.map(label).filter(Boolean).join(', ') || null
-      : label(value);
-  }
-  if (field?.type === 'emails' || field?.type === 'phones' || field?.type === 'links')
-    return primaryCopyValue(field.type, value) ?? null;
-  if (typeof value !== 'object') return value;
-  const v = value as Record<string, unknown>;
-  if (typeof v.amountMicros === 'number' && typeof v.currency === 'string')
-    return { amount: v.amountMicros / 1_000_000, currency: v.currency };
-  if ('first' in v || 'last' in v) return [v.first, v.last].filter(Boolean).join(' ') || null;
-  return value;
-}
-
-function plainAggregates(values: AggregateValue[]) {
-  return Object.fromEntries(
-    values.flatMap((item) =>
-      !item.as
-        ? []
-        : [[item.as, item.mixedCurrencies ? { mixedCurrencies: true } : plainValue(item.value)]],
-    ),
-  );
-}
-
-function readField(row: PresentedRecord, field: string, allEvents: boolean): unknown {
-  if (field === 'type' && allEvents) return row.object;
-  if (Object.hasOwn(row.fields, field)) return row.fields[field];
-  switch (field) {
-    case 'id':
-    case 'createdAt':
-    case 'updatedAt':
-      return row[field];
-    case 'occurredAt':
-    case 'channel':
-    case 'externalId':
-      return row.event?.[field];
-    default:
-      return undefined;
-  }
+export function isDashboardResult(data: unknown) {
+  return !!data && typeof data === 'object' && results.has(data);
 }
 
 export function dashboardTools(
   client: Pick<RetainerClient, 'queryRecords' | 'aggregate'>,
   schema: SchemaDescription,
 ) {
+  const definitions = new Map(
+    schema.objects.map((entry) => [
+      entry.nameSingular,
+      new Map(entry.fields.map((field) => [field.name, field])),
+    ]),
+  );
   // The renderer also looks up tool names through this object. Limit it to
   // exactly these two reads, including when the program is still streaming.
   return Object.assign(
@@ -81,46 +36,17 @@ export function dashboardTools(
           ...input,
           include: ['relationReferences'],
         });
-        const definitions = new Map(
-          schema.objects.map((entry) => [
-            entry.nameSingular,
-            new Map(entry.fields.map((field) => [field.name, field])),
-          ]),
+        const data = dashboardRecordData(page, object, fields, (type, name) =>
+          definitions.get(type)?.get(name),
         );
-        return {
-          records: page.records.map((record) => {
-            const fieldsOf = definitions.get(record.object);
-            return {
-              id: record.id,
-              label: record.label,
-              ...Object.fromEntries(
-                Object.entries(fields).map(([alias, name]) => [
-                  alias,
-                  plainValue(
-                    readField(record, name, object === 'event'),
-                    fieldsOf?.get(name),
-                    page.relationReferences,
-                  ),
-                ]),
-              ),
-            };
-          }),
-        };
+        results.add(data);
+        return data;
       },
       async aggregate_records(args: Record<string, unknown>) {
         const { object, ...input } = dashboardAggregateSchema.parse(args);
-        const result = await client.aggregate(object, input);
-        return {
-          total: result.total,
-          values: plainAggregates(result.values),
-          groups: (result.groups ?? []).map((group) => ({
-            value: group.value,
-            label: group.label,
-            total: group.total,
-            ...plainAggregates(group.values),
-          })),
-          ...(result.tooManyGroups ? { tooManyGroups: true } : {}),
-        };
+        const data = dashboardAggregateData(await client.aggregate(object, input));
+        results.add(data);
+        return data;
       },
     },
   );

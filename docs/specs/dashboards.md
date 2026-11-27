@@ -150,7 +150,8 @@ dashboard fills in top-down as it streams. The parts used:
 - **Components**: only those in §4.2. An unknown component is dropped and
   reported, never rendered.
 - **`Query(tool, args, defaults, refresh?)`**: calls a data tool (§4.3).
-  `defaults` render until the data arrives.
+  OpenUI uses `defaults` before a read resolves. Dependent tiles show a loading
+  state until the first result arrives and show an error if the read fails.
 - **Dot access and built-ins** such as `data.groups.label`, `@Count`,
   `@Sort`, `@Filter`: computed in the browser on query results.
 
@@ -341,7 +342,10 @@ of §4.3 is a display concern of the browser tools.
 `create_complete_dashboard` returns `widgetErrors` for the agent to repair
 (§13). It runs the save check (§6.3), then runs each query as the browser
 would, `fields` and aliases included, with the person's access, and reports
-any that fail or come back empty:
+failed queries and empty record pages. A successful aggregate may return zero.
+The checker evaluates data-backed metric values with the browser's result
+formatting and reports counts over partial record pages and filters that
+compare a stored select value with a display label:
 `{ ok, problems: [{ statement, message }], queries: [{ statement, rows }] }`.
 It saves nothing. The guide asks the agent to call it before answering and
 to fix what it reports, so a person rarely sees a broken tile.

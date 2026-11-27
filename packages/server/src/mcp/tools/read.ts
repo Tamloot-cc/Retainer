@@ -146,7 +146,7 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
     {
       title: 'Check a dashboard',
       description:
-        'Validate a complete OpenUI Lang dashboard program and try its read queries with your access. Use the dashboards guide first. Returns problems by statement and query row counts.',
+        'Validate a complete OpenUI Lang dashboard, run its queries with your access, and check metric expressions against live results. Use the dashboards guide first. Returns problems by statement and query row counts.',
       inputSchema: z.strictObject({ program: z.string() }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

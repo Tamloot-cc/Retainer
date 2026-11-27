@@ -1,5 +1,6 @@
 import type { DashboardFormat } from '@retainer/shared';
-import type { DashboardMoney } from './tools.js';
+
+type DashboardMoney = { amount: number; currency: string };
 
 export const isMoney = (value: unknown): value is DashboardMoney =>
   value !== null &&

@@ -3,6 +3,7 @@ import {
   createLibrary,
   createParser,
   defineComponent,
+  type ParseResult,
   parseExpression,
   split,
   tokenize,
@@ -111,6 +112,7 @@ function literal(node: ASTNode | null | undefined): unknown {
 export function inspectDashboard(program: string, stored = false) {
   const problems: DashboardIssue[] = [];
   const queries: DashboardQuery[] = [];
+  let parsed: ParseResult | undefined;
   const report = (statement: string, message: string) => problems.push({ statement, message });
   // Key translation adds bytes. The limit applies to the program the caller supplied.
   if (!stored && Buffer.byteLength(program) > DASHBOARD_MAX_BYTES) {
@@ -276,10 +278,10 @@ export function inspectDashboard(program: string, stored = false) {
     }
     for (const id of references.keys()) validateReferences(id);
 
-    const result = parser.parse(program);
-    if (result.meta.incomplete) report('root', 'Dashboard program is incomplete');
-    for (const error of result.meta.errors) report(error.statementId ?? 'root', error.message);
-    for (const name of result.meta.unresolved)
+    parsed = parser.parse(program);
+    if (parsed.meta.incomplete) report('root', 'Dashboard program is incomplete');
+    for (const error of parsed.meta.errors) report(error.statementId ?? 'root', error.message);
+    for (const name of parsed.meta.unresolved)
       report('root', `"${name}" is used but never defined`);
   } catch {
     report('root', 'Dashboard program could not be parsed');
@@ -292,6 +294,7 @@ export function inspectDashboard(program: string, stored = false) {
         ) === index,
     ),
     queries,
+    parsed,
   };
 }
 
