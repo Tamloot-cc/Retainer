@@ -7,8 +7,11 @@ Twenty's dashboards: dashboards are stored by key and survive renames
 it checks its program before answering (§5.3). For one day it was rewritten
 as the first module of [modules.md](modules.md). On 2026-11-27 the product
 owner decided it is a core feature, like views and Routines, and the
-module system is parked (§2). Section 2 lists what is decided and what is
-only proposed.
+module system is parked (§2). Reviewed against the code the same day,
+which changed how saved dashboards relate to chats (§8.3), how the data
+tools differ from the API (§4.3), grouping by built-in dates (§7.1) and the
+shape of the chat pieces (§8.1). Section 2 lists what is decided and what
+is only proposed.
 
 Builds on the workspace agent in [agent.md](agent.md). If accepted this spec
 amends:
@@ -218,13 +221,30 @@ their stored values. Empty groups show "No value".
 
 ### 4.3 Data tools
 
-Two reads, the same in the browser and as agent tools (§5.3), so the agent
-can run exactly the query it is about to write.
+Two reads a program's `Query` can call. They run in the browser, on top of
+the API's query and aggregate routes. The agent has tools of the same names
+with the same filters, sorts and groupings (§5.3), so it can try a query
+before it writes it.
 
 | Tool                | Input                                                                                                                                | Output                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `query_records`     | `object`, `filter`, `search`, `sort`, `limit` (at most 200), as `POST /v1/objects/:object/query`, and `fields: { <alias>: <field> }` | `{ records: [{ id, label, <alias>: value }] }`                                                       |
 | `aggregate_records` | `object`, `filter`, `search`, `aggregates: [{ field, op, as }]`, `groupBy`, `granularity`, `limit` (§7)                              | `{ total, values: { <as>: value }, groups: [{ value, label, total, <as>: value }], tooManyGroups? }` |
+
+The browser's tools differ from the API, and from the agent's tools, in
+two ways, both for display:
+
+- **Results are keyed by alias.** The API returns an aggregate's values as
+  a list, `[{ field, op, as, value }]`, on the result and on each group.
+  The browser's tool turns each list into `{ <as>: value }`, so a program
+  reads `byStage.values.pipeline` and `byStage.groups.pipeline`. In
+  `query_records`, `fields` picks the fields to return and names them; it
+  exists only in the browser's tool.
+- **Values are made plain**, as the table below shows.
+
+Every aggregate in a program has an `as`, and every alias is a plain
+identifier, unique within its query. `id`, `label`, `value` and `total`
+are taken (§6.3).
 
 Values are made plain for display:
 
@@ -275,7 +295,9 @@ tokens. One that does pays one extra step the first time.
 in a web chat is told about the guide. `POST /v1/agent/chats` takes the
 chat's `client`: the web app sends `web`, the terminal client `cli`, and a
 task is `task`. The field says where the chat is shown, not which features
-it has, so later features can use it too. In a web chat, the server adds
+it has, so later features can use it too. It is stored on the session,
+since the first message is built when the first turn starts. In a web chat,
+the server adds
 one line to the chat context it puts in the first message (`agent.md`
 §6.6): "This chat is in Retainer's web app, which can show dashboards;
 read get_guide("dashboards") before writing one." The
@@ -299,11 +321,17 @@ the agent or pasted by the person (§8.3).
 
 Two tools join the agent's `retainer.read` group and the MCP server, keeping
 the rule that the agent's Retainer tools match the MCP tools (`agent.md`
-§8.1). `aggregate_records` serves every agent, not only dashboards.
+§8.1). `aggregate_records` serves every agent, not only dashboards. A chat
+pins its tools when it is created (`agent.md` §8.3), so chats that exist
+before this ships don't have the two tools. That is fine: the line that
+tells the agent about dashboards also goes only into a new chat's first
+message.
 
 **`aggregate_records`** matches `POST /v1/objects/:object/aggregate`, with
 the additions in §7 and an optional `as` on each aggregate, echoed on its
-value. The agent can read records today but cannot run an aggregate, so in
+value, a `label` on each group and `tooManyGroups` (§7). The response keeps
+the API's shape, lists of values, which views and Routines already read.
+The agent can read records today but cannot run an aggregate, so in
 the spike it guessed at its grouped queries and said so ("the filter format
 is a guess"). Any agent gets it, which is useful beyond dashboards ("how
 many open deals are over $50k?"). Its output is the API's; the plain form
@@ -311,8 +339,9 @@ of §4.3 is a display concern of the browser tools.
 
 **`check_dashboard`** takes a program and returns its problems, as Twenty's
 `create_complete_dashboard` returns `widgetErrors` for the agent to repair
-(§13). It runs the save check (§6.3), then runs each query with the
-person's access and reports any that fail or come back empty:
+(§13). It runs the save check (§6.3), then runs each query as the browser
+would, `fields` and aliases included, with the person's access, and reports
+any that fail or come back empty:
 `{ ok, problems: [{ statement, message }], queries: [{ statement, rows }] }`.
 It saves nothing. The guide asks the agent to call it before answering and
 to fix what it reports, so a person rarely sees a broken tile.
@@ -329,7 +358,9 @@ person opens a saved one in a chat (§8.3).
 | `dashboards` | Name, `program` (text, at most 20 KB), `visibility` (`workspace`, `private`), `position`, `chat_id` (the chat it was last saved from, nullable), actors, timestamps |
 
 `chat_id` is a foreign key to the agent's sessions with
-`on delete set null`.
+`on delete set null`. A chat belongs to one person (`agent_sessions.owner`),
+and a dashboard may be shared with the workspace, so `chat_id` is only ever
+shown to, and used by, the chat's owner (§6.2, §8.3).
 
 A dashboard is display settings, like a view (`ARCHITECTURE.md` §1.4): no
 provenance, no assertions, not through the schema engine, and saving one
@@ -355,6 +386,14 @@ makes it `workspace`.
 `PATCH` with a stale `expectedUpdatedAt` returns `409`, so two people saving
 over each other's edit find out.
 
+`chatId`, on save, must be an open chat the caller owns, or the save is
+refused with `422`. A read returns `chatId` only to the chat's owner, and
+`null` to everyone else. `GET /v1/dashboards?chatId=` lists the dashboards
+saved from one of the caller's chats, which is how a chat knows what
+**Update** would change (§8.1).
+
+Callers are admitted as for views.
+
 ### 6.3 Checked on save
 
 The API parses the program with `lang-core` and refuses it with `422
@@ -366,6 +405,8 @@ invalid_dashboard`, listing every problem, when:
 - it calls `Mutation`, or a `Query` tool other than the two data tools;
 - a `Query`'s arguments are not plain values, or a table column's key is
   neither `id`, `label` nor an alias the query behind its rows defines;
+- an aggregate has no `as`, or an alias is not a plain identifier, repeats
+  within its query, or is `id`, `label`, `value` or `total`;
 - a `refresh` interval is under 60 seconds;
 - it has more than 20 queries, or is over 20 KB.
 
@@ -381,7 +422,10 @@ A view stores field keys, so renaming a field never breaks it
 - **Stored by key.** On save, the API rewrites each `Query`'s arguments:
   the object's name becomes its ID, and every field name (in `filter` keys,
   `sort`, `groupBy`, `aggregates` and `fields`) becomes its `fields.key`.
-  The rest of the program is stored as written.
+  Built-in names have no key and are stored as written: the object
+  `event`, and the columns `id`, `createdAt`, `updatedAt` and an event's
+  `occurredAt`, `channel` and `externalId`. The rest of the program is
+  stored as written.
 - **Read by name.** On read, the API rewrites them back to the current
   names, so the web app, the agent and anyone reading the API see names
   only. Option values stay as stored, as views keep them.
@@ -419,10 +463,12 @@ not only to dashboards.
 
 ### 7.1 By date
 
-`groupBy` may name a filterable `date` or `date_time` field with
-`granularity`: `day`, `week`, `month`, `quarter` or `year` (`month` by
-default). Groups are periods in the workspace's time zone (`settings.timeZone`, UTC
-when unset), oldest first,
+`groupBy` may name a filterable `date` or `date_time` field, or a built-in
+date: `createdAt`, `updatedAt`, or an event's `occurredAt`. "Deals created
+per month" and "meetings per week" are the commonest charts over time, and
+both use a built-in date. It takes `granularity`: `day`, `week`, `month`,
+`quarter` or `year` (`month` by default). Groups are periods in the
+workspace's time zone (`settings.timeZone`, UTC when unset), oldest first,
 labelled "Nov 2026", "Q4 2026" and so on. Periods with no records between
 the first and the last are filled in with zero, so a line chart has no gaps.
 Weeks start on Monday.
@@ -436,10 +482,14 @@ one record would count in several groups.
 
 ### 7.3 Many groups
 
-At most 50 groups come back (`limit`, default 50). Past that, the response
-sets `tooManyGroups: true` and the tile says "Showing the first 50". Records
-with no value group under `value: null`, labelled "No value". A pie chart
-keeps its six largest slices and folds the rest into "Other" in the browser.
+At most 50 groups come back by default (`limit`, at most 200, so that a
+chart can show a quarter by day). Past the limit, the response sets
+`tooManyGroups: true` and the tile says how many it shows. Which groups
+stay depends on the grouping: for options and relations, the largest; for
+dates, the latest periods, still shown oldest first, since a chart over
+time that drops its newest months would mislead. Records with no value
+group under `value: null`, labelled "No value". A pie chart keeps its six
+largest slices and folds the rest into "Other" in the browser.
 
 ## 8. The web app
 
@@ -451,7 +501,29 @@ dashboard in place, drawn as it streams. Under a finished dashboard:
 - **Pin to Dashboards** saves it, named by its `Dashboard` title, with this
   chat as `chat_id`. It becomes **Saved** with a link to it.
 - In a chat a dashboard was saved from, a later version offers **Update
-  "Deals"** and **Save as new**.
+  "Deals"** and **Save as new**. Update changes the dashboard most recently
+  saved from this chat, and names it on the button. When the new version's
+  title differs from that dashboard's name, the person has probably asked
+  for a different dashboard, so **Pin to Dashboards** is the main button
+  and Update the second one.
+
+Views and Routines are meant to be made in the chat the same way (§2), so
+three parts are built for more than dashboards:
+
+1. **Chat blocks.** The chat keeps a small map from a fence's language to
+   a component that draws it, loaded only when an answer has such a fence.
+   `openui-lang` is its first entry. A fence in a language the map lacks
+   shows as code, as today.
+2. **The draft card.** The frame around a draft is its own component: the
+   live content, the note for a part that could not be shown, and the row
+   of buttons under it. The dashboard renderer is what goes inside the
+   frame, and knows nothing about saving.
+3. **The keep buttons.** The card takes its buttons from the feature that
+   owns the block. Dashboards gives it Pin, Update and Save as new. A view
+   would give it Save, and a routine Propose.
+
+Nothing else is made general ahead of need: no shared "draft" type on the
+server, and no entry that opens the chat from another page.
 
 A part that cannot be shown (a parse error, a failed query) shows a short
 note in its place, with the details folded away. The renderer and the
@@ -472,12 +544,15 @@ the agent. A dashboard keeps showing its last numbers while it refreshes.
 
 ### 8.3 Editing a saved dashboard
 
-**Edit with the agent** opens the chat in `chat_id` when it still exists,
-scrolled to the end. Otherwise it starts a new chat whose first message,
-written by the web app, carries the program in a fence ("Change my dashboard
-'Deals'") and any `issues`. The agent's next answer patches that program
-(§5.2), and **Update "Deals"** saves it. The chat's `chat_id` is updated on
-save.
+**Edit with the agent** opens the chat in `chat_id` when the viewer owns
+that chat and it is still open, scrolled to the end. Otherwise it starts a
+new chat whose first message, written by the web app, carries the program
+in a fence ("Change my dashboard 'Deals'") and any `issues`. That is the
+usual path for a shared dashboard: a chat belongs to one person, so
+everyone but the person who last saved it gets a new chat, and nobody
+reads another person's chat. The agent's next answer patches that program
+(§5.2), and **Update "Deals"** saves it. The dashboard's `chat_id` is set
+to the saver's chat on every save.
 
 ### 8.4 Charts
 
@@ -505,16 +580,20 @@ chunk loads.
   is switched off with its global flag; production builds drop it.
 - **Load.** At most 20 queries a dashboard, refresh at most once a minute,
   and each query is an ordinary API read under the usual rate limits.
+- **Restricted mode.** Opening a dashboard only reads, so the two `GET`
+  routes and the `aggregate_records` tool join the paths restricted mode
+  admits (`api/restricted.ts`), beside the view and aggregate reads it
+  admits today. Saving is refused there, as every write is.
 
-| Limit                    | Value  |
-| ------------------------ | ------ |
-| Program size             | 20 KB  |
-| Queries per dashboard    | 20     |
-| Refresh interval         | ≥ 60 s |
-| Rows per `query_records` | 200    |
-| Rows shown in a `Table`  | 100    |
-| Groups per aggregate     | 50     |
-| Pie slices               | 7      |
+| Limit                    | Value               |
+| ------------------------ | ------------------- |
+| Program size             | 20 KB               |
+| Queries per dashboard    | 20                  |
+| Refresh interval         | ≥ 60 s              |
+| Rows per `query_records` | 200                 |
+| Rows shown in a `Table`  | 100                 |
+| Groups per aggregate     | 50, at most 200     |
+| Pie slices               | 7                   |
 
 ## 10. Delivery
 
@@ -523,8 +602,9 @@ feature, kept in its own folders so that it reads as one thing and can be
 taken out in one PR:
 
 1. **Useful beyond dashboards**: `aggregate_records` as an MCP tool and in
-   the agent's read tools, date and relation grouping (§7), and `client`
-   on chat creation (§5.1).
+   the agent's read tools (`packages/agent`), date and relation grouping
+   (§7), `client` on chat creation (§5.1), and in the web app the chat
+   blocks and the draft card (§8.1).
 2. **shared** (`packages/shared/src/dashboards/`): the component list and
    the data tool descriptions.
 3. **server**: the `dashboards` table in `db/schema.ts`; a `dashboards`
@@ -532,9 +612,9 @@ taken out in one PR:
    and the name-and-key translation; the routes in `api/routes/`; the
    `dashboards` guide and `check_dashboard` with the MCP tools; the chat
    context line in the agent's session code.
-4. **web** (`packages/web/src/routes/dashboards/` and a chat block):
-   rendering in the chat, pin and update, the Dashboards screens, the
-   chart components.
+4. **web** (`packages/web/src/routes/dashboards/`): the `openui-lang`
+   chat block and its keep buttons, the Dashboards screens, the chart
+   components.
 
 It is large mostly in the web app. Splitting the first part into its own PR
 is the one split that would make sense, since it stands on its own; the
@@ -543,8 +623,9 @@ rest only works together.
 The hosted service needs no infrastructure change: a migration, new routes,
 a new agent tool and web assets all ship with the normal deploy.
 Dashboards adds `@openuidev/lang-core` to the server, and
-`@openuidev/react-lang` and Recharts to the web app, with their notes in
-`packages/web/THIRD_PARTY.md`.
+`@openuidev/react-lang` and Recharts to the web app. The chart components
+copied from shadcn/ui get their notice in `packages/web/THIRD_PARTY.md`,
+which lists copied source; plain dependencies need none.
 
 ### 10.1 Acceptance tests
 
@@ -553,17 +634,25 @@ Dashboards adds `@openuidev/lang-core` to the server, and
   relations become labels); patches merge; the save check refuses each case
   in §6.3; a program stored by key and read by name comes back unchanged;
   a renamed field or object reads under its new name and the dashboard
-  still renders; a removed field is listed in `issues`.
+  still renders; a removed field is listed in `issues`; built-in names
+  pass through the translation unchanged; the browser's tools key results
+  by alias; a block in an unknown language shows as code.
 - **Integration (Postgres)**: dashboard routes with visibility, `409` on a
-  stale save, `chat_id` cleared when the chat is deleted; date grouping with
-  gap filling and time zones; relation grouping with labels; the 50-group
-  cap; `aggregate_records` and `check_dashboard` over MCP and as agent
-  tools with the person's access; a web chat's first message names the
-  guide and a terminal chat's does not.
+  stale save, `chat_id` cleared when the chat is deleted; a save with
+  another person's chat is refused, and a shared dashboard's `chatId` reads
+  as `null` to everyone but the chat's owner; date grouping with gap
+  filling and time zones, by a field and by `createdAt` and `occurredAt`;
+  relation grouping with labels; the group limit, keeping the largest
+  groups and, for dates, the latest periods; the dashboard reads in
+  restricted mode; `aggregate_records` and `check_dashboard` over MCP and
+  as agent tools with the person's access; a web chat's first message
+  names the guide and a terminal chat's does not.
 - **End to end (Playwright)**: with a stubbed agent stream, a chat answer
   renders a dashboard; Pin saves it; the Dashboards page shows it with live
   numbers; a record change shows after reload; a viewer without access to
-  an object sees that tile's error and the rest of the dashboard.
+  an object sees that tile's error and the rest of the dashboard; a second
+  person opening **Edit with the agent** on a shared dashboard gets a new
+  chat that starts from its program.
 - **Model eval (manual)**: `packages/server/scripts/dashboard-eval.ts`, from
   the spike, runs the agent's model over a fake workspace and checks every
   program it writes. Update it to read the guide and answer
