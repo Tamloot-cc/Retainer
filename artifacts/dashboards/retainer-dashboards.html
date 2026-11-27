@@ -1,0 +1,633 @@
+<title>Retainer Dashboards</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one column, top-down. Each section = a heading + a visual. Same visual language as the Retainer Extensions and Architecture pages. Zones keep one color each: Retainer's API blue, the browser green, the agent and its model amber, people grey. */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #d9dee7;
+  --accent: #2d5bd0;
+  --trusted: #e7eefc; --trusted-line: #8fa9e6;
+  --ext: #e5f4ec; --ext-line: #79bf98;
+  --outside: #eef0f3; --outside-line: #a9b1bf;
+  --key: #b86e00; --key-bg: #fff2d9;
+  --good: #1f7a4a; --bad: #b3342b; --code-bg: #eef1f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+    --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --ext: #17302a; --ext-line: #3f8a64;
+    --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+    --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a1f28; --fg: #e4e8ef; --muted: #9aa4b5; --line: #2e3542;
+  --accent: #7ea2ff; --trusted: #1c2943; --trusted-line: #4766a8; --ext: #17302a; --ext-line: #3f8a64;
+  --outside: #232833; --outside-line: #566073; --key: #f0b54a; --key-bg: #3a2c12;
+  --good: #5fcf8f; --bad: #ff7d72; --code-bg: #20262f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 64px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.5rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lead { font-size: 1.1rem; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+p code, li code, td code, small code, .node code, .caption code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 0.78rem; line-height: 1.55; }
+pre code { font-size: inherit; }
+pre .s { color: var(--accent); font-weight: 500; }
+pre .c { color: var(--muted); }
+ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+.map { display: flex; flex-wrap: wrap; gap: 8px; }
+.map a { text-decoration: none; font-size: 0.9rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); }
+.map a:hover, .map a:focus-visible { border-color: var(--accent); outline: none; }
+.status { align-self: flex-start; font-size: 0.78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1.5px solid var(--key); color: var(--key); background: var(--key-bg); }
+
+/* diagrams */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; }
+.scroll { overflow-x: auto; }
+.figure svg { display: block; width: 100%; height: auto; }
+.scroll svg { min-width: 760px; }
+.caption, figcaption { font-size: 0.85rem; color: var(--muted); }
+svg text { font-family: var(--sans); fill: var(--fg); font-size: 13px; }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .zlabel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .monot { font-family: var(--mono); font-size: 12px; }
+svg .b-trusted { fill: var(--surface); stroke: var(--trusted-line); stroke-width: 1.5; }
+svg .b-ext { fill: var(--surface); stroke: var(--ext-line); stroke-width: 1.5; }
+svg .b-out { fill: var(--surface); stroke: var(--outside-line); stroke-width: 1.5; }
+svg .b-key { fill: var(--surface); stroke: var(--key); stroke-width: 1.5; }
+svg .z-trusted { fill: var(--trusted); stroke: none; }
+svg .z-ext { fill: var(--ext); stroke: none; }
+svg .z-key { fill: var(--key-bg); stroke: none; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .arrow-bad { stroke: var(--bad); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+svg .head { fill: var(--muted); }
+svg .head-bad { fill: var(--bad); }
+svg .badtxt { fill: var(--bad); font-weight: 600; font-size: 12px; }
+svg .bar { fill: var(--accent); }
+svg .base { stroke: var(--line); stroke-width: 1; }
+svg .val { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+svg .glyph { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+svg .glyph-fill { fill: var(--accent); }
+svg .glyph-soft { fill: var(--trusted-line); }
+svg .glyph-line { stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+/* facts */
+.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 820px) { .rules { grid-template-columns: 1fr; } }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.rule .mono { color: var(--accent); font-size: 0.74rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.rule p { font-size: 0.88rem; color: var(--muted); }
+
+/* program + mock */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel .sub { font-size: 0.85rem; color: var(--muted); }
+.dash { display: flex; flex-direction: column; gap: 10px; }
+.dash .title { font-weight: 600; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--bg); }
+.tile .lab { font-size: 0.8rem; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+.tile .num { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tag { font-family: var(--mono); font-size: 0.68rem; color: var(--accent); border: 1px solid var(--trusted-line); background: var(--trusted); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.mini { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.mini th, .mini td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.mini th { color: var(--muted); font-weight: 500; font-size: 0.76rem; }
+.mini td:last-child, .mini th:last-child { text-align: right; }
+.mini tr:last-child td { border-bottom: none; }
+
+/* step track */
+.track { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.track li { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.track li.z-t { border-color: var(--trusted-line); }
+.track li.z-k { border-color: var(--key); }
+.track li.z-e { border-color: var(--ext-line); }
+.track .n { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.track h3 { font-size: 0.95rem; }
+.track p { font-size: 0.82rem; color: var(--muted); }
+.track code { font-size: 0.74rem; word-break: break-word; }
+@media (max-width: 860px) { .track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .track { grid-template-columns: 1fr; } }
+
+/* chain */
+.chain { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px; }
+.node { flex: 1 1 150px; min-width: 0; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; border: 1.5px solid; display: flex; flex-direction: column; gap: 3px; }
+.node small { color: var(--muted); font-size: 0.76rem; line-height: 1.4; }
+.node code { font-size: 0.74rem; word-break: break-word; }
+.node.t { background: var(--trusted); border-color: var(--trusted-line); }
+.node.e { background: var(--ext); border-color: var(--ext-line); }
+.node.o { background: var(--outside); border-color: var(--outside-line); }
+.node.k { background: var(--key-bg); border-color: var(--key); }
+.arr { align-self: center; color: var(--muted); font-family: var(--mono); flex: 0 0 auto; }
+
+/* component gallery */
+.gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.comp { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.comp svg { width: 64px; height: 40px; }
+.comp b { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; }
+.comp small { color: var(--muted); font-size: 0.78rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips span { font-size: 0.8rem; border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; background: var(--bg); }
+.chips span.mono { font-size: 0.74rem; }
+
+/* draft card anatomy */
+.anat { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 760px) { .anat { grid-template-columns: 1fr; } }
+.card-frame { border: 2px solid var(--accent); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); position: relative; }
+.zone-lab { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.card-frame > .zone-lab { color: var(--accent); }
+.card-content { border: 1.5px dashed var(--ext-line); background: var(--ext); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.card-content .zone-lab { color: var(--good); }
+.skel { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.skel i { display: block; height: 26px; border-radius: 6px; background: var(--surface); border: 1px solid var(--ext-line); }
+.skel i.wide { grid-column: 1 / -1; height: 44px; }
+.card-note { font-size: 0.78rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 8px; }
+.card-keep { border: 1.5px dashed var(--key); background: var(--key-bg); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.card-keep .zone-lab { color: var(--key); }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { font-size: 0.8rem; font-weight: 600; padding: 3px 12px; border-radius: 8px; background: var(--accent); color: var(--surface); }
+.btn.ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); padding: 1.5px 10.5px; }
+.slot { display: flex; flex-direction: column; gap: 8px; }
+.slot .rowx { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.slot .rowx b { font-size: 0.9rem; }
+.when { font-size: 0.68rem; font-weight: 700; border-radius: 999px; padding: 0 8px; border: 1.5px solid; margin-left: 6px; white-space: nowrap; }
+.when.now { color: var(--good); border-color: var(--good); }
+.when.later { color: var(--muted); border-color: var(--line); }
+
+/* limits */
+.limits { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 860px) { .limits { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .limits { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.limit { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.limit b { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.limit small { color: var(--muted); font-size: 0.76rem; line-height: 1.35; }
+.ticks { list-style: none; padding: 0; gap: 7px; font-size: 0.92rem; }
+.ticks li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; }
+.ticks li::before { content: "✓"; color: var(--good); font-weight: 700; }
+
+/* delivery */
+.decide { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .decide { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .decide { grid-template-columns: 1fr; } }
+.dcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dcard .q { font-size: 0.74rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.dcard p { font-size: 0.86rem; color: var(--muted); }
+.pill { align-self: flex-start; font-size: 0.76rem; font-weight: 700; padding: 1px 10px; border-radius: 999px; border: 1.5px solid; }
+.pill.keep { color: var(--good); border-color: var(--good); }
+.pill.later { color: var(--muted); border-color: var(--line); }
+
+.note { font-size: 0.86rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; }
+footer { font-size: 0.82rem; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .map a { transition: border-color .15s; } }
+</style>
+
+<main>
+  <header class="prose" style="display:flex;flex-direction:column;gap:14px">
+    <span class="eyebrow">Retainer · dashboards · docs/specs/dashboards.md</span>
+    <h1>Dashboards</h1>
+    <p class="lead">Ask the agent for a dashboard in plain words. It draws one live in the chat, and you pin it to keep it. A core feature, beside views and Routines.</p>
+    <span class="status">Proposed, not built yet</span>
+    <nav class="map" aria-label="Sections">
+      <a href="#glance">1. At a glance</a>
+      <a href="#program">2. A short program</a>
+      <a href="#runs">3. Where it runs</a>
+      <a href="#agent">4. The agent</a>
+      <a href="#components">5. Components</a>
+      <a href="#data">6. Data</a>
+      <a href="#renames">7. Renames</a>
+      <a href="#sharing">8. Sharing</a>
+      <a href="#card">9. In the chat</a>
+      <a href="#limits">10. Limits</a>
+      <a href="#delivery">11. Delivery</a>
+    </nav>
+  </header>
+
+  <!-- 1 -->
+  <section id="glance">
+    <span class="eyebrow">1 · At a glance</span>
+    <h2>The agent writes it once. After that, no model is involved.</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 260" role="img" aria-label="A person asks for a dashboard in plain words. The agent reads the guide, tries its queries, checks its program and answers with a short program. The chat draws the program live, and a follow-up message changes it in place. Pin saves the program, never the numbers. When the dashboard is opened later, its queries run in the browser and no model is called.">
+        <defs>
+          <marker id="ad1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <rect x="16" y="64" width="140" height="76" rx="10" class="b-out"/>
+        <text x="86" y="98" text-anchor="middle">Person</text>
+        <text x="86" y="118" text-anchor="middle" class="small">asks in plain words</text>
+
+        <rect x="216" y="64" width="170" height="76" rx="10" class="b-key"/>
+        <text x="301" y="98" text-anchor="middle">Agent</text>
+        <text x="301" y="118" text-anchor="middle" class="small">writes a short program</text>
+        <text x="301" y="164" text-anchor="middle" class="small">reads the guide</text>
+        <text x="301" y="180" text-anchor="middle" class="small">tries its queries</text>
+        <text x="301" y="196" text-anchor="middle" class="small">checks the program</text>
+
+        <rect x="446" y="64" width="170" height="76" rx="10" class="b-ext"/>
+        <text x="531" y="98" text-anchor="middle">Chat</text>
+        <text x="531" y="118" text-anchor="middle" class="small">draws it live</text>
+        <text x="531" y="164" text-anchor="middle" class="small">“show the amount instead”</text>
+        <text x="531" y="180" text-anchor="middle" class="small">changes it in place</text>
+
+        <rect x="676" y="64" width="268" height="76" rx="10" class="b-trusted"/>
+        <text x="810" y="98" text-anchor="middle">Saved dashboard</text>
+        <text x="810" y="118" text-anchor="middle" class="small">the program, never the numbers</text>
+
+        <rect x="676" y="182" width="268" height="62" rx="10" class="b-ext"/>
+        <text x="810" y="208" text-anchor="middle">Opened later</text>
+        <text x="810" y="228" text-anchor="middle" class="small">queries run in the browser · no model call</text>
+
+        <line x1="158" y1="102" x2="214" y2="102" class="arrow" marker-end="url(#ad1)"/>
+        <text x="186" y="50" text-anchor="middle" class="small">“deals by stage…”</text>
+        <line x1="388" y1="102" x2="444" y2="102" class="arrow" marker-end="url(#ad1)"/>
+        <text x="416" y="50" text-anchor="middle" class="small">program</text>
+        <line x1="618" y1="102" x2="674" y2="102" class="arrow" marker-end="url(#ad1)"/>
+        <text x="646" y="50" text-anchor="middle" class="small">Pin</text>
+        <line x1="810" y1="142" x2="810" y2="180" class="arrow" marker-end="url(#ad1)"/>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--outside)"></i>People</span>
+        <span><i class="sw" style="background:var(--key-bg)"></i>The agent and its model</span>
+        <span><i class="sw" style="background:var(--ext)"></i>The browser</span>
+        <span><i class="sw" style="background:var(--trusted)"></i>Retainer's API</span>
+      </div>
+    </figure>
+    <div class="rules">
+      <div class="rule"><span class="mono">Always current</span><p>A dashboard stores no numbers. Its queries run each time it opens.</p></div>
+      <div class="rule"><span class="mono">Your own access</span><p>Queries run as the viewer. Two people can see different numbers on the same dashboard.</p></div>
+      <div class="rule"><span class="mono">The person saves</span><p>The agent never saves a dashboard. A dashboard only reads; it has no buttons that change data.</p></div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="program">
+    <span class="eyebrow">2 · A short program</span>
+    <h2>A dashboard is a few lines that say what to show and what to ask</h2>
+    <div class="two">
+      <div class="panel">
+        <h3>What the agent writes</h3>
+<pre><code><span class="s">root</span> = Dashboard("Deals", [kpis, stages, open])
+
+<span class="c">// what to ask</span>
+<span class="s">openDeals</span> = Query("aggregate_records", {
+  object: "deal", filter: {stage: {in: […]}},
+  aggregates: [{field: "amount", op: "sum",
+                as: "pipeline"}]})
+<span class="s">byStage</span> = Query("aggregate_records", {
+  object: "deal", groupBy: "stage",
+  aggregates: [{field: "amount", op: "sum",
+                as: "amount"}]})
+<span class="s">top</span> = Query("query_records", {
+  object: "deal", limit: 3, sort: […],
+  fields: {stage: "stage", amount: "amount"}})
+
+<span class="c">// what to show</span>
+<span class="s">kpis</span> = Row([count, pipeline])
+<span class="s">count</span> = Metric("Open deals", openDeals.total)
+<span class="s">pipeline</span> = Metric("Open pipeline",
+  openDeals.values.pipeline)
+<span class="s">stages</span> = BarChart("Amount by stage",
+  byStage.groups.label, byStage.groups.amount)
+<span class="s">open</span> = Table("Biggest open deals",
+  top.records, […])</code></pre>
+        <p class="sub">OpenUI Lang, an open language made for models to write. Shortened here.</p>
+      </div>
+      <div class="panel">
+        <h3>What the person sees</h3>
+        <div class="dash">
+          <div class="title">Deals <span class="tag">root</span></div>
+          <div class="tiles">
+            <div class="tile"><span class="lab">Open deals <span class="tag">count</span></span><span class="num">12</span></div>
+            <div class="tile"><span class="lab">Open pipeline <span class="tag">pipeline</span></span><span class="num">$891,000</span></div>
+          </div>
+          <div class="tile">
+            <span class="lab">Amount by stage <span class="tag">stages</span></span>
+            <svg viewBox="0 0 420 150" role="img" aria-label="Bar chart, amount by stage: Lead $120,000, Qualified $210,000, Proposal $305,000, Negotiation $256,000, Won $340,000.">
+              <line x1="100" y1="4" x2="100" y2="146" class="base"/>
+              <g><title>Lead: $120,000</title><text x="92" y="20" text-anchor="end" class="small">Lead</text><path d="M100,8 h84 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-84 z" class="bar"/><text x="194" y="20" class="val">$120k</text></g>
+              <g><title>Qualified: $210,000</title><text x="92" y="48" text-anchor="end" class="small">Qualified</text><path d="M100,36 h150 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-150 z" class="bar"/><text x="260" y="48" class="val">$210k</text></g>
+              <g><title>Proposal: $305,000</title><text x="92" y="76" text-anchor="end" class="small">Proposal</text><path d="M100,64 h220 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-220 z" class="bar"/><text x="330" y="76" class="val">$305k</text></g>
+              <g><title>Negotiation: $256,000</title><text x="92" y="104" text-anchor="end" class="small">Negotiation</text><path d="M100,92 h184 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-184 z" class="bar"/><text x="294" y="104" class="val">$256k</text></g>
+              <g><title>Won: $340,000</title><text x="92" y="132" text-anchor="end" class="small">Won</text><path d="M100,120 h246 a4,4 0 0 1 4,4 v8 a4,4 0 0 1 -4,4 h-246 z" class="bar"/><text x="356" y="132" class="val">$340k</text></g>
+            </svg>
+          </div>
+          <div class="tile">
+            <span class="lab">Biggest open deals <span class="tag">open</span></span>
+            <table class="mini">
+              <thead><tr><th>Deal</th><th>Stage</th><th>Amount</th></tr></thead>
+              <tbody>
+                <tr><td>Acme renewal</td><td>Negotiation</td><td>$140,000</td></tr>
+                <tr><td>Globex rollout</td><td>Proposal</td><td>$120,000</td></tr>
+                <tr><td>Initech pilot</td><td>Proposal</td><td>$95,000</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="sub">An illustration with example numbers. Each tag is the line of the program that draws that part.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="runs">
+    <span class="eyebrow">3 · Where it runs</span>
+    <h2>The agent writes, the browser draws, the API checks and stores</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 380" role="img" aria-label="Three places. The agent runtime writes the program, tries its queries through the API as the person, and checks the program with check_dashboard before answering; it never saves. The viewer's browser draws the program as it streams, runs each query through the API as the viewer, and saves through the API on Pin or Update. Retainer's API serves the reads, checks a program, and on save checks it again and stores it by field key.">
+        <defs>
+          <marker id="ad3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <rect x="16" y="16" width="280" height="348" rx="12" class="z-key"/>
+        <text x="30" y="40" class="zlabel">AGENT RUNTIME</text>
+        <rect x="340" y="16" width="280" height="348" rx="12" class="z-trusted"/>
+        <text x="354" y="40" class="zlabel">RETAINER'S API</text>
+        <rect x="664" y="16" width="280" height="348" rx="12" class="z-ext"/>
+        <text x="678" y="40" class="zlabel">THE VIEWER'S BROWSER</text>
+
+        <rect x="36" y="58" width="240" height="50" rx="8" class="b-key"/>
+        <text x="156" y="88" text-anchor="middle">Writes the program</text>
+        <rect x="684" y="58" width="240" height="50" rx="8" class="b-ext"/>
+        <text x="804" y="88" text-anchor="middle">Draws it as it streams</text>
+        <line x1="278" y1="83" x2="682" y2="83" class="arrow" marker-end="url(#ad3)"/>
+        <text x="480" y="74" text-anchor="middle" class="small">the program, streamed into the chat</text>
+
+        <rect x="36" y="138" width="240" height="50" rx="8" class="b-key"/>
+        <text x="156" y="168" text-anchor="middle">Tries its queries</text>
+        <rect x="360" y="138" width="240" height="50" rx="8" class="b-trusted"/>
+        <text x="480" y="168" text-anchor="middle">Reads: query · aggregate</text>
+        <rect x="684" y="138" width="240" height="50" rx="8" class="b-ext"/>
+        <text x="804" y="168" text-anchor="middle">Runs each query</text>
+        <line x1="278" y1="163" x2="358" y2="163" class="arrow" marker-end="url(#ad3)"/>
+        <text x="318" y="154" text-anchor="middle" class="small">as the person</text>
+        <line x1="682" y1="163" x2="602" y2="163" class="arrow" marker-end="url(#ad3)"/>
+        <text x="642" y="154" text-anchor="middle" class="small">as the viewer</text>
+
+        <rect x="36" y="218" width="240" height="50" rx="8" class="b-key"/>
+        <text x="156" y="248" text-anchor="middle">Checks before answering</text>
+        <rect x="360" y="218" width="240" height="50" rx="8" class="b-trusted"/>
+        <text x="480" y="248" text-anchor="middle" class="monot">check_dashboard</text>
+        <line x1="278" y1="243" x2="358" y2="243" class="arrow" marker-end="url(#ad3)" marker-start="url(#ad3)"/>
+        <text x="318" y="234" text-anchor="middle" class="small">problems</text>
+
+        <text x="156" y="328" text-anchor="middle" class="small">never saves a dashboard</text>
+        <rect x="360" y="298" width="240" height="50" rx="8" class="b-trusted"/>
+        <text x="480" y="328" text-anchor="middle">Save: checks, stores by key</text>
+        <rect x="684" y="298" width="240" height="50" rx="8" class="b-ext"/>
+        <text x="804" y="328" text-anchor="middle">Pin · Update</text>
+        <line x1="682" y1="323" x2="602" y2="323" class="arrow" marker-end="url(#ad3)"/>
+        <text x="642" y="314" text-anchor="middle" class="small">saves</text>
+      </svg>
+      </div>
+      <figcaption>Retainer's core still never calls a model. The model call happens in the agent, once, when the dashboard is written.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 4 -->
+  <section id="agent">
+    <span class="eyebrow">4 · The agent</span>
+    <h2>It learns the language only when asked, and checks its work before answering</h2>
+    <ol class="track">
+      <li class="z-t"><span class="n">1</span><h3>Told once</h3><p>In a web chat, one line in the first message says dashboards can be shown here.</p></li>
+      <li class="z-k"><span class="n">2</span><h3>Reads the guide</h3><p><code>get_guide("dashboards")</code>, about 4,000 tokens, only when a dashboard is asked for.</p></li>
+      <li class="z-k"><span class="n">3</span><h3>Learns, then tries</h3><p><code>describe_schema</code>, then the real queries with <code>aggregate_records</code>.</p></li>
+      <li class="z-t"><span class="n">4</span><h3>Checks</h3><p><code>check_dashboard</code> returns the problems, and the agent fixes them.</p></li>
+      <li class="z-e"><span class="n">5</span><h3>Answers</h3><p>A sentence and the program. The chat draws it.</p></li>
+    </ol>
+    <h3>A change is a small patch, not a rewrite</h3>
+    <div class="chain">
+      <div class="node e"><b>The dashboard in the chat</b><small>9 lines</small></div>
+      <span class="arr">+</span>
+      <div class="node k"><b>“Show won revenue too”</b><small>the agent writes only the lines that change: 4 in the spike</small></div>
+      <span class="arr">→</span>
+      <div class="node e"><b>Merged in the browser</b><small>same name replaces, new name adds, unused lines drop</small></div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="components">
+    <span class="eyebrow">5 · Components</span>
+    <h2>A fixed list of parts, shared by the agent's guide and the web app</h2>
+    <div class="gallery">
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><rect x="4" y="6" width="26" height="28" rx="4" class="glyph"/><rect x="34" y="6" width="26" height="28" rx="4" class="glyph"/></svg><b>Row</b><small>Tiles side by side</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><line x1="6" y1="10" x2="26" y2="10" class="glyph-line"/><rect x="6" y="18" width="40" height="14" rx="3" class="glyph-fill"/></svg><b>Metric</b><small>One headline number</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><rect x="8" y="20" width="9" height="16" rx="2" class="glyph-fill"/><rect x="21" y="10" width="9" height="26" rx="2" class="glyph-fill"/><rect x="34" y="16" width="9" height="20" rx="2" class="glyph-fill"/><rect x="47" y="4" width="9" height="32" rx="2" class="glyph-fill"/></svg><b>BarChart</b><small>Values across categories</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><rect x="10" y="22" width="11" height="14" class="glyph-fill"/><rect x="10" y="12" width="11" height="8" class="glyph-soft"/><rect x="27" y="16" width="11" height="20" class="glyph-fill"/><rect x="27" y="4" width="11" height="10" class="glyph-soft"/><rect x="44" y="26" width="11" height="10" class="glyph-fill"/><rect x="44" y="14" width="11" height="10" class="glyph-soft"/></svg><b>StackedBar</b><small>Categories split in two ways</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><polyline points="4,30 18,22 30,26 44,12 60,8" class="glyph"/></svg><b>LineChart</b><small>Values over time</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><circle cx="32" cy="20" r="15" class="glyph-soft"/><path d="M32,20 L32,5 A15,15 0 0 1 46.3,24.6 Z" class="glyph-fill"/></svg><b>PieChart</b><small>Shares of a whole</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><rect x="4" y="5" width="56" height="30" rx="4" class="glyph"/><line x1="4" y1="15" x2="60" y2="15" class="glyph"/><line x1="4" y1="25" x2="60" y2="25" class="glyph"/><line x1="26" y1="5" x2="26" y2="35" class="glyph"/></svg><b>Table</b><small>Records, up to 100 rows</small></div>
+      <div class="comp"><svg viewBox="0 0 64 40" aria-hidden="true"><line x1="6" y1="12" x2="58" y2="12" class="glyph-line"/><line x1="6" y1="21" x2="58" y2="21" class="glyph-line"/><line x1="6" y1="30" x2="38" y2="30" class="glyph-line"/></svg><b>Text</b><small>A short note</small></div>
+    </div>
+    <p class="note">The list lives in one place. The guide the agent reads and the parts the browser draws are both built from it, so they can't drift apart. An unknown part is dropped and reported, never drawn.</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="data">
+    <span class="eyebrow">6 · Data</span>
+    <h2>Two reads feed every dashboard</h2>
+    <div class="two">
+      <div class="panel">
+        <h3><code>query_records</code></h3>
+        <p class="sub">A list of records, filtered and sorted. For tables.</p>
+        <div class="chips"><span>filter</span><span>search</span><span>sort</span><span>up to 200 rows</span></div>
+      </div>
+      <div class="panel">
+        <h3><code>aggregate_records</code></h3>
+        <p class="sub">Counts and totals, whole or per group. For numbers and charts.</p>
+        <div class="chips"><span>count</span><span>sum</span><span>avg</span><span>min · max</span><span>50 groups, up to 200</span></div>
+      </div>
+    </div>
+    <h3>Three ways to group</h3>
+    <div class="rules">
+      <div class="rule"><span class="mono">By option</span><p>Deals by stage. Works today.</p><div class="chips"><span>Lead</span><span>Proposal</span><span>Won</span></div></div>
+      <div class="rule"><span class="mono">By date · new</span><p>Deals created per month, meetings per week. Empty periods show as zero.</p><div class="chips"><span>day</span><span>week</span><span>month</span><span>quarter</span><span>year</span></div></div>
+      <div class="rule"><span class="mono">By related record · new</span><p>Deals per company, largest first.</p><div class="chips"><span>Acme</span><span>Globex</span><span>No value</span></div></div>
+    </div>
+    <div class="chain">
+      <div class="node t"><b>The API returns a list</b><small><code>values: [{field, op, as: "pipeline", value}]</code></small></div>
+      <span class="arr">→</span>
+      <div class="node e"><b>The browser names each result</b><small><code>values.pipeline</code>, money with its currency, options as labels</small></div>
+      <span class="arr">→</span>
+      <div class="node e"><b>The program reads the name</b><small>never a field name, so renames are safe</small></div>
+    </div>
+    <p class="note">Money in more than one currency is never added up. The tile says "Mixed currencies".</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="renames">
+    <span class="eyebrow">7 · Renames</span>
+    <h2>Rename a field and every dashboard keeps working</h2>
+    <div class="chain">
+      <div class="node k"><b>Written</b><small><code>field: "amount", as: "pipeline"</code></small></div>
+      <span class="arr">→</span>
+      <div class="node t"><b>Stored by key</b><small><code>field: "f_3k9", as: "pipeline"</code></small></div>
+      <span class="arr">→</span>
+      <div class="node o"><b>Someone renames the field</b><small>amount becomes value</small></div>
+      <span class="arr">→</span>
+      <div class="node t"><b>Read by name</b><small><code>field: "value", as: "pipeline"</code></small></div>
+      <span class="arr">→</span>
+      <div class="node e"><b>Tiles unchanged</b><small>they read <code>pipeline</code></small></div>
+    </div>
+    <div class="chain">
+      <div class="node o"><b>A field is removed</b><small>the stored key names nothing</small></div>
+      <span class="arr">→</span>
+      <div class="node e"><b>That tile shows a note</b><small>"This part uses a field that was removed". The rest still works.</small></div>
+      <span class="arr">→</span>
+      <div class="node k"><b>Fix with the agent</b><small>opens a chat with the problem already in the message</small></div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="sharing">
+    <span class="eyebrow">8 · Sharing</span>
+    <h2>A dashboard can be shared. A chat never is.</h2>
+    <figure class="figure">
+      <div class="scroll">
+      <svg viewBox="0 0 960 262" role="img" aria-label="Dana asks for a dashboard in her chat and pins it, then shares it with the workspace. The dashboard remembers Dana's chat. When Dana clicks Edit with the agent, she goes back to her own chat. When Omar clicks it, he gets a new chat that starts from the dashboard's program. Nobody opens another person's chat. After Omar saves, the dashboard remembers Omar's chat.">
+        <defs>
+          <marker id="ad8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="ad8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-bad"/></marker>
+        </defs>
+        <text x="30" y="40" class="zlabel">DANA</text>
+        <text x="360" y="40" class="zlabel">THE WORKSPACE</text>
+        <text x="690" y="40" class="zlabel">OMAR</text>
+
+        <rect x="30" y="60" width="240" height="96" rx="10" class="b-out"/>
+        <text x="150" y="102" text-anchor="middle">Dana's chat</text>
+        <text x="150" y="122" text-anchor="middle" class="small">asked for it, pinned it</text>
+
+        <rect x="360" y="60" width="240" height="96" rx="10" class="b-trusted"/>
+        <text x="480" y="92" text-anchor="middle">“Deals” dashboard</text>
+        <text x="480" y="112" text-anchor="middle" class="small">shared with the workspace</text>
+        <text x="480" y="136" text-anchor="middle" class="small">remembers Dana's chat</text>
+
+        <rect x="690" y="60" width="240" height="96" rx="10" class="b-out"/>
+        <text x="810" y="102" text-anchor="middle">Omar's new chat</text>
+        <text x="810" y="122" text-anchor="middle" class="small">starts from the program</text>
+
+        <line x1="272" y1="90" x2="358" y2="90" class="arrow" marker-end="url(#ad8)"/>
+        <text x="315" y="82" text-anchor="middle" class="small">Pin</text>
+        <line x1="358" y1="128" x2="272" y2="128" class="arrow" marker-end="url(#ad8)"/>
+        <text x="315" y="146" text-anchor="middle" class="small">Edit: her chat</text>
+        <line x1="602" y1="108" x2="688" y2="108" class="arrow" marker-end="url(#ad8)"/>
+        <text x="645" y="100" text-anchor="middle" class="small">Edit: new chat</text>
+
+        <path d="M810,158 L810,206 L150,206 L150,160" class="arrow-bad" marker-end="url(#ad8b)"/>
+        <text x="480" y="198" text-anchor="middle" class="badtxt">✕ nobody opens another person's chat</text>
+        <text x="480" y="240" text-anchor="middle" class="small">After Omar saves, the dashboard remembers Omar's chat instead.</text>
+      </svg>
+      </div>
+      <figcaption>A new dashboard is private. <b>Share with workspace</b> shows it to everyone, and each viewer still sees only the records they can read.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 9 -->
+  <section id="card">
+    <span class="eyebrow">9 · In the chat</span>
+    <h2>The card around the draft is built so that views and Routines can use it</h2>
+    <div class="anat">
+      <div class="card-frame">
+        <span class="zone-lab">The draft card · shared</span>
+        <div class="card-content">
+          <span class="zone-lab">The content · the feature's own renderer</span>
+          <div class="skel"><i></i><i></i><i class="wide"></i></div>
+        </div>
+        <div class="card-note">A part that could not be shown gets a short note here.</div>
+        <div class="card-keep">
+          <span class="zone-lab">The keep buttons · filled by the feature</span>
+          <div class="btns"><span class="btn">Pin to Dashboards</span><span class="btn ghost">Update “Deals”</span><span class="btn ghost">Save as new</span></div>
+        </div>
+      </div>
+      <div class="slot">
+        <div class="rowx"><b>Dashboard</b><div class="btns"><span class="btn">Pin</span><span class="btn ghost">Update</span><span class="btn ghost">Save as new</span><span class="when now">now</span></div></div>
+        <div class="rowx"><b>View</b><div class="btns"><span class="btn ghost">Save</span><span class="when later">later</span></div></div>
+        <div class="rowx"><b>Routine</b><div class="btns"><span class="btn ghost">Propose</span><span class="when later">later</span></div></div>
+        <div class="chain">
+          <div class="node k"><b><code>```openui-lang</code></b><small>a block in the agent's answer</small></div>
+          <span class="arr">→</span>
+          <div class="node e"><b>Dashboard renderer</b><small>loaded only when needed</small></div>
+        </div>
+        <div class="chain">
+          <div class="node k"><b>Any other block</b><small>a language the chat doesn't know</small></div>
+          <span class="arr">→</span>
+          <div class="node o"><b>Shown as code</b><small>as today</small></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">The same experience is planned for all three: describe it, see it live, keep it. Only the last button changes with the risk. That shared design is not written yet.</p>
+  </section>
+
+  <!-- 10 -->
+  <section id="limits">
+    <span class="eyebrow">10 · Limits and safety</span>
+    <h2>Read-only by construction</h2>
+    <div class="limits">
+      <div class="limit"><b>20 KB</b><small>program size</small></div>
+      <div class="limit"><b>20</b><small>queries per dashboard</small></div>
+      <div class="limit"><b>≥ 60 s</b><small>between refreshes</small></div>
+      <div class="limit"><b>200</b><small>rows per query</small></div>
+      <div class="limit"><b>100</b><small>rows shown in a table</small></div>
+      <div class="limit"><b>50–200</b><small>groups per aggregate</small></div>
+      <div class="limit"><b>7</b><small>pie slices</small></div>
+    </div>
+    <div class="two">
+      <div class="panel">
+        <ul class="ticks">
+          <li><span><b>It can only read.</b> The browser gives a program two read functions and nothing else.</span></li>
+          <li><span><b>It runs as the viewer.</b> A query the viewer can't run fails in its own tile.</span></li>
+        </ul>
+      </div>
+      <div class="panel">
+        <ul class="ticks">
+          <li><span><b>It is data, not code.</b> Nothing in a program is executed as script.</span></li>
+          <li><span><b>Nothing leaves Retainer.</b> Built in-house on OpenUI's open-source parts; no outside service.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="delivery">
+    <span class="eyebrow">11 · Delivery</span>
+    <h2>One PR, in four parts</h2>
+    <div class="decide">
+      <div class="dcard"><span class="q">Beyond dashboards</span><h3>Useful to every agent</h3><p><code>aggregate_records</code>, grouping by date and relation, and the chat's blocks and draft card.</p></div>
+      <div class="dcard"><span class="q">Shared</span><h3>One list of parts</h3><p>The components and the data tool descriptions.</p></div>
+      <div class="dcard"><span class="q">Server</span><h3>Store and check</h3><p>The <code>dashboards</code> table, routes, the save check, the guide and <code>check_dashboard</code>.</p></div>
+      <div class="dcard"><span class="q">Web</span><h3>Draw and keep</h3><p>The chat block, Pin and Update, the Dashboards page and the charts.</p></div>
+    </div>
+    <h3>Open questions, each with a recommendation</h3>
+    <div class="decide">
+      <div class="dcard"><span class="q">Who can save</span><p>Only people who can write, as with views.</p><span class="pill keep">keep</span></div>
+      <div class="dcard"><span class="q">Filters on a dashboard</span><p>A date range or an owner picker.</p><span class="pill later">later</span></div>
+      <div class="dcard"><span class="q">Drag-and-resize layout</span><p>Tiles flow in rows for now; the agent reorders them.</p><span class="pill later">later</span></div>
+      <div class="dcard"><span class="q">Chart library</span><p>shadcn/ui charts on Recharts.</p><span class="pill keep">keep</span></div>
+    </div>
+  </section>
+
+  <footer>Source: <code>docs/specs/dashboards.md</code> (proposed), main at <code>1ca8d92f</code>, 2026-11-27. A spike proved the approach end to end: 6 of 6 eval turns passed.</footer>
+</main>
