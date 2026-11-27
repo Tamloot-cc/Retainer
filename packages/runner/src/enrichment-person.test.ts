@@ -583,6 +583,12 @@ describe('a person change run (spec 7.5)', () => {
         emails: { primary: 'Ada@Acme.example', additional: [] },
         level: 'Senior',
         school: schoolId,
+        // A link the run can't see, a yes/no value and money are left out.
+        mentor: id(),
+        vip: true,
+        dealSize: { amountMicros: 5_000_000, currency: 'USD' },
+        followers: 1200,
+        address: { city: 'Lyon', country: 'France' },
       },
       { [schoolId]: { id: schoolId, object: 'school', label: 'Anvil Institute' } },
     );
@@ -595,6 +601,8 @@ describe('a person change run (spec 7.5)', () => {
         'ada@acme.example',
         'Senior',
         'Anvil Institute',
+        '1200',
+        'Lyon, France',
       ]),
       exaPeopleRequest(['Ada Example']),
     ]);

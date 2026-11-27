@@ -116,16 +116,16 @@ const exaResult = z.object({
 export const exaSearchResponse = z.object({ results: z.array(exaResult).max(10) });
 export const exaTeam = z.object({ id: z.string().max(200) });
 
-/** A query part: whitespace collapsed, at most 200 characters. */
-const part = (value: string | null | undefined) =>
-  value?.trim().replace(/\s+/g, ' ').slice(0, 200) ?? '';
+/** A query part: whitespace collapsed, at most `max` characters. */
+const part = (value: string | null | undefined, max: number) =>
+  value?.trim().replace(/\s+/g, ' ').slice(0, max) ?? '';
 const search = (
   category: 'company' | 'people',
   parts: (string | null | undefined)[],
-  { queryChars = Infinity, textChars = 4000 } = {},
+  { partChars = 200, queryChars = Infinity, textChars = 4000 } = {},
 ) => ({
   query: parts
-    .map(part)
+    .map((value) => part(value, partChars))
     .filter(Boolean)
     // Whole parts only, while they fit.
     .reduce((query, next) => {
@@ -147,13 +147,13 @@ export const exaSearchRequest = (domain: string | null, name?: string | null) =>
   search('company', [name, domain]);
 
 /**
- * One people search (enrichment spec 7.3): the given parts joined, whole
- * parts up to 1,000 characters, with 6,000 characters of profile text for the model to
+ * One people search (enrichment spec 7.3): the given parts, each cut at 500
+ * characters, joined whole up to 1,000 characters, with 6,000 characters of profile text for the model to
  * compare. The lookup sends two: the person's name with the rest of their
  * record, email address included, and their name alone.
  */
 export const exaPeopleRequest = (parts: (string | null | undefined)[]) =>
-  search('people', parts, { queryChars: 1000, textChars: 6000 });
+  search('people', parts, { partChars: 500, queryChars: 1000, textChars: 6000 });
 
 /** One LinkedIn profile read directly (enrichment spec 7.3, step 1). */
 export function exaProfileRequest(url: string) {

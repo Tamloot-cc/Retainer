@@ -9,6 +9,7 @@ import {
 } from '@retainer/extension';
 import { RetainerApiError, RetainerClient } from '@retainer/sdk';
 import {
+  isRecordId,
   normalizeDomain,
   normalizeEmail,
   type ObjectView,
@@ -77,12 +78,18 @@ const DETAIL_CHARS = 500;
 const DETAILS_CHARS = 3000;
 
 /**
- * A field value as text: its text, list, name, email or link. A related
- * record is its label, from the references the record was read with.
+ * A field value as text: its text, number, list, name, email, link or the
+ * parts of an address. A related record is its label, from the references
+ * the record was read with; one it can't see is left out, not sent as an ID.
  */
 function textOf(value: unknown, references: PresentedRecord['relationReferences']): string | null {
-  if (typeof value === 'string')
-    return (references?.[value] ? references[value].label : value)?.trim() || null;
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null;
+  if (typeof value === 'string') {
+    const reference = references?.[value];
+    if (reference) return reference.label?.trim() || null;
+    const text = value.trim();
+    return text && !isRecordId(text as unknown) ? text : null;
+  }
   if (Array.isArray(value))
     return (
       value
@@ -90,10 +97,17 @@ function textOf(value: unknown, references: PresentedRecord['relationReferences'
         .filter(Boolean)
         .join(', ') || null
     );
-  if (!value || typeof value !== 'object') return null;
+  // A boolean or an amount of money says nothing about who someone is.
+  if (!value || typeof value !== 'object' || 'amountMicros' in value) return null;
   const primary = (value as { primary?: unknown }).primary;
   if (typeof primary === 'string') return primary.trim() || null;
-  return primaryUrl(value) ?? nameOf(value);
+  const text =
+    primaryUrl(value) ??
+    nameOf(value) ??
+    Object.values(value)
+      .filter((part): part is string => typeof part === 'string' && !!part.trim())
+      .join(', ');
+  return text || null;
 }
 
 /**

@@ -120,7 +120,7 @@ The **People** destination binds `name` (required), and optionally `email`, `com
 1. **LinkedIn first.** When the record already has a `linkedin.com/in/` address in its bound LinkedIn field, the run reads that profile with `POST /contents` ($0.001) and fills from it at confidence 1 (`matched_linkedin`).
 2. **Company signal.** Otherwise an automatic run needs a name and a company: the linked company's name and website, read through the Companies destination, or else the domain of a work email. A personal mailbox (Gmail, Outlook, iCloud, Proton and similar) is not a company. With neither, the run ends `no_company` without calling Exa. Enrich now goes on without one.
 3. **Two searches.** `category: 'people'`, five results each with up to 6,000 characters of profile text, run together:
-   - the whole record: the name, the company's name and domain, the email address, and the text of every other field on the record (a related record's ID is left out; each value is cut at 500 characters, the query at 1,000);
+   - the whole record: the name, the company's name and domain, the email address, and the text of every other field on the record: text, numbers, lists, emails, links, address parts, and a linked record by its label (a link the run can't see, a yes/no value and money are left out). Each value is cut at 500 characters, the query keeps whole values up to 1,000, and the model sees at most 3,000 characters of them;
    - the name alone, which finds the person when the rest of the record pulls the first search off course. A record with nothing but a name gets only this search.
 
    The results are merged, one per profile (by LinkedIn address, else by URL).
