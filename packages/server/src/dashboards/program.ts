@@ -204,6 +204,8 @@ export function inspectDashboard(program: string, stored = false) {
               ? part.index.v
               : undefined;
         if (member && DASHBOARD_FORBIDDEN_KEYS.has(member)) report(id, 'Invalid property name');
+        if (part.k === 'Obj' && part.entries.some(([key]) => DASHBOARD_FORBIDDEN_KEYS.has(key)))
+          report(id, 'Invalid property name');
         if (part.k !== 'Comp') return;
         if (part.name === 'Query') {
           if (part !== node) report(id, 'Query must be its own statement');

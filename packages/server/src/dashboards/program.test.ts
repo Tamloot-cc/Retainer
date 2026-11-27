@@ -62,6 +62,10 @@ describe('dashboard programs', () => {
         '\n' +
         Array.from({ length: 20 }, (_, i) => query.replace('data =', `q${i} =`)).join('\n'),
     ],
+    [
+      'forbidden key in a component object',
+      'root = Dashboard("Demo", [Table("T", [{__proto__: 1}], [TableColumn("Id", "id")])])',
+    ],
     ['UTF-8 size', `root = Dashboard("${'🎉'.repeat(5300)}", [])`],
   ])('rejects %s', (_, program) => {
     expect(inspectDashboard(program).problems.length).toBeGreaterThan(0);

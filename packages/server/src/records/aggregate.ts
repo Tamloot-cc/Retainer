@@ -292,15 +292,26 @@ function dateGroups(
   if (!latest || !earliest) return { groups: rows };
   const byDate = new Map(rows.map((row) => [row.value, row]));
   const date = new Date(`${latest}T00:00:00Z`);
+  // An empty period's sum is zero; for money, in the currency the series uses.
+  const zero = requests.map((_, n) => {
+    const money = rows
+      .map((row) => row.values[n]?.value)
+      .find((value) => typeof value === 'object' && value !== null);
+    return money ? { amountMicros: 0, currency: money.currency } : 0;
+  });
   const groups: AggregateGroup[] = [];
   let value = latest;
   while (value >= earliest && groups.length < limit) {
     const entry = byDate.get(value) ?? {
       value,
       total: 0,
-      values: valuesOf(requests, undefined).values.map((aggregate) => ({
+      values: valuesOf(requests, undefined).values.map((aggregate, n) => ({
         ...aggregate,
-        value: aggregate.op.startsWith('count') || aggregate.op === 'sum' ? 0 : null,
+        value: aggregate.op.startsWith('count')
+          ? 0
+          : aggregate.op === 'sum'
+            ? (zero[n] ?? 0)
+            : null,
       })),
     };
     groups.push({ ...entry, label: periodLabel(value, date, granularity) });

@@ -211,7 +211,12 @@ describe('POST /v1/objects/:object/aggregate', () => {
         total: 1,
         values: [{ as: 'pipeline', value: { amountMicros: 100_000_000, currency: 'USD' } }],
       },
-      { value: '2026-04-01', label: 'Apr 2026', total: 0, values: [{ as: 'pipeline', value: 0 }] },
+      {
+        value: '2026-04-01',
+        label: 'Apr 2026',
+        total: 0,
+        values: [{ as: 'pipeline', value: { amountMicros: 0, currency: 'USD' } }],
+      },
       { value: '2026-05-01', label: 'May 2026', total: 1 },
     ]);
     const limited = await aggregate('deal', { ...input, limit: 2 });
