@@ -3,6 +3,8 @@ packages:
   - plugins/*
 allowBuilds:
   esbuild: false
+  "@openuidev/lang-core": false
+  "@openuidev/react-lang": false
 # Hosted runners are linux/arm64 Lambdas built on x64 machines. The routine
 # runner type-checks with TypeScript 7, whose compiler is a native binary per
 # platform, so install the linux/arm64 builds of native packages too.

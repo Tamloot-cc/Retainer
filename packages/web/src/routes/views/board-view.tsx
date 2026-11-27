@@ -84,7 +84,7 @@ export function BoardView({
   // Each column's count and header total, over the view's filter.
   const totalsInput: AggregateInput = {
     filter,
-    ...(field ? { groupBy: field.name } : {}),
+    ...(field ? { groupBy: field.name, limit: 200 } : {}),
     aggregates: view.groupAggregate ? [view.groupAggregate] : [],
   };
   const totals = useQuery({

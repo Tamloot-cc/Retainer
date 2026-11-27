@@ -1072,6 +1072,20 @@
       "when": 1795680955165,
       "tag": "0152_agent_turn_message",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1795768004483,
+      "tag": "0153_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1795768006611,
+      "tag": "0154_dashboards_security",
+      "breakpoints": true
     }
   ]
 }

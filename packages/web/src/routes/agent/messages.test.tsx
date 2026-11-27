@@ -174,6 +174,22 @@ describe('ChatMessages', () => {
     expect(thinking.closest('[data-status=running]')).toBeTruthy();
   });
 
+  it('renders a fence in an unregistered language as code', () => {
+    const text = [
+      'Here is a program.',
+      '',
+      '````text',
+      '```openui-lang',
+      'root = Dashboard("Code", [])',
+      '```',
+      '````',
+    ].join('\n');
+    const { container } = render(<ChatMessages messages={[answered([{ type: 'text', text }])]} />);
+    expect(container.querySelector('pre code')?.textContent).toContain(
+      'root = Dashboard("Code", [])',
+    );
+  });
+
   it('leaves a saved trace without actions', () => {
     render(
       <ChatMessages

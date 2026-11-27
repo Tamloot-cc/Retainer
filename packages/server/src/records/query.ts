@@ -118,7 +118,7 @@ function columnOf(
 }
 
 /** A built-in column of `object` by API name. */
-function builtInColumn(tx: Tx, object: CompiledObject, name: string): BuiltIn | undefined {
+export function builtInColumn(tx: Tx, object: CompiledObject, name: string): BuiltIn | undefined {
   return columnOf(tx, name, object.isEvent ? 'subselect' : 'none');
 }
 
@@ -612,10 +612,10 @@ async function pageOf<T extends PresentedRecord>(
 export const EVENT_QUERY_OBJECT = 'event';
 
 /** The columns every event type shares, as SQL over `records r` joined to `event_records e`. */
-const eventQueryColumn = (tx: Tx, name: string) => columnOf(tx, name, 'joined');
+export const eventQueryColumn = (tx: Tx, name: string) => columnOf(tx, name, 'joined');
 
 const EVENT_SORT_NAMES = [...Object.keys(EVENT_COLUMN_NAMES), ...Object.keys(BUILT_IN_COLUMNS)];
-const EVENT_FILTER_NAMES = ['type', ...EVENT_SORT_NAMES];
+export const EVENT_FILTER_NAMES = ['type', ...EVENT_SORT_NAMES];
 
 /** The event type IDs a `type` condition names; unknown names fail with the known ones. */
 function eventTypeIds(schema: CompiledSchema, names: unknown): string[] {
@@ -701,6 +701,25 @@ function eventSort(tx: Tx, sort: QueryInput['sort']): Fragment {
   return parts.reduce((a, b) => tx`${a}, ${b}`);
 }
 
+/** Matching events across types, shared with the aggregate path. */
+export function matchingEvents(
+  tx: Tx,
+  workspaceId: string,
+  schema: CompiledSchema,
+  input: Pick<QueryInput, 'filter' | 'search' | 'linked'>,
+): Fragment {
+  const where = input.filter
+    ? compileTree(tx, input.filter, 0, (name, condition) =>
+        eventCondition(tx, schema, name, condition),
+      )
+    : tx`true`;
+  return tx`r.workspace_id = ${workspaceId}
+    and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
+    and r.deleted_at is null and ${currentActivityEvidence(tx, tx`r.id`)} and ${where}
+    ${input.search ? tx`and r.search @@ ${plainPrefixQuery(tx, input.search)}` : tx``}
+    ${input.linked ? tx`and ${attachedTo(tx, workspaceId, schema, input.linked)}` : tx``}`;
+}
+
 /** Filters, sorts and pages live events across every visible event type. */
 export async function queryEvents(
   tx: Tx,
@@ -709,20 +728,11 @@ export async function queryEvents(
   input: QueryInput,
 ): Promise<EventPage> {
   const offset = decodeCursor(input.cursor);
-  const where = input.filter
-    ? compileTree(tx, input.filter, 0, (name, condition) =>
-        eventCondition(tx, schema, name, condition),
-      )
-    : tx`true`;
   const rows = await tx<RecordRow[]>`
     select ${recordColumns(tx, 'r')}
     from records r
     join event_records e on e.record_id = r.id and e.workspace_id = r.workspace_id
-    where r.workspace_id = ${workspaceId}
-      and r.object_type_id = any(${schema.eventTypeIds}::uuid[])
-      and r.deleted_at is null and ${currentActivityEvidence(tx, tx`r.id`)} and ${where}
-      ${input.search ? tx`and r.search @@ ${plainPrefixQuery(tx, input.search)}` : tx``}
-      ${input.linked ? tx`and ${attachedTo(tx, workspaceId, schema, input.linked)}` : tx``}
+    where ${matchingEvents(tx, workspaceId, schema, input)}
     order by ${eventSort(tx, input.sort)}
     limit ${input.limit + 1} offset ${offset}`;
   return pageOf(tx, schema, rows, input, offset, (presented) =>

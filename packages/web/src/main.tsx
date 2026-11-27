@@ -299,6 +299,21 @@ const chatRoute = createRoute({
   },
 });
 
+const dashboardsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dashboards',
+  component: function DashboardsLayout() {
+    const { session } = useAuth();
+    return session.agentAvailable ? (
+      <Outlet />
+    ) : (
+      <Page title="Dashboards are unavailable">
+        <Link to="/">Go home</Link>
+      </Page>
+    );
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
@@ -420,7 +435,25 @@ const routeTree = rootRoute.addChildren([
     createRoute({
       getParentRoute: () => chatRoute,
       path: '$id',
+      validateSearch: (search: Record<string, unknown>) => ({
+        ...(typeof search.dashboard === 'string' ? { dashboard: search.dashboard } : {}),
+        ...(typeof search.dashboardRevision === 'string'
+          ? { dashboardRevision: search.dashboardRevision }
+          : {}),
+      }),
       component: lazyRouteComponent(() => import('./routes/agent/chat.js'), 'ChatPage'),
+    }),
+  ]),
+  dashboardsRoute.addChildren([
+    createRoute({
+      getParentRoute: () => dashboardsRoute,
+      path: '/',
+      component: lazyRouteComponent(() => import('./routes/dashboards/pages.js'), 'DashboardsPage'),
+    }),
+    createRoute({
+      getParentRoute: () => dashboardsRoute,
+      path: '$id',
+      component: lazyRouteComponent(() => import('./routes/dashboards/pages.js'), 'DashboardPage'),
     }),
   ]),
   createRoute({

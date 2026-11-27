@@ -111,6 +111,7 @@ type SessionRow = {
   id: string;
   workspace_id: string;
   kind: 'chat' | 'task';
+  client: 'web' | 'cli' | 'task' | null;
   status: 'open' | 'deleted';
   owner: string;
   person_id: string | null;
@@ -236,7 +237,7 @@ export class AgentSessions {
   // ------------------------------------------------------------------ chats
 
   /** Creates a chat with its tools and system blocks pinned (§3.5, §8.3). */
-  async createChat(caller: Caller) {
+  async createChat(caller: Caller, client: 'web' | 'cli' | undefined = undefined) {
     const owned = this.owner(caller);
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       const { tools, extensionTools } = await pinnedTools(
@@ -246,8 +247,8 @@ export class AgentSessions {
         this.extensions.catalog,
       );
       const [row] = await tx<SessionRow[]>`
-        insert into agent_sessions (workspace_id, kind, owner, person_id, tools, extension_tools, system_blocks, limits)
-        values (${caller.workspaceId}, 'chat', ${owned.owner}, ${owned.personId},
+        insert into agent_sessions (workspace_id, kind, client, owner, person_id, tools, extension_tools, system_blocks, limits)
+        values (${caller.workspaceId}, 'chat', ${client ?? null}, ${owned.owner}, ${owned.personId},
           ${tx.json(jsonValue(tools))}, ${tx.json(jsonValue(extensionTools))},
           ${tx.json([BASE_SYSTEM_PROMPT])}, ${tx.json(jsonValue(CHAT_LIMITS))})
         returning *`;
@@ -611,6 +612,7 @@ export class AgentSessions {
         objects: names(schema.entityTypeIds),
         eventTypes: names(schema.eventTypeIds),
         date,
+        client: session.client,
       }),
     ];
   }

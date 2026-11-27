@@ -3558,6 +3558,7 @@ export const agentSessions = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     kind: text('kind').notNull(),
+    client: text('client').$type<'web' | 'cli' | 'task'>(),
     /** Who the session belongs to: `user:<id>` for a person, `key:<actor id>` in key mode. */
     owner: text('owner').notNull(),
     /** The person a chat works for, whose `me` memory it reaches. Null in key mode. */
@@ -3584,9 +3585,43 @@ export const agentSessions = pgTable(
   (t) => [
     unique('agent_sessions_ws_id_uq').on(t.workspaceId, t.id),
     index('agent_sessions_owner_idx').on(t.workspaceId, t.owner, t.lastActiveAt),
+    check(
+      'agent_sessions_client',
+      sql`(${t.client} is null or (${t.kind} = 'chat' and ${t.client} in ('web', 'cli')) or (${t.kind} = 'task' and ${t.client} = 'task'))`,
+    ),
     check('agent_sessions_kind', sql`${t.kind} in ('chat', 'task')`),
     check('agent_sessions_status', sql`${t.status} in ('open', 'deleted')`),
     tenantPolicy('agent_sessions_workspace', t.workspaceId),
+  ],
+).enableRLS();
+
+/** Saved workspace dashboards. Programs refer to stable object and field keys. */
+export const dashboards = pgTable(
+  'dashboards',
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text('name').notNull(),
+    program: text('program').notNull(),
+    visibility: text('visibility').$type<'private' | 'workspace'>().notNull().default('private'),
+    position: doublePrecision('position').notNull().default(0),
+    chatId: uuid('chat_id'),
+    createdBy: jsonb('created_by').$type<Actor>().notNull(),
+    updatedBy: jsonb('updated_by').$type<Actor>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // PostgreSQL limits SET NULL to chat_id in the companion migration.
+    foreignKey({
+      name: 'dashboards_chat_fk',
+      columns: [t.workspaceId, t.chatId],
+      foreignColumns: [agentSessions.workspaceId, agentSessions.id],
+    }).onDelete('set null'),
+    check('dashboards_visibility', sql`${t.visibility} in ('workspace', 'private')`),
+    index('dashboards_workspace_position_idx').on(t.workspaceId, t.position),
+    index('dashboards_chat_idx').on(t.chatId),
+    tenantPolicy('dashboards_workspace', t.workspaceId),
   ],
 ).enableRLS();
 

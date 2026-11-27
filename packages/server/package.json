@@ -31,6 +31,7 @@
     "@better-auth/passkey": "1.7.27",
     "@hono/node-server": "^2.1.11",
     "@modelcontextprotocol/server": "^2.4.0",
+    "@openuidev/lang-core": "1.2.0",
     "@retainer/agent": "workspace:*",
     "@retainer/extension": "workspace:*",
     "@retainer/shared": "workspace:*",

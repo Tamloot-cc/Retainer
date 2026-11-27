@@ -918,11 +918,13 @@ export function aggregateOps(field: {
 export type AggregateInput = {
   search?: string;
   filter?: Record<string, unknown>;
-  aggregates?: { field: string; op: AggregateOp }[];
-  /** A filterable `select` field: also compute the total and aggregates per option. */
+  aggregates?: { field: string; op: AggregateOp; as?: string }[];
   groupBy?: string;
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year';
+  limit?: number;
 };
 export type AggregateValue = {
+  as?: string;
   field: string;
   op: AggregateOp;
   /**
@@ -935,12 +937,18 @@ export type AggregateValue = {
   mixedCurrencies?: true;
 };
 /** One option's share of a grouped aggregate; `value` is null for records with no value. */
-export type AggregateGroup = { value: string | null; total: number; values: AggregateValue[] };
+export type AggregateGroup = {
+  value: string | null;
+  label: string;
+  total: number;
+  values: AggregateValue[];
+};
 export type AggregateResult = {
   total: number;
   values: AggregateValue[];
-  /** With `groupBy`: every value that at least one matching record has. */
+  /** With `groupBy`: a bounded list of groups. */
   groups?: AggregateGroup[];
+  tooManyGroups?: true;
 };
 
 // ---------------------------------------------------------------------------

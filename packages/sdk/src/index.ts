@@ -15,7 +15,14 @@ import type {
   ExtensionRecordButton,
   ExtensionRecordButtonRun,
 } from '@retainer/extension';
-import type { OrganizationRole, WorkspaceRole } from '@retainer/shared';
+import type {
+  CreateDashboard,
+  DashboardSummary,
+  OrganizationRole,
+  SavedDashboard,
+  UpdateDashboard,
+  WorkspaceRole,
+} from '@retainer/shared';
 import { isMaintenance, maintenanceFetch } from './maintenance.js';
 
 export { isMaintenance, isMaintenanceRead, retryAfterMs, waitForRetry } from './maintenance.js';
@@ -1382,8 +1389,24 @@ export class RetainerClient {
     return this.get<{ timeZone: string; routines: RoutineView[] }>('/v1/routines', {}, signal);
   }
   /** Opens a chat with the workspace agent (docs/specs/agent.md §6.1). */
-  createAgentChat(signal?: AbortSignal) {
-    return this.post<AgentChat>('/v1/agent/chats', {}, signal);
+  dashboards(chatId?: string, signal?: AbortSignal) {
+    return this.get<{ dashboards: DashboardSummary[] }>('/v1/dashboards', { chatId }, signal);
+  }
+  dashboard(id: string, signal?: AbortSignal) {
+    return this.get<SavedDashboard>(`/v1/dashboards/${encodeURIComponent(id)}`, {}, signal);
+  }
+  createDashboard(input: CreateDashboard) {
+    return this.post<SavedDashboard>('/v1/dashboards', input);
+  }
+  updateDashboard(id: string, input: UpdateDashboard) {
+    return this.send<SavedDashboard>('PATCH', `/v1/dashboards/${encodeURIComponent(id)}`, input);
+  }
+  deleteDashboard(id: string) {
+    return this.send<void>('DELETE', `/v1/dashboards/${encodeURIComponent(id)}`);
+  }
+
+  createAgentChat(signal?: AbortSignal, client?: 'web' | 'cli') {
+    return this.post<AgentChat>('/v1/agent/chats', { client }, signal);
   }
   /** The person's chats with the workspace agent. */
   agentChats(signal?: AbortSignal) {

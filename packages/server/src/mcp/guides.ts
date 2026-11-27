@@ -445,6 +445,8 @@ follow-ups" and "Writes to Israeli clients in Hebrew" go in me.
   needs no source.
 - You cannot delete a fact. Your user removes one in Settings → Memory.`;
 
+import { dashboardGuide } from '../dashboards/guide.js';
+
 export const GUIDES = {
   discover_schema: {
     title: 'Discover the schema',
@@ -480,6 +482,13 @@ export const GUIDES = {
       'for), what belongs on a record instead, and how to correct and move facts.',
     text: MEMORY,
     promptIntro: 'Load what Retainer remembers about this workspace and about me.',
+  },
+  dashboards: {
+    title: 'Build live dashboards',
+    description:
+      'Write and check live OpenUI Lang dashboards. Only Retainer’s web app renders them.',
+    text: dashboardGuide,
+    promptIntro: 'Help me draft a live dashboard from my workspace records.',
   },
   log_from_chat: {
     title: 'Log what your user tells you',

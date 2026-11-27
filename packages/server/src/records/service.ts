@@ -618,7 +618,13 @@ export async function aggregate(
   input: AggregateInput,
 ): Promise<AggregateResult> {
   return withRead(sql, caller, (tx, schema) =>
-    aggregateRecords(tx, caller.workspaceId, schema, requireObject(schema, objectName), input),
+    aggregateRecords(
+      tx,
+      caller.workspaceId,
+      schema,
+      objectName === EVENT_QUERY_OBJECT ? undefined : requireObject(schema, objectName),
+      input,
+    ),
   );
 }
 

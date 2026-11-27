@@ -13,17 +13,8 @@ import {
   Search,
   Wrench,
 } from 'lucide-react';
-import { memo, type ReactNode, useState } from 'react';
-import remend from 'remend';
-import {
-  Button,
-  CopyButton,
-  JsonBlock,
-  LogoMark,
-  type LogoMood,
-  Markdown,
-  Notice,
-} from '../../ui/index.js';
+import { memo, type ReactNode, useMemo, useState } from 'react';
+import { Button, CopyButton, JsonBlock, LogoMark, type LogoMood, Notice } from '../../ui/index.js';
 import {
   Bubble,
   Message,
@@ -42,6 +33,7 @@ import {
   type TraceStatus,
   TraceTitle,
 } from '../../ui/trace.js';
+import { type BlockHistory, ChatAnswer, extendBlockHistory } from './chat-blocks.js';
 import {
   answerText,
   type ChatMessage,
@@ -66,6 +58,8 @@ import {
   turnEnd,
   webResults,
 } from './model.js';
+
+const EMPTY_BLOCK_HISTORY: BlockHistory = {};
 
 const KIND_ICONS: Record<ToolKind, typeof Search> = {
   search: Search,
@@ -403,9 +397,13 @@ function AssistantParts({
   message,
   streaming,
   stopping,
+  history,
+  chatId,
   hasMark,
 }: {
   message: ChatMessage;
+  history: BlockHistory;
+  chatId?: string;
   streaming: boolean;
   stopping: boolean;
   hasMark: boolean;
@@ -426,13 +424,19 @@ function AssistantParts({
             />
           );
         const { part } = segment;
-        if (part.type === 'text')
+        if (part.type === 'text') {
+          const previous = history;
+          history = extendBlockHistory(history, part.text);
           return (
-            <Markdown key={key} className="text-sm leading-relaxed">
-              {/* Closes markdown cut off mid-stream (a bold, a link, a table) so it doesn't flicker. */}
-              {streaming && last ? remend(part.text) : part.text}
-            </Markdown>
+            <ChatAnswer
+              key={key}
+              text={part.text}
+              history={previous}
+              chatId={chatId}
+              streaming={streaming && last}
+            />
           );
+        }
         const ending = turnEnd(part);
         if (ending === 'cancelled' && stopping) return null;
         if (ending)
@@ -499,8 +503,12 @@ const AgentMessage = memo(function AgentMessage({
   mood,
   stopping,
   onRetry,
+  history,
+  chatId,
 }: {
   message: ChatMessage;
+  history: BlockHistory;
+  chatId?: string;
   answering: boolean;
   last: boolean;
   actions: boolean;
@@ -516,6 +524,8 @@ const AgentMessage = memo(function AgentMessage({
         message={message}
         streaming={answering}
         stopping={stopping}
+        history={history}
+        chatId={chatId}
         hasMark={Boolean(mood)}
       />
       {actions && !answering && (answer || onRetry) ? (
@@ -543,6 +553,7 @@ const AgentMessage = memo(function AgentMessage({
  */
 export function ChatMessages({
   messages,
+  chatId,
   streaming = false,
   mood = 'idle',
   mark = true,
@@ -553,6 +564,7 @@ export function ChatMessages({
   onRetry,
 }: {
   messages: ChatMessage[];
+  chatId?: string;
   /** The last message is still arriving. */
   streaming?: boolean;
   mood?: LogoMood;
@@ -568,9 +580,23 @@ export function ChatMessages({
   /** Sends the last message again; offered under the last answer. */
   onRetry?: () => void;
 }) {
+  const histories = useMemo(() => {
+    let history = EMPTY_BLOCK_HISTORY;
+    return messages.map((message) => {
+      const previous = history;
+      if (message.role === 'user')
+        history = extendBlockHistory(history, messageText(message), true);
+      if (message.role === 'assistant') {
+        for (const part of message.parts) {
+          if (part.type === 'text') history = extendBlockHistory(history, part.text);
+        }
+      }
+      return previous;
+    });
+  }, [messages]);
   const turns = messages.flatMap((message, index) => {
     const last = index === messages.length - 1;
-    if (message.role === 'user')
+    if (message.role === 'user') {
       return [
         {
           id: message.id,
@@ -578,6 +604,7 @@ export function ChatMessages({
           node: <UserMessage message={message} actions={mark} onEdit={onEdit} />,
         },
       ];
+    }
     if (message.role !== 'assistant') return [];
     return [
       {
@@ -586,6 +613,8 @@ export function ChatMessages({
         node: (
           <AgentMessage
             message={message}
+            history={histories[index] ?? EMPTY_BLOCK_HISTORY}
+            chatId={chatId}
             answering={streaming && last}
             last={last}
             actions={mark}

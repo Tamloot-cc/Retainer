@@ -156,8 +156,8 @@ export async function createTask(
   // The request's limits are optional and never above the defaults (§9.1).
   const limits = { ...TASK_LIMITS, ...input.request.limits };
   await tx`
-    insert into agent_sessions (id, workspace_id, kind, owner, person_id, title, tools, extension_tools, system_blocks, limits)
-    values (${sessionId}, ${workspaceId}, 'task', ${input.owner}, null,
+    insert into agent_sessions (id, workspace_id, kind, client, owner, person_id, title, tools, extension_tools, system_blocks, limits)
+    values (${sessionId}, ${workspaceId}, 'task', 'task', ${input.owner}, null,
       ${input.request.instructions.replace(/\s+/g, ' ').trim().slice(0, 80)},
       ${tx.json(jsonValue(input.tools))}, ${tx.json(jsonValue(input.extensionTools))},
       ${tx.json([input.baseSystemPrompt, taskSystemBlock(input.request.instructions)])},

@@ -34,7 +34,7 @@ const LAYERS = [
     ],
   ],
   ['core', ['records', 'memory', 'privacy', 'files', 'sources', 'changes']],
-  ['features', ['views', 'comments', 'retrieval', 'reads']],
+  ['features', ['views', 'dashboards', 'comments', 'retrieval', 'reads']],
   [
     'admin',
     ['schema-engine', 'templates', 'workspaces', 'extensions', 'routines', 'agent-sessions'],

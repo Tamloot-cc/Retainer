@@ -166,6 +166,8 @@ The [generated API reference](api/index.mdx) has request and response schemas an
 | `POST /v1/objects/:object/upsert`                   | `write`          | Update or create a record found by `id` or `match`, with `ifMissing` |
 | `POST /v1/objects/:object/query`                    | `read`           | Filter, sort and page records of one object                          |
 | `POST /v1/objects/:object/aggregate`                | `read`           | Count, and per-field totals over, the records a filter matches       |
+| `GET` · `POST /v1/dashboards`                      | `read` · `write` | List visible dashboards or pin a validated program                  |
+| `GET` · `PATCH` · `DELETE /v1/dashboards/:id`       | `read` · `write` | Read, update or delete a dashboard                                  |
 | `GET` · `POST /v1/objects/:object/views`            | `read` · `write` | List the saved views the caller can see, or save one                 |
 | `GET` · `PATCH` · `DELETE /v1/views/:id`            | `read` · `write` | Read, change or delete a saved view                                  |
 | `GET /v1/records/:id`                               | `read`           | One record; `?include=provenance,relationReferences,counts`          |
@@ -220,15 +222,31 @@ operations are `countEmpty`, `countNotEmpty`, `percentEmpty`,
 `aggregateOps(field)` in `@retainer/shared` says which a field supports.
 Money totals are `{ amountMicros, currency }`, or `null` with
 `"mixedCurrencies": true` when the matching records use several currencies.
-With `"groupBy": "stage"` (a filterable single-select field) it also returns
-`groups: [{ "value", "total", "values" }]`, one per value the matching
-records hold, with `null` for records that have none.
+Each aggregate can include an `as` alias, which the result echoes. A
+`groupBy` returns `groups: [{ "value", "label", "total", "values" }]`. It
+accepts a filterable select, date, date-time or single relation field, or a
+built-in timestamp such as `createdAt` or an event's `occurredAt`. Use
+`/v1/objects/event/aggregate` to aggregate across event types. Date groups use
+the workspace time zone and fill empty periods. `granularity` accepts
+`day`, `week` (starting Monday), `month` (default), `quarter` or `year`.
+Group limits default to 50 and accept up to 200. `tooManyGroups` marks
+truncation. Date groups keep the latest periods, and select or relation
+groups keep the largest groups. Missing values have the label “No value”.
 
 Every filter value is checked against its column or field before it
 reaches the database: `id` takes a record ID, `createdAt`, `updatedAt` and
 `occurredAt` an ISO 8601 time with a UTC offset, relation fields record IDs,
 and dates and times years 0001 to 9999. A malformed value, including one
 element of an `in` list, is 422 `invalid_filter` with `details.field`.
+
+A dashboard is a live OpenUI Lang program. Create it with `name`, `program`,
+optional `visibility` (default `private`), and optional `chatId` for an open
+chat you own. The list omits programs and can filter by `?chatId=` for a chat
+you own. A dashboard read includes the current program and any `issues` from
+removed objects, fields or options. A `PATCH` can change its name, program,
+position or chat association. The creator can change visibility. Send the
+last `updatedAt` in `expectedUpdatedAt`. A concurrent edit returns
+`409 dashboard_changed`. See the [dashboards spec](specs/dashboards.md).
 
 A saved view is a named filter, sort and column set for one object, shown
 as a `table`, a `board` (needs `groupBy`, a single-select field) or a

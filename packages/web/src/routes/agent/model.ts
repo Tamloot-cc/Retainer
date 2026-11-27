@@ -52,6 +52,9 @@ export function toolName(part: ToolPart) {
 const READ_TOOLS = new Set([
   'search',
   'query_records',
+  'aggregate_records',
+  'check_dashboard',
+  'get_guide',
   'get_record',
   'get_context',
   'get_timeline',
@@ -207,6 +210,10 @@ export function toolLine(part: ToolPart): string {
       const object = typeof input.object === 'string' ? input.object : 'records';
       return verb(`Looking through ${object}`, `Looked through ${object}`);
     }
+    case 'aggregate_records':
+      return verb('Calculating totals', 'Calculated totals');
+    case 'check_dashboard':
+      return verb('Checking the dashboard', 'Checked the dashboard');
     case 'get_record':
       return verb('Opening a record', 'Opened a record');
     case 'get_context':

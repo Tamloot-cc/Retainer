@@ -10,6 +10,8 @@ export const RETAINER_READ_TOOL_NAMES = [
   'describe_schema',
   'search',
   'query_records',
+  'aggregate_records',
+  'check_dashboard',
   'get_record',
   'get_context',
   'get_timeline',

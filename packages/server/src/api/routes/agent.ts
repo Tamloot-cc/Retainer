@@ -1,9 +1,11 @@
 import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { stream as honoStream } from 'hono/streaming';
+import { z } from 'zod';
 import { type AgentSessions, MAX_STREAM_BODY_BYTES } from '../../agent-sessions/service.js';
 import { bearerToken } from '../../auth/middleware.js';
 import { AppError } from '../../errors.js';
+import { readBody } from '../../http/request.js';
 import { type AppEnv, errorResponse, toAppError } from '../../http/response.js';
 
 /**
@@ -181,7 +183,14 @@ export function agentChatRoutes(
       );
     return agent;
   };
-  app.post('/agent/chats', async (c) => c.json(await need().createChat(c.get('caller')), 201));
+  app.post('/agent/chats', async (c) => {
+    const { client } = await readBody(
+      c,
+      z.strictObject({ client: z.enum(['web', 'cli']).optional() }),
+      1024,
+    );
+    return c.json(await need().createChat(c.get('caller'), client), 201);
+  });
   app.get('/agent/chats', async (c) => c.json(await need().listChats(c.get('caller'))));
   app.get('/agent/chats/:id', async (c) =>
     c.json(await need().getChat(c.get('caller'), param(c, 'id'))),

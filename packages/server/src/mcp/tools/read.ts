@@ -3,10 +3,12 @@ import { isProfileAlias, PROFILE_ALIASES } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
 import { listComments, readRecordWithComments } from '../../comments/service.js';
+import { checkDashboard } from '../../dashboards/service.js';
 import type { Sql } from '../../db/client.js';
 import { readEventContent } from '../../memory/service.js';
+import { aggregateInputSchema } from '../../records/aggregate.js';
 import { queryInputSchema } from '../../records/query.js';
-import { findRecords } from '../../records/service.js';
+import { aggregate, findRecords } from '../../records/service.js';
 import { contextInputSchema } from '../../retrieval/context.js';
 import { searchInputSchema } from '../../retrieval/search.js';
 import { contextFor, searchFor, timelineFor } from '../../retrieval/service.js';
@@ -125,6 +127,30 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ object, ...input }) => run(caller, 'read', () => findRecords(sql, caller, object, input)),
+  );
+
+  server.registerTool(
+    'aggregate_records',
+    {
+      title: 'Aggregate records',
+      description:
+        'Count records that match a filter or search and calculate aggregates over them. Group by a filterable select, date or single relation, or a built-in date. An optional as identifies each aggregate in the response.',
+      inputSchema: aggregateInputSchema.extend({ object: objectName }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ object, ...input }) => run(caller, 'read', () => aggregate(sql, caller, object, input)),
+  );
+
+  server.registerTool(
+    'check_dashboard',
+    {
+      title: 'Check a dashboard',
+      description:
+        'Validate a complete OpenUI Lang dashboard program and try its read queries with your access. Use the dashboards guide first. Returns problems by statement and query row counts.',
+      inputSchema: z.strictObject({ program: z.string() }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ program }) => run(caller, 'read', () => checkDashboard(sql, caller, program)),
   );
 
   server.registerTool(

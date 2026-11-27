@@ -43,6 +43,7 @@ export function chatContext(input: {
   workspaceName: string;
   objects: string[];
   eventTypes: string[];
+  client?: 'web' | 'cli' | 'task' | null;
   date: { words: string; zone: string };
 }): string {
   const list = (names: string[]) => (names.length ? names.join(', ') : 'none yet');
@@ -52,5 +53,10 @@ export function chatContext(input: {
     `- Workspace: ${input.workspaceName}.`,
     `- Objects: ${list(input.objects)}. Event types: ${list(input.eventTypes)}.`,
     `- ${datePart(input.date)}`,
+    ...(input.client === 'web'
+      ? [
+          '- This chat is in Retainer’s web app, which can show dashboards. Read get_guide("dashboards") before writing one.',
+        ]
+      : []),
   ].join('\n');
 }
