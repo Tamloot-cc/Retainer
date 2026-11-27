@@ -16,6 +16,8 @@ import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 import {
   builtInColumn,
+  compileEventFilter,
+  compileFilter,
   emptyValue,
   eventQueryColumn,
   liveLinks,
@@ -92,18 +94,15 @@ function columns(tx: Tx, field: FieldState, op: AggregateOp, n: number): Fragmen
   }
 }
 
-/**
- * The total of the records a filter and search match, and each requested
- * aggregate over them, in one query.
- */
-export async function aggregateRecords(
-  tx: Tx,
-  workspaceId: string,
-  schema: CompiledSchema,
+type AggregatePlanInput = Pick<AggregateInput, 'groupBy' | 'granularity'> & {
+  aggregates?: AggregateInput['aggregates'];
+};
+
+function planAggregateRequests(
   object: CompiledObject | undefined,
-  input: AggregateInput,
-): Promise<AggregateResult> {
-  const requests = input.aggregates.map(({ field: name, op, as }) => {
+  aggregates: AggregateInput['aggregates'] = [],
+): AggregateRequest[] {
+  return aggregates.map(({ field: name, op, as }) => {
     const field = object?.fieldsByName.get(name);
     if (!field)
       throw invalidAggregate(`unknown field "${name}" on ${object?.name ?? 'event'}`, {
@@ -114,21 +113,16 @@ export async function aggregateRecords(
     checkAggregateOp(field, op, invalidAggregate);
     return { field, op, as };
   });
-  const selected = [
-    tx`count(*)::int as total`,
-    ...requests.map((r, n) => columns(tx, r.field, r.op, n)),
-  ].reduce((a, b) => tx`${a}, ${b}`);
-  const from = object
-    ? tx`records r`
-    : tx`records r join event_records e
-    on e.record_id = r.id and e.workspace_id = r.workspace_id`;
-  const where = object
-    ? matchingRecords(tx, workspaceId, schema, object, input)
-    : matchingEvents(tx, workspaceId, schema, input);
+}
+
+function planAggregateGrouping(
+  tx: Tx,
+  object: CompiledObject | undefined,
+  input: Pick<AggregateInput, 'groupBy' | 'granularity'>,
+) {
   if (input.groupBy === undefined) {
     if (input.granularity) throw invalidAggregate('granularity requires a date grouping');
-    const [row] = await tx<AggregateRow[]>`select ${selected} from ${from} where ${where}`;
-    return valuesOf(requests, row);
+    return null;
   }
   const name = input.groupBy;
   const field = object?.fieldsByName.get(name);
@@ -146,34 +140,82 @@ export async function aggregateRecords(
     !field.settings.isInverse;
   if (!dateColumn && input.granularity)
     throw invalidAggregate('granularity requires a date grouping');
+  if (dateColumn) return { kind: 'date' as const, dateColumn, field };
+  if (field && relation) return { kind: 'relation' as const, field };
+  if (field && canGroupBy(field)) return { kind: 'select' as const, field };
+  throw invalidAggregate(
+    `groupBy requires a filterable select, date or single relation; "${name}" is not one`,
+    { field: name },
+  );
+}
+
+export function checkAggregate(
+  tx: Tx,
+  schema: CompiledSchema,
+  object: CompiledObject | undefined,
+  input: AggregatePlanInput & Pick<AggregateInput, 'filter'>,
+): void {
+  planAggregateRequests(object, input.aggregates);
+  if (input.filter) {
+    if (object) compileFilter(tx, object, input.filter);
+    else compileEventFilter(tx, schema, input.filter);
+  }
+  planAggregateGrouping(tx, object, input);
+}
+
+/**
+ * The total of the records a filter and search match, and each requested
+ * aggregate over them, in one query.
+ */
+export async function aggregateRecords(
+  tx: Tx,
+  workspaceId: string,
+  schema: CompiledSchema,
+  object: CompiledObject | undefined,
+  input: AggregateInput,
+): Promise<AggregateResult> {
+  const requests = planAggregateRequests(object, input.aggregates);
+  const selected = [
+    tx`count(*)::int as total`,
+    ...requests.map((r, n) => columns(tx, r.field, r.op, n)),
+  ].reduce((a, b) => tx`${a}, ${b}`);
+  const from = object
+    ? tx`records r`
+    : tx`records r join event_records e
+    on e.record_id = r.id and e.workspace_id = r.workspace_id`;
+  const where = object
+    ? matchingRecords(tx, workspaceId, schema, object, input)
+    : matchingEvents(tx, workspaceId, schema, input);
+  const grouping = planAggregateGrouping(tx, object, input);
+  if (!grouping) {
+    const [row] = await tx<AggregateRow[]>`select ${selected} from ${from} where ${where}`;
+    return valuesOf(requests, row);
+  }
+  const { field } = grouping;
+  const date = grouping.kind === 'date';
   const granularity = input.granularity ?? 'month';
   const limit = input.limit ?? 50;
   let expression: Fragment;
-  if (dateColumn) {
+  if (grouping.kind === 'date') {
     const [workspace] = await tx<{ zone: string | null }[]>`
       select settings ->> 'timeZone' as zone from workspaces where id = ${workspaceId}`;
     const local =
       field?.type === 'date'
-        ? dateColumn
-        : tx`(${dateColumn} at time zone ${workspace?.zone ?? 'UTC'})`;
+        ? grouping.dateColumn
+        : tx`(${grouping.dateColumn} at time zone ${workspace?.zone ?? 'UTC'})`;
     expression = tx`date_trunc(${granularity}::text, ${local}::timestamp)::date`;
-  } else if (relation && field) {
-    expression = tx`(select l.target_record_id ${liveLinks(tx, field)}
+  } else if (grouping.kind === 'relation') {
+    expression = tx`(select l.target_record_id ${liveLinks(tx, grouping.field)}
       and t.object_type_id = any(${schema.visibleObjectIds}::uuid[]) limit 1)`;
-  } else if (field && canGroupBy(field)) {
-    expression = tx`r.data ->> ${field.key}`;
   } else {
-    throw invalidAggregate(
-      `groupBy requires a filterable select, date or single relation; "${name}" is not one`,
-      { field: name },
-    );
+    expression = tx`r.data ->> ${grouping.field.key}`;
   }
-  const next = dateColumn ? tx`r.g desc nulls last` : tx`total desc, r.g asc nulls last`;
+  const next = date ? tx`r.g desc nulls last` : tx`total desc, r.g asc nulls last`;
   // The overall row uses all matching records. Return one extra group to
   // detect truncation, and retain the earliest date for bounded gap filling.
   const rows = await tx<AggregateRow[]>`
     select r.g::text as g, grouping(r.g) as overall, ${selected},
-      ${dateColumn ? tx`min(r.g) over ()::text` : tx`null::text`} as earliest
+      ${date ? tx`min(r.g) over ()::text` : tx`null::text`} as earliest
     from (select r.*, ${expression} as g from ${from} where ${where}) r
     group by grouping sets ((r.g), ())
     order by grouping(r.g) desc, ${next}
@@ -184,7 +226,7 @@ export async function aggregateRecords(
     label: row.g === null ? 'No value' : String(row.g),
     ...valuesOf(requests, row),
   }));
-  if (dateColumn)
+  if (date)
     return {
       ...valuesOf(requests, overall),
       ...dateGroups(
@@ -196,7 +238,7 @@ export async function aggregateRecords(
       ),
     };
   const options = new Map(field?.settings.options?.map((option) => [option.value, option.label]));
-  if (relation) {
+  if (grouping.kind === 'relation') {
     const ids = groups.flatMap(({ value }) => (value ? [value] : []));
     const labels = await references(tx, schema, ids);
     for (const id of ids) options.set(id, labels[id]?.label ?? 'Unnamed record');

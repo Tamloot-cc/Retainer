@@ -195,33 +195,142 @@ it('exposes the read tools over MCP and keeps the dashboard guide hint in web ch
   }
 });
 
-it('rejects invalid record and event filters when creating or editing a dashboard', async () => {
+const schemaChange = (operations: object[]) =>
+  app.request('/v1/schema/changes', {
+    key: keys.owner,
+    body: { operations },
+  });
+const queryProgram = (tool: 'query' | 'aggregate', object: string, args: object) =>
+  `root = Dashboard("Filtered", [])
+rows = Query("${tool}_records", ${JSON.stringify({ object, ...(tool === 'query' ? { fields: {} } : {}), ...args })}, {})`;
+
+it('rejects the same invalid query options as direct record and event reads', async () => {
+  const setup = await schemaChange([
+    {
+      op: 'create_field',
+      object: 'deal',
+      field: { name: 'memo', label: 'Memo', type: 'text', isFilterable: false },
+    },
+  ]);
+  expect(setup.body.status).toBe('applied');
   const created = await create(keys.owner);
   expect(created.status).toBe(201);
   const { id, updatedAt } = created.body;
-  const program = (tool: string, object: string, filter: object) =>
-    `root = Dashboard("Filtered", [])
-rows = Query("${tool}", { object: "${object}", filter: ${JSON.stringify(filter)} }, {})`;
   const cases = [
-    program('aggregate_records', 'deal', { stage: { bogus: 'won' } }),
-    program('query_records', 'deal', { stage: 42 }),
-    program('aggregate_records', 'event', { type: { eq: ['conversation'] } }),
-  ];
-  for (const invalid of cases) {
+    ['aggregate', 'deal', { filter: { stage: { bogus: 'won' } } }],
+    ['query', 'deal', { filter: { stage: 42 } }],
+    ['aggregate', 'event', { filter: { type: { eq: ['conversation'] } } }],
+    ['query', 'deal', { sort: [{ field: 'memo' }] }],
+    ['query', 'event', { sort: [{ field: 'type' }] }],
+    ['aggregate', 'deal', { aggregates: [{ field: 'name', op: 'sum', as: 'sumName' }] }],
+    ['aggregate', 'deal', { aggregates: [{ field: 'createdAt', op: 'max', as: 'latest' }] }],
+    ['aggregate', 'event', { aggregates: [{ field: 'channel', op: 'countUnique', as: 'n' }] }],
+    ['aggregate', 'deal', { groupBy: 'memo' }],
+    ['aggregate', 'deal', { groupBy: 'id' }],
+    ['aggregate', 'event', { groupBy: 'type' }],
+    ['aggregate', 'event', { groupBy: 'channel' }],
+    ['aggregate', 'deal', { groupBy: 'stage', granularity: 'month' }],
+    ['aggregate', 'deal', { granularity: 'month' }],
+  ] as const;
+  for (const [tool, object, args] of cases) {
+    const direct = await app.request(`/v1/objects/${object}/${tool}`, {
+      key: keys.owner,
+      body: args,
+    });
+    expect(direct.status, JSON.stringify(args)).toBe(422);
+    const program = queryProgram(tool, object, args);
     for (const result of await Promise.all([
-      create(keys.owner, { program: invalid }),
-      patch(keys.owner, id, { program: invalid, expectedUpdatedAt: updatedAt }),
+      create(keys.owner, { program }),
+      patch(keys.owner, id, { program, expectedUpdatedAt: updatedAt }),
     ])) {
-      expect(result.status).toBe(422);
+      expect(result.status, program).toBe(422);
       expect(result.body).toMatchObject({
         error: {
           code: 'invalid_dashboard',
-          details: { problems: [{ statement: 'rows' }] },
+          details: { problems: [{ statement: 'rows', message: direct.body.error.message }] },
         },
       });
     }
   }
   expect((await get(keys.owner, id)).body.updatedAt).toBe(updatedAt);
+  for (const [tool, object, args] of [
+    ['aggregate', 'deal', { groupBy: 'createdAt', granularity: 'month' }],
+    ['aggregate', 'event', { groupBy: 'occurredAt', granularity: 'day' }],
+    ['aggregate', 'deal', { groupBy: 'company' }],
+    ['query', 'deal', { sort: [{ field: 'createdAt' }] }],
+  ] as const) {
+    expect((await create(keys.owner, { program: queryProgram(tool, object, args) })).status).toBe(
+      201,
+    );
+  }
+
+  const mcp = await app.mcpClient(keys.owner);
+  try {
+    const badSort = queryProgram('query', 'event', { sort: [{ field: 'type' }] });
+    expect((await mcp.call('check_dashboard', { program: badSort })).body).toMatchObject({
+      ok: false,
+      problems: [{ statement: 'rows', message: expect.stringContaining('cannot sort events') }],
+      queries: [],
+    });
+  } finally {
+    await mcp.close();
+  }
+});
+
+it('reports schema drift and keeps removed field keys from binding to recreated names', async () => {
+  const field = {
+    name: 'tier',
+    label: 'Tier',
+    type: 'select',
+    isFilterable: true,
+    settings: { options: [{ value: 'gold', label: 'Gold' }] },
+  };
+  expect((await schemaChange([{ op: 'create_field', object: 'deal', field }])).body.status).toBe(
+    'applied',
+  );
+  const sources = [
+    'root = Dashboard("Drift", [])',
+    'sorted = Query("query_records", {object: "deal", fields: {}, sort: [{field: "tier"}]}, {})',
+    'grouped = Query("aggregate_records", {object: "deal", groupBy: "tier"}, {})',
+    'repeated = Query("query_records", {object: "deal", fields: {tierAlias: "tier"}, filter: {tier: "gold"}, sort: [{field: "tier"}]}, {})',
+  ].join('\n');
+  const created = await create(keys.owner, { program: sources });
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const { id, updatedAt } = created.body;
+  const stored = () => database.owner`select program, updated_at from dashboards where id = ${id}`;
+  const before = await stored();
+  expect(
+    (
+      await schemaChange([
+        { op: 'update_field', object: 'deal', field: 'tier', isFilterable: false },
+      ])
+    ).body.status,
+  ).toBe('applied');
+  expect((await get(keys.owner, id)).body).toMatchObject({
+    updatedAt,
+    issues: [
+      { statement: 'sorted', message: expect.stringContaining('cannot sort') },
+      { statement: 'grouped', message: expect.stringContaining('groupBy requires') },
+      { statement: 'repeated', message: expect.stringContaining('is not filterable') },
+    ],
+  });
+  expect(
+    (await schemaChange([{ op: 'delete_field', object: 'deal', field: 'tier' }])).body.status,
+  ).toBe('applied');
+  expect((await schemaChange([{ op: 'create_field', object: 'deal', field }])).body.status).toBe(
+    'applied',
+  );
+  const recreated = await get(keys.owner, id);
+  expect(recreated.status).toBe(200);
+  expect(recreated.body.issues).toEqual(
+    ['sorted', 'grouped', 'repeated'].map((statement) => ({
+      statement,
+      message: expect.stringContaining('field that was removed'),
+    })),
+  );
+  expect(recreated.body.program).not.toContain('"tier"');
+  expect(recreated.body.program).toContain('removed-field-');
+  expect(await stored()).toEqual(before);
 });
 
 it('keeps saved queries through renames and reports removed fields', async () => {
@@ -230,11 +339,6 @@ rows = Query("query_records", {object: "task", fields: {due: "reminder", created
 totals = Query("aggregate_records", {object: "task", groupBy: "updatedAt"}, {total: 0})
 table = Table("Todos", rows.records, [TableColumn("Reminder", "due"), TableColumn("Created", "created")])
 count = Metric("Count", totals.total)`;
-  const schemaChange = (operations: object[]) =>
-    app.request('/v1/schema/changes', {
-      key: keys.owner,
-      body: { operations },
-    });
   expect(
     (
       await schemaChange([

@@ -707,6 +707,21 @@ export function compileEventFilter(tx: Tx, schema: CompiledSchema, filter: unkno
   );
 }
 
+export function checkQuery(
+  tx: Tx,
+  schema: CompiledSchema,
+  object: CompiledObject | undefined,
+  { filter, sort }: Pick<QueryInput, 'filter' | 'sort'>,
+): void {
+  if (object) {
+    if (filter) compileFilter(tx, object, filter);
+    compileSort(tx, object, sort);
+  } else {
+    if (filter) compileEventFilter(tx, schema, filter);
+    eventSort(tx, sort);
+  }
+}
+
 /** Matching events across types, shared with the aggregate path. */
 export function matchingEvents(
   tx: Tx,
