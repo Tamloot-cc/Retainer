@@ -84,6 +84,117 @@ const STEP_LABELS: Record<Step, string> = {
   review: 'Review setup',
 };
 
+function increasesGrant(release: Release, installation: Installation) {
+  return (
+    (release.manifest.requestedActor === 'integration' && installation.grantedActor === 'agent') ||
+    release.manifest.scopes.some((scope) => !installation.grantedScopes.includes(scope)) ||
+    (!hasOptionalSetupModel(release.manifest) &&
+      releaseUses(release.manifest).some((use) => !installation.grantedUses.includes(use)))
+  );
+}
+
+const needsSetupReview = (error: unknown) =>
+  error instanceof RetainerApiError &&
+  [
+    'setup_review_required',
+    'bindings_invalid',
+    'schema_invalid',
+    'schema_binding_conflict',
+    'invalid_settings',
+    'connection_required',
+    'grant_required',
+  ].includes(error.code);
+
+function UpgradeReview({
+  installation,
+  release,
+  onCancel,
+  onDone,
+  children,
+}: {
+  installation: Installation;
+  release: Release;
+  onCancel: () => void;
+  onDone: (id: string) => void;
+  children: ReactNode;
+}) {
+  const { session } = useWorkspace();
+  const [editSetup, setEditSetup] = useState(false);
+  const grantChange = increasesGrant(release, installation);
+  const review = useQuery({
+    queryKey: [
+      'extension-upgrade-review',
+      session.workspace.id,
+      installation.id,
+      installation.releaseDigest,
+      release.digest,
+    ],
+    enabled: !editSetup,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<Plan> => {
+      const input: ExtensionInstallInput = {
+        installationId: installation.id,
+        registrationId: release.manifest.universalId,
+        version: release.manifest.version,
+        settings: initialSettings(release, installation),
+        retainBindings: true,
+        ...(grantChange ? { grantChange: true } : {}),
+      };
+      return { preview: await api.previewExtension(input), input, key: crypto.randomUUID() };
+    },
+  });
+  const save = useMutation({
+    mutationFn: (plan: Plan) =>
+      api.upgradeExtension(
+        installation.id,
+        { ...plan.input, planDigest: plan.preview.planDigest },
+        plan.key,
+      ),
+    onSuccess: (result) => onDone(result.id),
+  });
+  if (editSetup || needsSetupReview(review.error) || needsSetupReview(save.error)) return children;
+  if (review.isPending) return <Loading>Preparing the review…</Loading>;
+  if (review.isError)
+    return <QueryError error={review.error} retry={() => void review.refetch()} />;
+  const plan = review.data;
+  return (
+    <Stack>
+      <StepHeader title="Review upgrade" />
+      {save.error ? <Notice error>{save.error.message}</Notice> : null}
+      <Review plan={plan} release={release}>
+        <Button disabled={save.isPending} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button disabled={save.isPending} onClick={() => setEditSetup(true)}>
+          Edit setup
+        </Button>
+        {save.error ? (
+          <Button
+            onClick={() => {
+              save.reset();
+              void review.refetch();
+            }}
+          >
+            Refresh review
+          </Button>
+        ) : null}
+        <Button
+          variant="primary"
+          disabled={save.isPending || review.isFetching}
+          onClick={() => save.mutate(plan)}
+        >
+          {save.isPending
+            ? 'Approving…'
+            : grantChange
+              ? 'Approve access and upgrade'
+              : 'Approve upgrade'}
+        </Button>
+      </Review>
+    </Stack>
+  );
+}
+
 /**
  * Setting up an extension, or changing how an installed one connects, maps
  * or runs, as steps on a page: its settings, where its values go, then what
@@ -95,9 +206,24 @@ export function ExtensionSetup(props: Parameters<typeof BasicExtensionSetup>[0])
   // after a failed upgrade, upgrades with its approved mapping carried over.
   const inactiveUpgrade =
     props.mode === 'upgrade' && !canSuggest(props.release, props.installation);
-  if (!configure || props.mode === 'reconnect' || inactiveUpgrade)
-    return <BasicExtensionSetup {...props} />;
-  return <ConfigureSetup {...props} />;
+  const setup =
+    !configure || props.mode === 'reconnect' || inactiveUpgrade ? (
+      <BasicExtensionSetup {...props} />
+    ) : (
+      <ConfigureSetup {...props} />
+    );
+  if (props.mode !== 'upgrade' || !props.installation) return setup;
+  return (
+    <UpgradeReview
+      key={props.release.digest}
+      installation={props.installation}
+      release={props.release}
+      onCancel={props.onCancel}
+      onDone={props.onDone}
+    >
+      {setup}
+    </UpgradeReview>
+  );
 }
 
 function ConfigureSetup(props: Parameters<typeof BasicExtensionSetup>[0]) {
@@ -349,12 +475,7 @@ function BasicExtensionSetup({
     ...suggestions?.settings,
   }));
   const [replaceSourceAccount, setReplaceSourceAccount] = useState(false);
-  const grantIncrease =
-    !!retained &&
-    ((release.manifest.requestedActor === 'integration' && retained.grantedActor === 'agent') ||
-      release.manifest.scopes.some((scope) => !retained.grantedScopes.includes(scope)) ||
-      (!hasOptionalSetupModel(release.manifest) &&
-        releaseUses(release.manifest).some((use) => !retained.grantedUses.includes(use))));
+  const grantIncrease = !!retained && increasesGrant(release, retained);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [draftInstallationId, setDraftInstallationId] = useState(installation?.id);
   const [references, setReferences] = useState<Record<string, string>>({});
@@ -687,7 +808,13 @@ function Review({
   const canRead = grants.scopes.includes('read');
   const canWrite = grants.scopes.includes('write');
   const schemaOps = preview.operations as DiffOp[];
-  const hasChanges = schemaOps.length > 0 || !!preview.bindings || preview.views.length > 0;
+  const showBindings = !!preview.bindings && !plan.input.retainBindings;
+  const hasChanges = schemaOps.length > 0 || showBindings || preview.views.length > 0;
+  const sharing = plan.input.retainBindings
+    ? Object.entries(release.manifest.settings).filter(
+        ([key, setting]) => setting.consent && plan.input.settings[key] === true,
+      )
+    : [];
   const createPeople = String(plan.input.settings.createPeople ?? release.manifest.createPeople);
   const name = extensionName(release.manifest.universalId, release.manifest.name);
   const notes = [
@@ -726,6 +853,21 @@ function Review({
 
   return (
     <Stack>
+      {sharing.length ? (
+        <ReviewCard>
+          <ReviewCardHeader leading={<ReviewIcon icon={Info} />} title="Data sharing" />
+          <ReviewCardBody>
+            <ul className="space-y-2">
+              {sharing.map(([key, setting]) => (
+                <li key={key}>
+                  <p className="font-medium">{setting.label}</p>
+                  {setting.description ? <Muted>{setting.description}</Muted> : null}
+                </li>
+              ))}
+            </ul>
+          </ReviewCardBody>
+        </ReviewCard>
+      ) : null}
       <ReviewCard>
         <ReviewCardHeader leading={<ReviewIcon icon={ShieldCheck} />} title="Access" />
         <ReviewCardBody>
@@ -754,7 +896,7 @@ function Review({
         <ReviewCard>
           <ReviewCardHeader leading={<ReviewIcon icon={LayoutList} />} title="Workspace changes" />
           <ReviewCardBody>
-            {release.manifest.bindings && preview.bindings ? (
+            {showBindings && release.manifest.bindings && preview.bindings ? (
               <BindingSummary
                 extension={name}
                 declarations={release.manifest.bindings}
