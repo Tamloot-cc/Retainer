@@ -305,6 +305,8 @@ export type PersonCandidate = {
   /** The person's LinkedIn profile, when the result is one. */
   linkedin: string | null;
   roles: Role[];
+  /** The result's profile text, for the model to compare with the record. */
+  profile: string;
 };
 
 const PROFILE_URL =
@@ -384,6 +386,7 @@ export function personCandidates(body: ExaSearch): PersonCandidate[] {
       location,
       linkedin: linkedinProfile(result.url),
       roles,
+      profile,
     };
   });
 }
@@ -520,13 +523,10 @@ export class ExaProvider {
     );
   }
 
-  /** The person candidates for a name and a company's name and domain. */
-  async searchPeople(
-    name: string,
-    company: { name: string | null; domain: string | null },
-  ): Promise<PersonCandidate[]> {
+  /** The person candidates for one people query, from its parts. */
+  async searchPeople(parts: (string | null | undefined)[]): Promise<PersonCandidate[]> {
     return personCandidates(
-      await this.request('/search', exaSearchResponse, exaPeopleRequest(name, company)),
+      await this.request('/search', exaSearchResponse, exaPeopleRequest(parts)),
     );
   }
 

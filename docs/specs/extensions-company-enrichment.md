@@ -118,10 +118,16 @@ A malformed or out-of-range value is dropped rather than the whole result. Money
 The **People** destination binds `name` (required), and optionally `email`, `company` (a relation to the Companies object) and the output fields. Its change trigger watches name, email, company and LinkedIn URL.
 
 1. **LinkedIn first.** When the record already has a `linkedin.com/in/` address in its bound LinkedIn field, the run reads that profile with `POST /contents` ($0.001) and fills from it at confidence 1 (`matched_linkedin`).
-2. **Company signal.** Otherwise the run needs a name and a company: the linked company's name and website, read through the Companies destination, or else the domain of a work email. A personal mailbox (Gmail, Outlook, iCloud, Proton and similar) is not a company. With neither, the run ends `no_company` without calling Exa.
-3. **Search.** `category: 'people'`, query `"<name> <company name> <company domain>"`, five results with text. The email address itself is never sent.
+2. **Company signal.** Otherwise an automatic run needs a name and a company: the linked company's name and website, read through the Companies destination, or else the domain of a work email. A personal mailbox (Gmail, Outlook, iCloud, Proton and similar) is not a company. With neither, the run ends `no_company` without calling Exa. Enrich now goes on without one.
+3. **Two searches.** `category: 'people'`, five results each with up to 6,000 characters of profile text, run together:
+   - the whole record: the name, the company's name and domain, the email address, and the text of every other field on the record (a related record's ID is left out; each value is cut at 500 characters, the query at 1,000);
+   - the name alone, which finds the person when the rest of the record pulls the first search off course. A record with nothing but a name gets only this search.
+
+   The results are merged, one per profile (by LinkedIn address, else by URL).
 4. **Shortcut.** Exactly one candidate with the same name (first and last word, case and accents dropped) and a current role at a company whose name matches the record's company after `normalizeCompanyName`: confidence 1, no model call.
-5. **Model pick.** Otherwise the model picks, as for companies. Guards: never `low`; the name must match. A current role at the company allows `high` or `medium` (confidence 1 or 0.7), and without one only `high`, so a person known only by an email domain needs a `high` pick.
+5. **Model pick.** Otherwise the model picks from the merged list, seeing the whole record and each candidate's profile text. The prompt asks it to use every field, to treat the same person's duplicate profiles as one, and never to credit the record with a detail only a profile states. Guards: never `low`; the name must match. `medium` (confidence 0.7, which the workspace's review threshold may hold) needs a current role at the company, or a person who pressed Enrich now; otherwise only `high` (confidence 1) is accepted.
+
+Measured on 2026-11-27 with Enrich now on 27 records from two workspaces, run twice: 45 of 46 runs found the right profile when one exists, none picked a wrong one, and the 4 records with no findable profile matched nothing. Before this method (one search by name and company, email never sent, and a name-only search needing exactly one namesake) a record holding a name, a Gmail address and "background in cybersecurity and Microsoft" ended `no_match` without reaching the model. A comparison of variants on the same records found that letting the model pick beats asking it for per-claim evidence and deciding in code (42 against 35 of 46), and that two searches beat one.
 
 The mapped write checks the person's primary email as its lookup value, so a run whose person changed email during the lookup writes nothing (`lookup_changed`).
 
@@ -131,7 +137,7 @@ One model call suggests both destinations, through the configure helper Tamloot 
 
 ### 7.5 Consent, runs and setup
 
-- The one consent setting, `shareLookups`, now covers people's names and companies. A consent setting must be required, so there is no separate switch for people: skipping the People destination sends no people to Exa.
+- The one consent setting, `shareLookups`, now covers people's details: their name with the rest of their record, email address included. A consent setting must be required, so there is no separate switch for people: skipping the People destination sends no people to Exa.
 - `enrichPerson` and `backfillPerson` mirror `enrich` and `backfill`. Setup keeps the mapped outputs of each destination in its own KV key and queues that destination's backfill when an upgrade maps a new output.
 - A workspace migrated from before bindings keeps People skipped.
 
@@ -161,8 +167,8 @@ approved Companies and People destinations. Existing installations get the
 button after an admin approves the upgrade. Clicking it uses the same
 sharing consent and fill-only writes as automatic enrichment. It can also
 search by name alone when the company has no usable domain or the person
-has neither a LinkedIn profile nor a company signal. A name-only search
-requires one matching name among the results and a high-confidence model
-pick. The button applies that result directly to the open record, including
+has neither a LinkedIn profile nor a company signal. A person is then searched
+with the rest of their record and by name alone (7.3), and the model may pick
+at `medium`, which the review threshold may hold. The button applies that result directly to the open record, including
 records created before the extension was installed. A skipped People
 destination has no button.

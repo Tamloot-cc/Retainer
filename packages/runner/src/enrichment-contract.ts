@@ -119,12 +119,23 @@ export const exaTeam = z.object({ id: z.string().max(200) });
 /** A query part: whitespace collapsed, at most 200 characters. */
 const part = (value: string | null | undefined) =>
   value?.trim().replace(/\s+/g, ' ').slice(0, 200) ?? '';
-const search = (category: 'company' | 'people', parts: (string | null | undefined)[]) => ({
-  query: parts.map(part).filter(Boolean).join(' '),
+const search = (
+  category: 'company' | 'people',
+  parts: (string | null | undefined)[],
+  { queryChars = Infinity, textChars = 4000 } = {},
+) => ({
+  query: parts
+    .map(part)
+    .filter(Boolean)
+    // Whole parts only, while they fit.
+    .reduce((query, next) => {
+      const joined = query ? `${query} ${next}` : next;
+      return joined.length <= queryChars ? joined : query;
+    }, ''),
   type: 'auto',
   category,
   numResults: 5,
-  contents: { text: { maxCharacters: 4000 } },
+  contents: { text: { maxCharacters: textChars } },
 });
 
 /**
@@ -136,13 +147,13 @@ export const exaSearchRequest = (domain: string | null, name?: string | null) =>
   search('company', [name, domain]);
 
 /**
- * The search for one person (enrichment spec 7.3): their name and their
- * company's name and domain. Never an email address or other record data.
+ * One people search (enrichment spec 7.3): the given parts joined, whole
+ * parts up to 1,000 characters, with 6,000 characters of profile text for the model to
+ * compare. The lookup sends two: the person's name with the rest of their
+ * record, email address included, and their name alone.
  */
-export const exaPeopleRequest = (
-  name: string,
-  company: { name: string | null; domain: string | null },
-) => search('people', [name, company.name, company.domain]);
+export const exaPeopleRequest = (parts: (string | null | undefined)[]) =>
+  search('people', parts, { queryChars: 1000, textChars: 6000 });
 
 /** One LinkedIn profile read directly (enrichment spec 7.3, step 1). */
 export function exaProfileRequest(url: string) {
@@ -481,7 +492,7 @@ export function enrichmentManifest(build: {
     name: 'exa-enrichment',
     version: build.version ?? '2.0.0',
     description:
-      'Fill in empty company and people details from Exa. Companies are looked up by website and name; people by their LinkedIn profile, or by name and company. A model picks the right search result and suggests where each detail goes. Each workspace chooses the fields; values a person or agent set are never replaced.',
+      'Fill in empty company and people details from Exa. Companies are looked up by website and name; people by their LinkedIn profile, or by name and the rest of their record. A model picks the right search result and suggests where each detail goes. Each workspace chooses the fields; values a person or agent set are never replaced.',
     packageDigest: build.packageDigest,
     serverRange: build.serverRange,
     runtimeVersion: 'node24',
@@ -495,14 +506,14 @@ export function enrichmentManifest(build: {
     settings: {
       shareLookups: {
         type: 'boolean',
-        label: 'Send company names and websites, and people’s names and companies, to Exa',
+        label: 'Send company names and websites, and people’s details, to Exa',
         required: true,
         consent: true,
         default: false,
         reconnect: true,
         secret: false,
         description:
-          'For a company, only its name and website domain are sent. For a person, their LinkedIn profile address, or their name and available company details. Enrich now may send the name alone. No email addresses are sent. Skip the People destination to send no people at all. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.',
+          'For a company, only its name and website domain are sent. For a person, their LinkedIn profile address, or their name with the rest of their record: email address, company and the other field values. Skip the People destination to send no people at all. Exa keeps queries unless Retainer’s Exa account has Zero Data Retention, which Exa offers on its Enterprise plan.',
       },
     },
 
@@ -602,7 +613,7 @@ export function enrichmentManifest(build: {
         universalId: ENRICHMENT.enrichPerson,
         name: 'enrichPerson',
         description:
-          'Look up a person by their LinkedIn profile, or by name and company, when they are created or one of those changes, and fill their empty mapped fields.',
+          'Look up a person by their LinkedIn profile, or by name and the rest of their record, when they are created or one of those changes, and fill their empty mapped fields.',
         handlerDigest: build.handlerDigest,
         timeoutSeconds: 120,
         trigger: {

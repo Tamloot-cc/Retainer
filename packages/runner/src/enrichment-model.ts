@@ -28,13 +28,13 @@ If the record gives only a name, pick only when one profile fits and the name ma
 
 ${UNTRUSTED}`;
 
-const PICK_PERSON_SYSTEM = `You match one person record from a CRM to the professional profiles a web search returned for it.
+const PICK_PERSON_SYSTEM = `You match one person record from a CRM to the professional profiles two web searches returned for it: one for the whole record, one for the name alone.
 
-Pick the profile that describes the same person as the record: the same human, not a namesake, a colleague, or someone who only shares a first or last name. The record gives the person's name and their company's name, website domain, or both. The strongest evidence is the same full name with a current role at that company. A shortened first name (Bob for Robert) can be the same person; a different last name is not. A past role at the company is weaker evidence than a current one.
+Pick the profile that describes the same person as the record: the same human, not a namesake, a colleague, or someone who only shares a first or last name. Use every field of the record: their company, title, notes, tags, email address, anything that tells namesakes apart. The strongest evidence is a named employer, school or exact title that the profile shows too. A shortened first name (Bob for Robert) can be the same person; a different last name is not. A past role at the company is weaker evidence than a current one. A personal email address (Gmail and similar) says nothing about where someone works.
+
+Judge by what the record says, and never credit the record with a detail that only a profile states. Several profiles of the same person count as one person; pick the most complete. A wrong match is worse than no match.
 
 ${answerWith('person')}
-
-If the record gives only a name, pick only when one profile fits and the name matches. Return null if multiple people could be the match.
 
 ${UNTRUSTED}`;
 
@@ -102,11 +102,17 @@ export const pickCandidate = (
 
 /**
  * Asks the model which candidate is the record's person (enrichment spec 7.3,
- * step 5). The record carries the name and the company, never an email.
+ * step 4). The record carries everything the searches had: the name, email,
+ * company and the record's other values.
  */
 export const pickPerson = (
   client: Anthropic | null,
-  record: { name: string; company: { name: string | null; domain: string | null } },
+  record: {
+    name: string;
+    email: string | null;
+    company: { name: string | null; domain: string | null } | null;
+    details: Record<string, string>;
+  },
   candidates: PersonCandidate[],
   signal: AbortSignal,
 ) => pick(client, PICK_PERSON_SYSTEM, record, candidates, signal);

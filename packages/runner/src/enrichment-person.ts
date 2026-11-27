@@ -13,10 +13,11 @@ import {
 
 /**
  * The people lookup (enrichment spec 7.3). A LinkedIn profile on the record
- * is read directly. Otherwise the person is searched by name and company: the
- * linked company's name and website, or the domain of a work email. Only
- * those are sent to Exa, never an email address. Without a company the
- * person is not looked up at all, since a name alone finds namesakes.
+ * is read directly. Otherwise two searches run: the name with the rest of the
+ * record (email, company and the other values), and the name alone. The
+ * model picks among their results with the whole record in view. An
+ * automatic run needs a company signal, the linked company or a work email's
+ * domain, since a name alone finds namesakes; Enrich now goes without one.
  */
 
 /**
@@ -62,30 +63,50 @@ export function workEmailDomain(email: string | null): string | null {
 
 export type PersonRecord = {
   name: string | null;
-  /** The primary email; only its domain is used. */
+  /** The primary email; sent with the record, and its domain is a company signal. */
   email: string | null;
   linkedin: string | null;
   /** The linked company, as the company binding reads it. */
   company: { name: string | null; domain: string | null } | null;
+  /** The record's other values as text, by field. */
+  details: Record<string, string>;
 };
 
+/** Candidates of both searches, one per profile, numbered from 0 in that order. */
+export function mergeCandidates(...lists: PersonCandidate[][]): PersonCandidate[] {
+  const seen = new Set<string>();
+  return lists
+    .flat()
+    .filter((candidate) => {
+      const key = candidate.linkedin ?? candidate.url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((candidate, index) => ({ ...candidate, index }));
+}
+
 /**
- * Enrichment's guards on a person pick (spec 7.3): never `low`, the name must
- * match, and a current role at the company by name allows `medium`; without
- * one, only `high` is accepted.
+ * Enrichment's guards on a person pick (spec 7.3): never `low`, and the name
+ * must match. `medium` needs a current role at the company by name, or a
+ * person who pressed Enrich now; otherwise only `high` is accepted.
  */
 export function acceptPersonPick(
   pick: { candidate: PersonCandidate; certainty: Certainty },
-  record: { name: string; company: string | null },
+  record: { name: string; company: string | null; manual?: boolean },
 ): boolean {
   if (pick.certainty === 'low' || !sameName(record.name, pick.candidate.name)) return false;
-  return pick.certainty === 'high' || rolesAt(pick.candidate, record.company).length > 0;
+  return (
+    pick.certainty === 'high' ||
+    !!record.manual ||
+    rolesAt(pick.candidate, record.company).length > 0
+  );
 }
 
 export async function lookUpPerson(
   run: { exa: ExaProvider; model: () => Anthropic | null; signal: AbortSignal },
   record: PersonRecord,
-  allowNameOnly = false,
+  manual = false,
 ): Promise<Found> {
   const company = record.company?.name ?? null;
   if (linkedinProfile(record.linkedin)) {
@@ -101,15 +122,19 @@ export async function lookUpPerson(
   const name = record.name?.trim();
   if (!name) return { status: 'no_match', code: 'no_name' };
   const domain = record.company?.domain ?? workEmailDomain(record.email);
-  const nameOnly = !company && !domain;
-  if (nameOnly && !allowNameOnly) return { status: 'no_match', code: 'no_company' };
-  const signal = { name: company, domain };
-  const candidates = await run.exa.searchPeople(name, signal);
-  if (
-    !candidates.length ||
-    (nameOnly && candidates.filter((candidate) => sameName(name, candidate.name)).length !== 1)
-  )
-    return { status: 'no_match', code: 'no_match' };
+  if (!company && !domain && !manual) return { status: 'no_match', code: 'no_company' };
+  const context = [
+    company,
+    record.company?.domain,
+    record.email,
+    ...Object.values(record.details),
+  ].filter(Boolean);
+  const [withRecord, byName] = await Promise.all([
+    run.exa.searchPeople([name, ...context]),
+    context.length ? run.exa.searchPeople([name]) : [],
+  ]);
+  const candidates = mergeCandidates(withRecord, byName);
+  if (!candidates.length) return { status: 'no_match', code: 'no_match' };
   const direct = candidates.filter(
     (candidate) => sameName(name, candidate.name) && rolesAt(candidate, company).length,
   );
@@ -120,11 +145,16 @@ export async function lookUpPerson(
       confidence: 1,
       code: 'matched_shortcut',
     };
-  const answer = await pickPerson(run.model(), { name, company: signal }, candidates, run.signal);
+  const answer = await pickPerson(
+    run.model(),
+    { name, email: record.email, company: record.company, details: record.details },
+    candidates,
+    run.signal,
+  );
   return resolvePick(
     answer,
     candidates,
-    (pick) => acceptPersonPick(pick, { name, company }),
+    (pick) => acceptPersonPick(pick, { name, company, manual }),
     (candidate) => personValues(candidate, company),
   );
 }

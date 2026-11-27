@@ -72,6 +72,55 @@ function nameOf(value: unknown): string | null {
   return parts.length ? parts.join(' ').trim() : null;
 }
 
+/** Characters of one record value, and of all of them, sent to the model with a person lookup. */
+const DETAIL_CHARS = 500;
+const DETAILS_CHARS = 3000;
+
+/**
+ * A field value as text: its text, list, name, email or link. A related
+ * record is its label, from the references the record was read with.
+ */
+function textOf(value: unknown, references: PresentedRecord['relationReferences']): string | null {
+  if (typeof value === 'string')
+    return (references?.[value] ? references[value].label : value)?.trim() || null;
+  if (Array.isArray(value))
+    return (
+      value
+        .map((item) => textOf(item, references))
+        .filter(Boolean)
+        .join(', ') || null
+    );
+  if (!value || typeof value !== 'object') return null;
+  const primary = (value as { primary?: unknown }).primary;
+  if (typeof primary === 'string') return primary.trim() || null;
+  return primaryUrl(value) ?? nameOf(value);
+}
+
+/**
+ * The person's other values for the lookup (spec 7.3), by field: everything
+ * but the lookup fields it sends on its own and the LinkedIn output, each cut
+ * at 500 characters and 3,000 in all.
+ */
+function personDetails(mapping: Mapping, record: PresentedRecord): Record<string, string> {
+  const own = new Set(
+    [
+      mapping.lookups.name,
+      mapping.lookups.email,
+      mapping.lookups.company,
+      mapping.outputs.find(({ output }) => output === 'linkedin_url')?.field,
+    ].filter(Boolean),
+  );
+  const details: Record<string, string> = {};
+  let budget = DETAILS_CHARS;
+  for (const [field, value] of Object.entries(record.fields)) {
+    const text = own.has(field) ? null : textOf(value, record.relationReferences);
+    if (!text || budget <= 0) continue;
+    details[field] = text.slice(0, Math.min(DETAIL_CHARS, budget));
+    budget -= details[field].length;
+  }
+  return details;
+}
+
 type Run = {
   sdk: RetainerClient;
   installationId: string;
@@ -222,6 +271,7 @@ async function enrichRecord(
       email,
       linkedin: linkedin ? primaryUrl(record.fields[linkedin.field]) : null,
       company: null,
+      details: personDetails(mapping, record),
     };
     // The company is read only when the lookup can use it.
     if (person.name || person.linkedin) person.company = await linkedCompany(ctx, mapping, record);
