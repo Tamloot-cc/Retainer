@@ -70,6 +70,11 @@ export async function eraseExtensionState(
   await tx`delete from extension_kv where workspace_id=${workspace}
     and exists(select 1 from unnest(${identities}::text[]) erased where strpos(lower(key),erased)>0 or strpos(lower(value::text),erased)>0)`;
   // Jobs naming an erased identity are redacted and cancelled in every installation and generation.
-  await tx`update extension_jobs set input='{}'::jsonb,change_snapshot=null,input_hash='',dedupe_key='erased:'||id::text,status='cancelled',code='privacy_erased',
-    lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp() where workspace_id=${workspace} and ${erasedInput}`;
+  await tx`with erased_jobs as (
+    update extension_jobs set input='{}'::jsonb,change_snapshot=null,input_hash='',dedupe_key='erased:'||id::text,status='cancelled',code='privacy_erased',
+      lease_owner=null,lease_until=null,run_until=null,updated_at=clock_timestamp()
+    where workspace_id=${workspace} and ${erasedInput} returning id
+  )
+  update extension_attempts set mapped_fields=null
+    where workspace_id=${workspace} and mapped_fields is not null and job_id in (select id from erased_jobs)`;
 }

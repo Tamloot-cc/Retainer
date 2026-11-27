@@ -1,5 +1,5 @@
 {
-  "id": "7b300873-bfa7-4a1b-9d5d-41c1f6853a23",
+  "id": "8d2faf05-9066-44f3-90f3-b64dec6bd03a",
   "prevId": "0d8fc1bb-52f2-4590-bb76-914aa76b1bde",
   "version": "7",
   "dialect": "postgresql",
@@ -103,12 +103,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "client": {
-          "name": "client",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "owner": {
           "name": "owner",
@@ -257,10 +251,6 @@
         }
       },
       "checkConstraints": {
-        "agent_sessions_client": {
-          "name": "agent_sessions_client",
-          "value": "(\"agent_sessions\".\"client\" is null or (\"agent_sessions\".\"kind\" = 'chat' and \"agent_sessions\".\"client\" in ('web', 'cli')) or (\"agent_sessions\".\"kind\" = 'task' and \"agent_sessions\".\"client\" = 'task'))"
-        },
         "agent_sessions_kind": {
           "name": "agent_sessions_kind",
           "value": "\"agent_sessions\".\"kind\" in ('chat', 'task')"
@@ -2468,172 +2458,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.dashboards": {
-      "name": "dashboards",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "program": {
-          "name": "program",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'private'"
-        },
-        "position": {
-          "name": "position",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "chat_id": {
-          "name": "chat_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "dashboards_workspace_position_idx": {
-          "name": "dashboards_workspace_position_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "dashboards_chat_idx": {
-          "name": "dashboards_chat_idx",
-          "columns": [
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "dashboards_workspace_id_workspaces_id_fk": {
-          "name": "dashboards_workspace_id_workspaces_id_fk",
-          "tableFrom": "dashboards",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "dashboards_chat_fk": {
-          "name": "dashboards_chat_fk",
-          "tableFrom": "dashboards",
-          "tableTo": "agent_sessions",
-          "columnsFrom": [
-            "workspace_id",
-            "chat_id"
-          ],
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "dashboards_workspace": {
-          "name": "dashboards_workspace",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "retainer_app"
-          ],
-          "using": "\"dashboards\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid",
-          "withCheck": "\"dashboards\".\"workspace_id\" = nullif(current_setting('app.workspace_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "dashboards_visibility": {
-          "name": "dashboards_visibility",
-          "value": "\"dashboards\".\"visibility\" in ('workspace', 'private')"
-        }
-      },
-      "isRLSEnabled": true
-    },
     "public.deletion_audit_log": {
       "name": "deletion_audit_log",
       "schema": "",
@@ -3651,6 +3475,12 @@
         "finished_at": {
           "name": "finished_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mapped_fields": {
+          "name": "mapped_fields",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         }

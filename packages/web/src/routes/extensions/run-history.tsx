@@ -8,6 +8,7 @@ import {
   CircleAlert,
   Clock,
   History,
+  Info,
   Minus,
   RotateCcw,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import { Badge, Button, CopyButton, Empty, Loading, Notice } from '../../ui/inde
 import { QueryError } from '../state.js';
 import { type Installation, queryKey, stateLabel } from './model.js';
 import { type ExtensionRun, runDetails } from './run-details.js';
+import { RunInspection, RunSection } from './run-inspection.js';
 
 const filters = [
   { value: 'all', label: 'All runs', empty: 'No runs yet.' },
@@ -52,16 +54,19 @@ const timestampFormatter = new Intl.DateTimeFormat(undefined, {
 function RunRow({
   run,
   registrationId,
+  installationId,
   canRetry,
   retrying,
   onRetry,
 }: {
   run: ExtensionRun;
   registrationId: string;
+  installationId: string;
   canRetry: boolean;
   retrying: boolean;
   onRetry: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const { title, trigger, outcome } = runDetails(registrationId, run);
   const status =
     run.status === 'succeeded' || run.status === 'failed'
@@ -73,7 +78,12 @@ function RunRow({
   const created = new Date(run.createdAt);
   return (
     <li>
-      <details className="group open:bg-muted/25">
+      <details
+        className="group open:bg-muted/25"
+        onToggle={(event) => {
+          if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
+        }}
+      >
         <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-3 py-3 hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:grid-cols-[auto_minmax(0,1fr)_6.5rem_5.5rem_auto] sm:items-center sm:gap-x-4 sm:px-4 [&::-webkit-details-marker]:hidden">
           <span
             className={`inline-flex size-8 items-center justify-center rounded-lg ${status.color}`}
@@ -108,36 +118,41 @@ function RunRow({
             className="col-start-3 row-start-1 mt-2 text-muted-foreground group-open:rotate-180 sm:col-start-5 sm:mt-0"
           />
         </summary>
-        <div className="border-t border-border/70 px-4 py-3 sm:pl-16">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm sm:gap-x-5">
-            <dt className="mt-0.5 text-xs text-muted-foreground">Attempts</dt>
-            <dd className="tabular-nums">{run.attempt}</dd>
-            <dt className="mt-0.5 text-xs text-muted-foreground">Queued at</dt>
-            <dd>
-              <time dateTime={run.createdAt}>{timestampFormatter.format(created)}</time>
-            </dd>
-            <dt className="mt-0.5 text-xs text-muted-foreground">Last updated</dt>
-            <dd>
-              <time dateTime={run.updatedAt}>
-                {timestampFormatter.format(new Date(run.updatedAt))}
-              </time>
-            </dd>
-            {run.code ? (
-              <>
-                <dt className="mt-0.5 text-xs text-muted-foreground">Result code</dt>
-                <dd>
-                  <code className="text-xs [overflow-wrap:anywhere]">{run.code}</code>
-                </dd>
-              </>
-            ) : null}
-            <dt className="mt-0.5 text-xs text-muted-foreground">Run ID</dt>
-            <dd className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:flex">
-              <code className="text-xs [overflow-wrap:anywhere]">{run.id}</code>
-              <CopyButton value={run.id} label="Copy run ID" iconOnly />
-            </dd>
-          </dl>
+        <div className="space-y-3 border-t border-border/70 px-4 py-3 sm:pl-16">
+          <RunInspection installationId={installationId} run={run} outcome={outcome} open={open} />
+          <RunSection
+            name="Technical details"
+            icon={Info}
+            preview={run.attempt === 1 ? '1 attempt' : `${run.attempt} attempts`}
+          >
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm sm:gap-x-5">
+              <dt className="mt-0.5 text-xs text-muted-foreground">Queued at</dt>
+              <dd>
+                <time dateTime={run.createdAt}>{timestampFormatter.format(created)}</time>
+              </dd>
+              <dt className="mt-0.5 text-xs text-muted-foreground">Last updated</dt>
+              <dd>
+                <time dateTime={run.updatedAt}>
+                  {timestampFormatter.format(new Date(run.updatedAt))}
+                </time>
+              </dd>
+              {run.code ? (
+                <>
+                  <dt className="mt-0.5 text-xs text-muted-foreground">Result code</dt>
+                  <dd>
+                    <code className="text-xs [overflow-wrap:anywhere]">{run.code}</code>
+                  </dd>
+                </>
+              ) : null}
+              <dt className="mt-0.5 text-xs text-muted-foreground">Run ID</dt>
+              <dd className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:flex">
+                <code className="text-xs [overflow-wrap:anywhere]">{run.id}</code>
+                <CopyButton value={run.id} label="Copy run ID" iconOnly />
+              </dd>
+            </dl>
+          </RunSection>
           {canRetry ? (
-            <Button className="mt-3" size="small" disabled={retrying} onClick={onRetry}>
+            <Button size="small" disabled={retrying} onClick={onRetry}>
               <RotateCcw size={13} aria-hidden />
               Retry run
             </Button>
@@ -266,6 +281,7 @@ export function RunHistory({
                 key={run.id}
                 run={run}
                 registrationId={installation.registrationId}
+                installationId={installation.id}
                 canRetry={admin && run.status === 'failed'}
                 retrying={retry.isPending}
                 onRetry={() => retry.mutate(run.id)}

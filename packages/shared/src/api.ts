@@ -102,6 +102,24 @@ export type BuiltInView = {
   profiles?: ProfileAlias[];
 };
 export type RecordReference = { id: string; object: string; label: string | null };
+
+export type ExtensionRunFieldStatus = 'applied' | 'pending_review' | 'populated' | 'cleared';
+
+export type ExtensionRunInspection = {
+  input: {
+    trigger: string;
+    record: RecordReference | null;
+    operation: string | null;
+    changedFields: string[];
+  };
+  output: {
+    fields: { label: string; status: ExtensionRunFieldStatus }[];
+  };
+  timing: {
+    queueMs: number | null;
+    latestAttemptMs: number | null;
+  };
+};
 /** The event a claim cites. */
 export type SourceReference = {
   id: string;

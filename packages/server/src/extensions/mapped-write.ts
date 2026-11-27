@@ -1,5 +1,5 @@
 import { bindingKeySchema } from '@retainer/extension';
-import { normalizeDomain, normalizeEmail } from '@retainer/shared';
+import { type ExtensionRunFieldStatus, normalizeDomain, normalizeEmail } from '@retainer/shared';
 import { z } from 'zod';
 import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
@@ -37,7 +37,7 @@ export type MappedWriteInput = z.infer<typeof mappedWriteSchema>;
 export type MappedWriteResult = {
   outcome: 'applied' | 'skipped';
   reason?: 'record_deleted' | 'record_merged' | 'lookup_changed' | 'nothing_to_fill';
-  fields: Record<string, 'applied' | 'populated' | 'cleared' | 'pending_review'>;
+  fields: Record<string, ExtensionRunFieldStatus>;
 };
 
 /** The record as it is, without following a merge to its survivor. */
@@ -190,24 +190,43 @@ export async function mappedWrite(
         values[field.name] = value;
         outputOf.set(field.name, key);
       }
-      if (!outputOf.size) return { outcome: 'skipped', reason: 'nothing_to_fill', fields };
-      const writes = prepareValues(object as CompiledObject, values, 'update');
-      const statuses = await writeFields(tx, context, object, record, writes, {
-        confidence,
-        ...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
-        ...(input.observedAt ? { observedAt: new Date(input.observedAt) } : {}),
-      });
-      for (const [name, status] of Object.entries(statuses)) {
-        const key = outputOf.get(name);
-        if (key)
-          fields[key] =
-            status === 'superseded'
-              ? 'populated'
-              : status === 'pending_review'
-                ? status
-                : 'applied';
+      if (outputOf.size) {
+        const writes = prepareValues(object as CompiledObject, values, 'update');
+        const statuses = await writeFields(tx, context, object, record, writes, {
+          confidence,
+          ...(input.expectedUpdatedAt ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
+          ...(input.observedAt ? { observedAt: new Date(input.observedAt) } : {}),
+        });
+        for (const [name, status] of Object.entries(statuses)) {
+          const key = outputOf.get(name);
+          if (key)
+            fields[key] =
+              status === 'superseded'
+                ? 'populated'
+                : status === 'pending_review'
+                  ? status
+                  : 'applied';
+        }
       }
-      return { outcome: 'applied', fields };
+      if (targets.size) {
+        // Commit dispositions with the write. Replays keep the first disposition for each field.
+        // Only the run's trigger record is represented, even if a handler writes other records.
+        const dispositions = Object.fromEntries(
+          Array.from(targets, ([key, field]) => [field.id as string, fields[key]]),
+        );
+        await tx`update extension_attempts a
+          set mapped_fields=${tx.json(dispositions)}::jsonb || coalesce(a.mapped_fields, '{}'::jsonb)
+          from extension_jobs j
+          where a.workspace_id=${caller.workspaceId} and a.job_id=j.id and j.id=${run.jobId}
+          and a.attempt=j.attempt and a.fence=${run.fence}::bigint
+          and (case j.trigger_kind
+            when 'recordButton' then j.input->>'recordId'
+            when 'change' then j.change_snapshot->>'record_id'
+          end)=${record.id}`;
+      }
+      return outputOf.size
+        ? { outcome: 'applied', fields }
+        : { outcome: 'skipped', reason: 'nothing_to_fill', fields };
     });
   } catch (error) {
     // The run fails on a broken binding, and the admin sees it on the installation.

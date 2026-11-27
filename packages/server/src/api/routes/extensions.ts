@@ -256,6 +256,9 @@ export function extensionRoutes(app: Hono<AppEnv>, extensions: Extensions, keyMo
       ),
     ),
   );
+  app.get('/extensions/:id/runs/:run', requireScope('read'), async (c) =>
+    c.json(await extensions.inspectRun(c.get('caller'), idParam(c), idParam(c, 'run'))),
+  );
   app.post('/extensions/preview', requireScope('schema:write'), async (c) =>
     c.json(await extensions.preview(c.get('caller'), await readBody(c, installInputSchema))),
   );

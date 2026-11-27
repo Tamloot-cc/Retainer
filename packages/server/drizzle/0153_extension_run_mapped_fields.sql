@@ -1,0 +1,1 @@
+ALTER TABLE "extension_attempts" ADD COLUMN "mapped_fields" jsonb;

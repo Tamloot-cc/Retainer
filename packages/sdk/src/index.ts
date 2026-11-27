@@ -46,6 +46,7 @@ import type {
   LogEventInput as EventInput,
   EventPage,
   EventQueryInput,
+  ExtensionRunInspection,
   FactPlace,
   ForgetResult,
   LinkedRecordPage,
@@ -991,6 +992,13 @@ export class RetainerClient {
       }[];
       nextCursor: string | null;
     }>(`/v1/extensions/${encodeURIComponent(id)}/runs`, params, signal);
+  }
+  inspectExtensionRun(id: string, runId: string, signal?: AbortSignal) {
+    return this.get<ExtensionRunInspection>(
+      `/v1/extensions/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`,
+      {},
+      signal,
+    );
   }
   extensionRecordButtons(object: string, signal?: AbortSignal) {
     return this.get<{ buttons: ExtensionRecordButton[] }>(
