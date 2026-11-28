@@ -407,10 +407,17 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     },
     [selectRows, selectedIds, search.record, setSearch],
   );
-  // The table's page, or what a board's columns or a calendar's month loaded.
+  // The table's page, or what a grouped table's sections, a board's columns
+  // or a calendar's month loaded. Those keep events raw: add their values.
   const byId = useMemo(() => new Map(records?.map((r) => [r.id, r])), [records]);
-  const loaded = useLoadedRecord(name);
-  const lookup = useCallback((id: string) => byId.get(id) ?? loaded(id), [byId, loaded]);
+  const loaded = useLoadedRecord(object.nameSingular);
+  const lookup = useCallback(
+    (id: string) => {
+      const record = byId.get(id) ?? loaded(id);
+      return record && isEvent ? withEventValues(record) : record;
+    },
+    [byId, loaded, isEvent],
+  );
   const fieldFor = useCallback(
     (column: string) => columns.find((f) => f.name === column),
     [columns],
@@ -421,9 +428,12 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const menu = useRecordMenu({
     object,
     lookup,
-    // Rows are selected, and cells have fields, only in the table.
-    selection: selection && kind === 'table' ? { ids: selectedIds, select: selectRows } : undefined,
-    fieldFor: kind === 'table' ? fieldFor : undefined,
+    // Only an ungrouped table selects rows; only tables have cells (`data-column`).
+    selection:
+      selection && kind === 'table' && !grouped
+        ? { ids: selectedIds, select: selectRows }
+        : undefined,
+    fieldFor,
     host: actions.host,
   });
   const barTarget = useMemo(

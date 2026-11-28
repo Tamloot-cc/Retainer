@@ -81,6 +81,19 @@ test('the browser’s menu stays outside a record', async ({ page, retainer: r }
   await expect(menu(page)).toHaveCount(0);
 });
 
+test('right-clicks a board card under the plural address', async ({ page, retainer: r }) => {
+  await r.request('/objects/person/records', { values: { name: 'Dana Levi' } });
+  const board = await r.request('/objects/person/views', {
+    name: 'By company',
+    kind: 'board',
+    groupBy: 'company',
+  });
+  await signIn(page, r.url, r.keys.user);
+  await page.goto(`${r.url}/app/o/people?view=${board.id}`);
+  await page.getByText('Dana Levi').click({ button: 'right' });
+  await expect(menu(page)).toHaveAccessibleName('Actions for Dana Levi');
+});
+
 test('a read-only person sees no actions that change records', async ({ page, retainer: r }) => {
   await r.request('/objects/person/records', { values: { name: 'Dana Levi' } });
   const grid = await people(page, r.url, r.keys.reader);
