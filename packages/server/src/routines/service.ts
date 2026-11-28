@@ -410,7 +410,9 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const rows = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
+          (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
+            from routine_versions a where a.id=r.active_version_id) as approver_gone
         from routines r order by r.created_at desc,r.id`;
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
       const versions = await this.versions(
@@ -440,7 +442,9 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const [row] = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
+          (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
+            from routine_versions a where a.id=r.active_version_id) as approver_gone
         from routines r where r.id=${id}`;
       if (!row) throw notFound('routine');
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
@@ -634,7 +638,7 @@ export class Routines {
    * paused, and due times that passed, are not handled later.
    */
   async resume(caller: Caller, routineId: string) {
-    const who = requireAdmin(caller);
+    requireAdmin(caller);
     return this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
@@ -653,31 +657,17 @@ export class Routines {
           'approval_required',
           'this routine paused because something it depends on changed; repair it and approve the new version',
         );
-      let activeVersion = version.id;
-      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id))) {
-        if (caller.cli)
-          throw new AppError(
-            409,
-            'approval_required',
-            'Review and approve the routine in Retainer.',
-            {
-              routineId,
-              versionId: version.id,
-            },
-          );
-        activeVersion = await this.copyVersionForApproval(
-          tx,
-          caller.workspaceId,
-          version,
-          version.source_id,
+      // Whoever resumes must not become the approver of code they never saw:
+      // an approver who left means approving again, however it paused (#167).
+      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
+        throw new AppError(
+          409,
+          'approval_required',
+          'its approver is no longer an admin; review and approve the routine to resume it',
+          { routineId, versionId: version.id },
         );
-        await this.discardUnstarted(tx, routineId);
-        await tx`update routine_versions set state='superseded' where id=${version.id}`;
-        await tx`update routine_versions set state='approved',approver_user_id=${who},
-          approved_by=${tx.json(jsonValue(caller.actor))},approved_at=clock_timestamp() where id=${activeVersion}`;
-      }
       const zone = await workspaceZone(tx);
-      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, activeVersion);
+      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, version.id);
       await tx`update routines set state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null} where id=${routineId}`;
       return { routineId, status: 'active' };
     });
@@ -1021,6 +1011,8 @@ export type RoutineRow = {
   updated_at: Date;
   held?: number;
   proposals?: number;
+  /** The active version's approver is no longer an admin (routines spec §5.3). */
+  approver_gone?: boolean;
 };
 export type VersionRow = {
   id: string;
@@ -1127,7 +1119,12 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     name: row.name,
     description: row.description,
     status: row.status,
-    pausedReason: row.paused_reason,
+    // A routine paused for another reason whose approver has since left can
+    // only be approved again, never simply resumed (#167).
+    pausedReason:
+      row.status !== 'active' && row.status !== 'archived' && row.approver_gone
+        ? 'approver_left'
+        : row.paused_reason,
     ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
     pausedAt: row.paused_at?.toISOString() ?? null,
     // A paused routine fires nothing; resuming sets its next time afresh.
@@ -1151,8 +1148,10 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
       differs: boolean;
       record_id: string | null;
       result: unknown;
+      tool_name: string | null;
+      tool_effect: 'read' | 'write' | 'send' | null;
     }[]
-  >`select position,operation,state,code,differs,record_id,result from routine_run_results
+  >`select position,operation,state,code,differs,record_id,result,tool_name,tool_effect from routine_run_results
     where run_id=${run.id} order by position`;
   const usedAgent = calls.some((call) => call.operation === 'ai.agent');
   return {
@@ -1180,6 +1179,9 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
       code: call.code,
       differs: call.differs,
       recordId: call.record_id,
+      ...(call.tool_name && call.tool_effect
+        ? { tool: { name: call.tool_name, effect: call.tool_effect } }
+        : {}),
       ...(withResults && call.result !== null ? { result: call.result } : {}),
     })),
     // A run that waited for an agent task and then diverged needs a person

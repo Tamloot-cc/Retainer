@@ -386,14 +386,17 @@ export class RoutineRuntime {
       code?: string | null;
       toolJobId?: string | null;
       recordId?: string | null;
+      tool?: { name: string; effect: string } | undefined;
     },
   ) {
-    await tx`insert into routine_run_results(workspace_id,run_id,position,operation,args_hash,state,result,code,tool_job_id,record_id)
+    await tx`insert into routine_run_results(workspace_id,run_id,position,operation,args_hash,state,result,code,tool_job_id,record_id,tool_name,tool_effect)
       values(${workspace},${runId},${request.position},${request.operation},${hash},${row.state},
         ${row.result === undefined ? null : tx.json(jsonValue(row.result))},${row.code ?? null},
-        ${row.toolJobId ?? null},${row.recordId ?? null})
+        ${row.toolJobId ?? null},${row.recordId ?? null},${row.tool?.name ?? null},${row.tool?.effect ?? null})
       on conflict(run_id,position) do update set state=excluded.state,result=excluded.result,code=excluded.code,
         tool_job_id=coalesce(excluded.tool_job_id,routine_run_results.tool_job_id),
+        tool_name=coalesce(excluded.tool_name,routine_run_results.tool_name),
+        tool_effect=coalesce(excluded.tool_effect,routine_run_results.tool_effect),
         record_id=coalesce(excluded.record_id,routine_run_results.record_id),updated_at=clock_timestamp()`;
   }
 
@@ -719,6 +722,7 @@ export class RoutineRuntime {
     await this.record(tx, caller.workspaceId, run.id, request, hash, {
       state: 'started',
       toolJobId: jobId,
+      tool: { name, effect: tool.effect },
     });
     return { state: 'pending', tool: { callId: jobId } };
   }

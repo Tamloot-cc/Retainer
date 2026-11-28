@@ -1389,22 +1389,43 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
-  it('an admin who resumes for an approver who left records a fresh approval', async () => {
+  it('resuming for an approver who left asks for approval, however it paused (#167)', async () => {
     const s = await setup();
     const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    // Paused by hand first; the approver leaves while it is paused, so its
+    // pause reason stays manual.
     const paused = await s.app.request(`/v1/routines/${routineId}/pause`, {
       key: s.keys.admin,
       body: {},
     });
     expect(paused.status).toBe(200);
-    // The original approver is no longer an admin, and approved long ago.
     await db.owner`update routine_versions set approver_user_id='someone-who-left',
       approved_at=now()-interval '10 days' where id=${versionId}`;
     const resumed = await s.app.request(`/v1/routines/${routineId}/resume`, {
       key: s.keys.admin,
       body: {},
     });
-    expect(resumed.status).toBe(200);
+    expect(resumed.status).toBe(409);
+    expect(resumed.body.error).toMatchObject({
+      code: 'approval_required',
+      details: { routineId, versionId },
+    });
+    // Nothing changed, and the routine reads as needing a new approval.
+    const [still] =
+      await db.owner`select status,active_version_id from routines where id=${routineId}`;
+    expect(still).toMatchObject({ status: 'paused', active_version_id: versionId });
+    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(view.body.pausedReason).toBe('approver_left');
+    const listed = await s.app.request('/v1/routines', { key: s.keys.admin });
+    expect(listed.body.routines.find((r: { id: string }) => r.id === routineId).pausedReason).toBe(
+      'approver_left',
+    );
+    // Approving on the review screen records a new version and keeps the earlier approval.
+    const approved = await s.app.request(
+      `/v1/routines/${routineId}/versions/${versionId}/approve`,
+      { key: s.keys.admin, body: {} },
+    );
+    expect(approved.status).toBe(200);
     const versions = await db.owner<
       { id: string; approver_user_id: string; fresh: boolean; state: string }[]
     >`
@@ -1414,8 +1435,11 @@ describe('routines', () => {
       { id: versionId, approver_user_id: 'someone-who-left', fresh: false, state: 'superseded' },
       { approver_user_id: 'key:admin', fresh: true, state: 'approved' },
     ]);
-    const [active] = await db.owner`select active_version_id from routines where id=${routineId}`;
-    expect(active?.active_version_id).toBe(versions[1]?.id);
+    const [active] =
+      await db.owner`select status,active_version_id from routines where id=${routineId}`;
+    expect(active).toMatchObject({ status: 'active', active_version_id: versions[1]?.id });
+    const again = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(again.body.pausedReason).toBeNull();
   });
 
   it('a preview samples distinct records, however busy the newest one is', async () => {

@@ -2,6 +2,7 @@ import { RetainerApiError } from '@retainer/sdk';
 import type {
   RoutineCapabilities,
   RoutineDetail,
+  RoutineRunCall,
   RoutineRunView,
   RoutineVersionView,
   RoutineView,
@@ -18,6 +19,7 @@ import { router } from '../extensions/test-router.js';
 import { ReportContext } from '../state.js';
 import { RoutinePage, runNowText } from './detail.js';
 import { RoutinesPage } from './list.js';
+import { madeChanges } from './model.js';
 import { RoutineButtons } from './record-buttons.js';
 import { RoutineRunPage } from './run.js';
 import { TimeZoneSetting } from './time-zone.js';
@@ -656,6 +658,30 @@ describe('what a run did, in words', () => {
     expect(await screen.findByText('Done, no changes')).toBeTruthy();
     expect(screen.getByText(/finished without changing anything/)).toBeTruthy();
     expect(screen.getByText('Kickoff checklist already created for this project')).toBeTruthy();
+  });
+});
+
+describe('what counts as a change (#151)', () => {
+  const call = (over: Partial<RoutineRunCall>): RoutineRunCall => ({
+    position: 1,
+    operation: 'tool',
+    state: 'done',
+    code: null,
+    differs: false,
+    recordId: null,
+    ...over,
+  });
+  it('a read-only tool is not a change; a write or send tool, a write, and an older call are', () => {
+    expect(madeChanges({ calls: [call({ tool: { name: 'lookup', effect: 'read' } })] })).toBe(
+      false,
+    );
+    expect(madeChanges({ calls: [call({ tool: { name: 'crm', effect: 'write' } })] })).toBe(true);
+    expect(madeChanges({ calls: [call({ tool: { name: 'mail', effect: 'send' } })] })).toBe(true);
+    expect(madeChanges({ calls: [call({ operation: 'record.update' })] })).toBe(true);
+    expect(madeChanges({ calls: [call({})] })).toBe(true);
+    expect(
+      madeChanges({ calls: [call({ state: 'failed', tool: { name: 'crm', effect: 'write' } })] }),
+    ).toBe(false);
   });
 });
 

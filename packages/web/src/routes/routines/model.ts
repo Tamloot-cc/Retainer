@@ -156,7 +156,11 @@ const WRITES = ['record.create', 'record.update', 'events.log', 'remember'];
 export const madeChanges = (run: Pick<RoutineRunView, 'calls'>) =>
   run.calls.some(
     (call) =>
-      call.state === 'done' && (WRITES.includes(call.operation) || call.operation === 'tool'),
+      call.state === 'done' &&
+      (WRITES.includes(call.operation) ||
+        // A read-only tool only answers; a call recorded before tools carried
+        // their effect counts as a change, as it did then (#151).
+        (call.operation === 'tool' && call.tool?.effect !== 'read')),
   );
 
 /** A finished run's status, saying when it succeeded without changing anything. */

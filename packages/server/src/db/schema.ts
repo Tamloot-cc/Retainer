@@ -3484,6 +3484,9 @@ export const routineRunResults = pgTable(
     differs: boolean('differs').notNull().default(false),
     /** The tool job a `tool` effect started. */
     toolJobId: uuid('tool_job_id'),
+    /** A `tool` effect's tool and its declared effect, `read`, `write` or `send` (#151). */
+    toolName: text('tool_name'),
+    toolEffect: text('tool_effect'),
     /** The agent task an `ai.agent` effect started (agent spec §9.2). */
     agentTaskId: uuid('agent_task_id'),
     /** An answered `ai.agent` effect the resumed run reached (agent spec §9.2). */

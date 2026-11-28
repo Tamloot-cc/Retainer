@@ -913,6 +913,8 @@ export type RoutineRunCall = {
   code: string | null;
   differs: boolean;
   recordId: string | null;
+  /** A `tool` call's tool and its declared effect (#151). */
+  tool?: { name: string; effect: 'read' | 'write' | 'send' };
   result?: unknown;
 };
 
