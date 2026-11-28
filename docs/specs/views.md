@@ -1,7 +1,7 @@
 # Views built by the agent: spec
 
-Status: **proposed**, 2026-11-27. Written after Dashboards shipped (#212),
-so it builds on the chat pieces that work made to share: chat blocks, the
+Status: **decided**, 2026-11-28 (proposed 2026-11-27). Written after
+Dashboards shipped (#212), so it builds on the chat pieces that work made to share: chat blocks, the
 draft card, guides read on demand and a check before answering
 ([dashboards.md](dashboards.md) §5, §8.1). The pattern it shares with
 dashboards and Routines is [chat-builds.md](chat-builds.md).
@@ -54,8 +54,8 @@ Decided with the product owner on 2026-11-27:
   (dashboards.md §2).
 - **Write this after Dashboards merged**, on its real chat pieces.
 
-Proposed in this document, open to change: everything below. §11 lists
-the open questions.
+Decided in this document: everything below. §11 lists the questions
+settled after review.
 
 Considered and not taken:
 
@@ -421,18 +421,20 @@ maintenance window (about ten minutes).
 | Rows per section, then more | 25                  |
 | Draft preview               | 5 records or groups |
 
-## 11. Open questions
+## 11. Decided questions
+
+Settled on 2026-11-28, each as recommended.
 
 1. **"Me".** "My open deals" needs a filter on the viewing person, which
    needs a record to point at a person who signs in. That is a schema
-   question for accounts. Recommended: later.
+   question for accounts. Decided: later.
 2. **Dashboards over views.** A dashboard `Query` could take `view`, so a
    tile follows a team's definition. It ties a dashboard to a view a
-   person can change or delete. Recommended: later, once both are used.
+   person can change or delete. Decided: later, once both are used.
 3. **Calendar by week or day, and an end date.** Twenty has both.
-   Recommended: wait until someone asks.
+   Decided: wait until someone asks.
 4. **The agent saving views itself.** A view is display settings and easy
    to undo, so the agent could save a private view without asking.
-   Recommended: no, for one rule across views and dashboards.
-5. **Manual group order.** Needs a stored position per group. Recommended:
+   Decided: no, for one rule across views and dashboards.
+5. **Manual group order.** Needs a stored position per group. Decided:
    no; `asc` and `desc` cover most needs.
