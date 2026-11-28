@@ -150,7 +150,7 @@ export class RunTokens {
       Math.floor(job.deadline.getTime() / 1000),
     );
     if (expiry <= Math.floor(Date.now() / 1000))
-      throw new AppError(409, 'lease_expired', 'run deadline passed');
+      throw new AppError(409, 'execution_timeout', 'run deadline passed');
     const token = await new SignJWT({ run: binding.parse(run), workspace: job.workspaceId })
       .setProtectedHeader({ alg: 'EdDSA', typ: 'retainer-run+jwt', kid: this.options.keyId })
       .setIssuer(this.options.issuer)
@@ -177,7 +177,7 @@ export class RunTokens {
       Math.floor(job.deadline.getTime() / 1000),
     );
     if (expiry <= Math.floor(Date.now() / 1000))
-      throw new AppError(409, 'lease_expired', 'run deadline passed');
+      throw new AppError(409, 'execution_timeout', 'run deadline passed');
     const claims: ExtensionModelClaims = {
       kind: 'model',
       workspaceId: job.workspaceId,

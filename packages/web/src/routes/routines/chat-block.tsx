@@ -55,13 +55,14 @@ export default function RoutineChatBlock({
   ];
   const draft = useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => {
+    // The saved message can replace the streamed one mid-read. Let the
+    // in-flight request finish so the replacement card can reuse it.
+    queryFn: () => {
       if (!fence) throw new Error('The routine draft is incomplete.');
-      return api.routineDraft(
-        fence.source,
-        { preview: fence.preview, ...(fence.routine ? { routine: fence.routine } : {}) },
-        signal,
-      );
+      return api.routineDraft(fence.source, {
+        preview: fence.preview,
+        ...(fence.routine ? { routine: fence.routine } : {}),
+      });
     },
     enabled: !!fence,
     retry: false,

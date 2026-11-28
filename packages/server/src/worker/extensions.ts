@@ -206,11 +206,11 @@ export class ExtensionExecutor {
           ...(agentResult ? { agentResult } : {}),
         }),
       );
-      // The handler budget ends at job.deadline; the lease's grace lets the timeout be recorded.
-      timeout = setTimeout(
-        () => abort('timeout'),
-        Math.max(0, job.deadline.getTime() - Date.now()),
-      );
+      // Preparing the invocation also uses the handler budget.
+      const remaining = job.deadline.getTime() - Date.now();
+      if (remaining <= 0) throw new AppError(409, 'execution_timeout', 'run deadline passed');
+      // The lease's grace lets the timeout be recorded.
+      timeout = setTimeout(() => abort('timeout'), remaining);
       let renewing = false;
       heartbeat = setInterval(() => {
         if (renewing) return;
@@ -238,17 +238,18 @@ export class ExtensionExecutor {
     } catch (error) {
       // Handler exceptions are classified by the runner; anything reaching here is the
       // platform's own failure (launcher, network, deadline) and is retried.
+      const code = error instanceof AppError ? error.code : undefined;
       result =
-        error instanceof AppError && error.code === 'incompatible_runtime'
+        code === 'incompatible_runtime'
           ? { status: 'failed', code: 'incompatible_runtime' }
           : {
               status: 'retry',
               code:
                 reason === 'lease'
                   ? 'lease_lost'
-                  : reason === undefined
-                    ? 'execution_unavailable'
-                    : 'execution_timeout',
+                  : reason === 'timeout' || code === 'execution_timeout'
+                    ? 'execution_timeout'
+                    : 'execution_unavailable',
             };
     } finally {
       if (heartbeat) clearInterval(heartbeat);

@@ -24,7 +24,7 @@ import { stableJson } from '../stable-json.js';
 import { type Capabilities, capabilities, type RoutineConfig } from './capabilities.js';
 import { nextInZone } from './cron.js';
 import { checkCode, checkManifest, fieldFor, objectFor } from './manifest.js';
-import { fireTick, matchingSince, scheduleTargets } from './matcher.js';
+import { fireTick, previewTargets, recentTriggerCount, scheduleTargets } from './matcher.js';
 import { pauseRoutine, queueRun } from './runs.js';
 
 /** A manifest and its code, as written: what `validate_routine` checks. */
@@ -236,8 +236,8 @@ export class Routines {
   }
 
   /**
-   * `preview_routine` (§5.2, item 5): the recent changes the trigger would
-   * have matched, and a dry run of the code on up to five of their records.
+   * `preview_routine` (§5.2, item 5): the records eligible to run now,
+   * and a dry run of the code on up to five of them.
    */
   async preview(caller: Caller, input: SourceRef) {
     readScope(caller);
@@ -246,16 +246,11 @@ export class Routines {
       const { manifest, problems, schema } = await this.staticCheck(tx, caller, source);
       if (problems.length) return { valid: false as const, problems };
       const sourceId = await saveSource(tx, caller.workspaceId, manifest, source.code);
-      const { matched, records } =
-        manifest.when.kind === 'record'
-          ? await matchingSince(tx, schema, manifest, 30)
-          : manifest.when.kind === 'schedule'
-            ? await scheduleTargets(tx, caller.workspaceId, schema, manifest, 5)
-            : await recentRecords(tx, schema, manifest.when.object);
+      const { matched, records } = await previewTargets(tx, caller.workspaceId, schema, manifest);
       const previewId = crypto.randomUUID();
       const runs: string[] = [];
       const targets: (string | null)[] =
-        manifest.when.kind === 'schedule' && !manifest.when.object ? [null] : records.slice(0, 5);
+        manifest.when.kind === 'schedule' && !manifest.when.object ? [null] : records;
       for (const recordId of targets)
         runs.push(
           await queueRun(tx, caller.workspaceId, {
@@ -986,7 +981,7 @@ async function draftCount(
 ): Promise<{ kind: 'record' | 'schedule' | 'schedule_once' | 'manual'; value: number | null }> {
   const when = manifest.when;
   if (when.kind === 'record')
-    return { kind: 'record', value: (await matchingSince(tx, schema, manifest, 30, 0)).matched };
+    return { kind: 'record', value: await recentTriggerCount(tx, schema, manifest) };
   if (when.kind === 'schedule')
     return when.object
       ? {
@@ -995,19 +990,6 @@ async function draftCount(
         }
       : { kind: 'schedule_once', value: null };
   return { kind: 'manual', value: null };
-}
-
-async function recentRecords(
-  tx: Tx,
-  schema: Awaited<ReturnType<typeof getSchema>>,
-  objectId: string,
-) {
-  const object = objectFor(schema, objectId);
-  if (!object) return { matched: 0, records: [] };
-  const rows = await tx<{ id: string }[]>`
-    select id from records where object_type_id=${object.id} and deleted_at is null and merged_into_id is null
-    order by updated_at desc limit 5`;
-  return { matched: rows.length, records: rows.map((row) => row.id) };
 }
 
 export type RoutineRow = {

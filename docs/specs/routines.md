@@ -504,7 +504,7 @@ Both use only the calls below. Neither can approve.
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `get_routine_capabilities` | The SDK's types for this workspace, the trigger kinds, the limits, every installed tool with its status, model availability |
 | `validate_routine`         | Whether the manifest and the code pass, or a list of errors pointing at the part that failed                                |
-| `preview_routine`          | Recent changes the trigger would have matched, and a dry run on a few of them (§5.2)                                        |
+| `preview_routine`          | Records matching the trigger and condition now, and a dry run on up to five (§5.2)                                        |
 | `propose_routine`          | Saves the description, the manifest, the code, a one-sentence summary and the builder's report as a proposal for a person   |
 
 `validate_routine` and `preview_routine` start a job in the sandbox and
@@ -571,10 +571,10 @@ Five mechanisms back it:
    - **The code**, behind a link, with a diff from the active version when
      there is one.
 5. **A dry run on real records.** The preview runs the actual code on up to
-   five recent records the trigger would have matched, with a token that
-   cannot write (§5.1). It lists every write and tool call the code tried, in
-   order, and what the model answered. It also counts how many recent changes would have
-   matched, which is the cost estimate. Two limits, stated on the screen:
+   five recent records that match the trigger and pass its condition, with a
+   token that cannot write (§5.1). It lists every write and tool call the code tried, in
+   order, and what the model answered. It also counts the eligible records
+   as a guide to how many records could start the code. Two limits:
    - records are read as they are today, not as they were when they changed;
    - a model can answer differently next time.
 
@@ -1447,21 +1447,24 @@ they left open:
   the approved version are superseded in the same transaction, which holds
   the routine row, so one cannot be approved over it later. Newer proposals
   stay open.
-- **The builder sets `oncePerRecord` when the description asks for it.**
-  Its guide lists the flag for every trigger, and its answer says whether
-  the description asks to act once per record. When it says so and the
-  manifest lacks the flag, the draft is sent back with that problem, so the
-  rule is in the manifest, where Retainer enforces it and the approver
-  reads it. The model reads the description: a pattern would misread "once
-  a week per deal" or "only once the deal has an amount".
+- **Once-per-record rules belong in the manifest.** The routines guide
+  tells drafting agents to set `when.oncePerRecord` when a description
+  requires it, including for manual buttons. Retainer enforces the
+  manifest flag and shows it to the approver. The agent reads the
+  description in context, so a frequency like "once a week per deal"
+  does not get treated as a once-per-record rule.
 - **A tool call's payloads are routine content.** `forget` redacts the input
   and output of every routine tool job in the workspace and cancels the
   unfinished ones; retention clears them 7 days after the run ends, and
   cancels one the run left unfinished.
-- **A preview counts every match.** The cost estimate counts all matching
-  changes of the window in SQL, and the sample is the five live records
-  (survivors of any merge) with the most recent matches, so one busy record
-  takes one slot.
+- **A preview counts records that pass the condition.** For record triggers,
+  it finds matching changes in the last 30 days, resolves merged records to
+  their survivors, and counts each live record once using its current values.
+  Scheduled previews with an object apply both the trigger filter and the
+  condition. Manual previews count live records that pass the condition.
+  A schedule without an object counts as one run. Only the five most recent
+  eligible records are dry-run. The count describes current eligibility,
+  so it cannot predict how many model calls the code will make.
 - **Clock changes.** A scheduled wall time that a spring-forward change
   skips runs an hour later (02:30 at 03:30); one that a fall-back change
   repeats runs the first time, in every zone.

@@ -277,11 +277,35 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
     // Not reclaimable until the backoff elapses, so it does not hold the installation's slot.
     expect(await h.queue.claim(h.workspace, h.jobId, 'other')).toBeNull();
   });
+  it('records a timeout if the credential expires before the driver can start', async () => {
+    const h = await setup(slowId);
+    const job = await h.queue.claim(h.workspace, h.jobId, 'coordinator');
+    if (!job) throw new Error('missing lease');
+    const invoke = vi.fn(hang);
+    // The credential expires at the whole-second boundary, possibly before
+    // the handler's millisecond deadline. Move across that boundary explicitly.
+    const clock = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Math.floor(job.deadline.getTime() / 1000) * 1000);
+    try {
+      await h.executor({ invoke }).execute(job);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(invoke).not.toHaveBeenCalled();
+    expect(await db.owner`select status,code from extension_jobs where id=${h.jobId}`).toEqual([
+      { status: 'queued', code: 'execution_timeout' },
+    ]);
+  });
+
   it('gives the handler only its own timeout and the run credential no grace', async () => {
     const h = await setup(slowId);
     const lease = await h.queue.claim(h.workspace, h.jobId, 'coordinator');
     if (!lease) throw new Error('missing lease');
-    const token = await tokens.issue(t.sql, lease, lease.registrationId, lease.scopes);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(lease.deadline.getTime() - 1000);
+    const token = await tokens
+      .issue(t.sql, lease, lease.registrationId, lease.scopes)
+      .finally(() => clock.mockRestore());
     const { exp } = decodeJwt(token.slice('rt_run_'.length));
     expect((exp ?? Infinity) * 1000).toBeLessThanOrEqual(lease.deadline.getTime());
     const [row] = await db.owner`select extract(epoch from run_until)*1000 as run_until
@@ -560,12 +584,22 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
         return finish.promise;
       },
     });
+    // Drive only the JS timer, after the real database claim reaches the
+    // driver. A busy database can take longer than the claim window to start.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const pass = runExecutorLeader(db.connect({ max: 1, keepConnections: true }), executor, 150, {
       idleTimeoutMs: 10000,
       idleMs: 10,
     });
     try {
-      await started.promise;
+      await Promise.race([
+        started.promise,
+        pass.then(() => {
+          throw new Error('leader stopped before starting the fixture');
+        }),
+      ]);
+      await vi.advanceTimersByTimeAsync(150);
+      vi.useRealTimers();
       await expect
         .poll(async () =>
           Number(
@@ -597,6 +631,7 @@ describe('trusted executor protocol with an explicitly in-process test driver', 
         (await db.owner`select status from extension_jobs where id=${h.jobId}`)[0]?.status,
       ).toBe('succeeded');
     } finally {
+      vi.useRealTimers();
       finish.resolve({ status: 'succeeded' });
       executor.drain();
       await pass;
