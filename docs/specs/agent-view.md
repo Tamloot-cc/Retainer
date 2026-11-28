@@ -54,6 +54,22 @@ that Developer view shows.
 The account menu's **Developer view** switch becomes a three-way control
 labelled **View**, with **Standard**, **Developer** and **Agent**.
 
+- In the account menu it is a stepped slider: a stop for each level, the
+  track filled up to the chosen one, since each level adds to the one before.
+  Picking a stop leaves the menu open, so the slider is seen to move. The
+  stops are the menu's radio items, so arrow keys and Enter work as in any
+  menu. The line under the person's name still names the level when it is
+  not Standard.
+- At Developer and Agent, every page header ends in a badge naming the level
+  (**Developer view ×**, **Agent view ×**). Its button goes back to
+  Standard, so someone who forgot the level was on sees why the page shows
+  more.
+- **⌘.** (Ctrl+. on Windows and Linux) steps Standard → Developer → Agent →
+  Standard, shown beside the control's heading. Unlike ⌘K it also works
+  before the workspace is set up, where a person signed in with a key still
+  sees the app. Find anything (⌘K) lists **Switch to … view** for the two
+  other levels, for every actor.
+
 - Remembered per browser in `localStorage` under `retainer:view-level:v1`,
   holding `off`, `developer` or `agent`. The old key
   `retainer:developer-view:v1` is no longer read. Refused storage leaves the
@@ -123,8 +139,12 @@ summary took most of the room.
 `/app/briefing`. At Agent level the sidebar's setup group shows
 **Agent briefing** after Schema. The address works at any level.
 
-The page is one readable column with a section list at the side. It opens
-with one paragraph:
+The page is one readable column with a section list at the side, borrowed
+from the docs site's "On this page": a line beside the list lights up the
+sections whose headings are in view and slides as the page scrolls; when no
+heading is in view, the section being read stays lit. Picking an item jumps
+to its section. Below `md` the list is a scrolling strip above the content.
+It opens with one paragraph:
 
 > This is what Retainer gives an agent that connects to this workspace. The
 > agent also has its own instructions and tools from the app it runs in;

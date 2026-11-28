@@ -8,16 +8,7 @@ import type {
 import { isInverseRelation } from '@retainer/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import {
-  BookOpen,
-  Brain,
-  FileText,
-  Lightbulb,
-  type LucideIcon,
-  Shapes,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useAccount } from '../../accounts/context.js';
 import { api, useWorkspace } from '../../api/client.js';
@@ -30,10 +21,9 @@ import {
   EntryTime,
   Markdown,
   Muted,
-  NavItem,
-  NavList,
   Page,
   Row,
+  SectionNav,
   SplitView,
   Table,
   Td,
@@ -44,14 +34,16 @@ import { QueryError } from '../state.js';
 
 type SectionId = 'instructions' | 'memory' | 'schema' | 'missing' | 'tools' | 'guides';
 /** The page's sections, in order: each heading, and its entry in the list at the side. */
-const SECTIONS: { id: SectionId; title: string; icon: LucideIcon }[] = [
-  { id: 'instructions', title: 'Connection instructions', icon: FileText },
-  { id: 'memory', title: 'Memory read at the start', icon: Brain },
-  { id: 'schema', title: 'Schema as the agent reads it', icon: Shapes },
-  { id: 'missing', title: 'Missing descriptions', icon: TriangleAlert },
-  { id: 'tools', title: 'Tools', icon: Wrench },
-  { id: 'guides', title: 'Guides', icon: BookOpen },
+const SECTIONS: { id: SectionId; title: string }[] = [
+  { id: 'instructions', title: 'Connection instructions' },
+  { id: 'memory', title: 'Memory read at the start' },
+  { id: 'schema', title: 'Schema as the agent reads it' },
+  { id: 'missing', title: 'Missing descriptions' },
+  { id: 'tools', title: 'Tools' },
+  { id: 'guides', title: 'Guides' },
 ];
+/** A section heading's element id, which the side list follows. */
+const headingId = (id: SectionId) => `briefing-${id}-title`;
 const sectionTitle = (id: SectionId) => SECTIONS.find((s) => s.id === id)?.title ?? id;
 
 /** An object or field with no description, as §6.4 lists them. */
@@ -155,17 +147,15 @@ export function BriefingPage() {
       </p>
       <SplitView
         nav={
-          <NavList label="Sections">
-            {SECTIONS.map((s) => (
-              <NavItem
-                key={s.id}
-                icon={s.icon}
-                label={s.title}
-                {...(s.id === 'missing' ? { meta: missingTotal } : {})}
-                onSelect={() => jumpTo(s.id)}
-              />
-            ))}
-          </NavList>
+          <SectionNav
+            label="Sections"
+            items={SECTIONS.map((s) => ({
+              id: headingId(s.id),
+              label: s.title,
+              ...(s.id === 'missing' ? { meta: missingTotal } : {}),
+            }))}
+            onSelect={jumpTo}
+          />
         }
       >
         <BriefingSection id="instructions">
@@ -264,9 +254,9 @@ export function BriefingPage() {
   );
 }
 
-/** Scrolls to a section and moves focus there, so keyboard users continue from it. */
-function jumpTo(id: SectionId) {
-  const section = document.getElementById(`briefing-${id}`);
+/** Scrolls to a heading's section and moves focus there, so keyboard users continue from it. */
+function jumpTo(heading: string) {
+  const section = document.getElementById(heading)?.closest('section');
   section?.scrollIntoView({ block: 'start' });
   section?.focus({ preventScroll: true });
 }
@@ -283,11 +273,11 @@ function BriefingSection({
   return (
     <section
       id={`briefing-${id}`}
-      aria-labelledby={`briefing-${id}-title`}
+      aria-labelledby={headingId(id)}
       tabIndex={-1}
       className="flex scroll-mt-16 flex-col gap-3 outline-none"
     >
-      <h2 id={`briefing-${id}-title`} className="m-0 text-base font-semibold">
+      <h2 id={headingId(id)} className="m-0 text-base font-semibold">
         {sectionTitle(id)}
         {count === undefined ? '' : ` (${count})`}
       </h2>

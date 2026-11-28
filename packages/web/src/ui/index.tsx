@@ -22,6 +22,7 @@ import { Badge, cn, isPlainClick, NavigationContext, ROW_STATE } from './core.js
 import { ApiName, DescriptionLine } from './layout.js';
 import { CYCLE, LogoMark } from './logo-mark.js';
 import { Tooltip } from './tooltip.js';
+import { DeveloperContext, VIEW_LABELS } from './view-level.js';
 
 // Adapted from shadcn/ui Button (MIT); see THIRD_PARTY.md.
 const buttonVariants = cva(
@@ -316,6 +317,30 @@ const CRUMB =
   'hidden max-w-48 truncate text-muted-foreground first-letter:uppercase sm:inline-block';
 
 /**
+ * In Developer or Agent view, a note at the end of every page header that
+ * the page shows more than usual, with a way straight back to Standard.
+ */
+function ViewBadge() {
+  const view = useContext(DeveloperContext);
+  if (view.level === 'off') return null;
+  const label = `${VIEW_LABELS[view.level]} view`;
+  return (
+    <span className="ml-auto flex h-6 shrink-0 items-center gap-0.5 rounded-full bg-selection pl-2.5 pr-0.5 text-xs font-medium text-selection-foreground">
+      {label}
+      <button
+        type="button"
+        aria-label={`Leave ${label}`}
+        title="Back to Standard view"
+        onClick={() => view.set('off')}
+        className="flex size-5 items-center justify-center rounded-full hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-8"
+      >
+        <X size={12} aria-hidden />
+      </button>
+    </span>
+  );
+}
+
+/**
  * A screen: a slim top bar with breadcrumb and actions, then the content.
  * `layout="fill"` gives the content the rest of the viewport with no padding,
  * for grids that scroll on their own.
@@ -396,7 +421,8 @@ export function Page({
           )}
           {apiName ? <ApiName>{apiName}</ApiName> : null}
         </div>
-        {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
+        <ViewBadge />
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </header>
       {fill ? (
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
@@ -921,6 +947,7 @@ export {
   MenuLink,
   type MenuOpening,
   MenuSeparator,
+  MenuSteps,
   PointMenu,
   type PointMenuOpening,
   type PointMenuStore,
@@ -946,6 +973,7 @@ export {
   Popover,
 } from './popover.js';
 export { Property, PropertyEditor, PropertyList, Section } from './property.js';
+export { SectionNav } from './section-nav.js';
 export { Sheet } from './sheet.js';
 export { objectIcon, Shell } from './shell.js';
 export { ItemCard, ItemCards, StepActions, StepFlow, StepHeader } from './steps.js';

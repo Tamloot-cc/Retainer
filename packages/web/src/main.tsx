@@ -61,6 +61,7 @@ import { appLinksKey } from './routes/extensions/model.js';
 import type { ReportFn, ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
 import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
+import { nextViewLevel } from './ui/view-level.js';
 import './style.css';
 
 const onboarding = () => import('./accounts/onboarding.js');
@@ -165,6 +166,17 @@ function Layout() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [settingUp]);
+  // ⌘. steps through the View levels. Unlike ⌘K it works before the
+  // workspace is set up, where a key-signed-in person still sees the app.
+  useEffect(() => {
+    function key(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key !== '.') return;
+      e.preventDefault();
+      developerView.set(nextViewLevel(developerView.level));
+    }
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [developerView]);
   if (!schema.data && !schema.error) return <Splash label="Loading workspace…" />;
   if (!schema.data)
     return (

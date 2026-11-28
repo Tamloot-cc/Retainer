@@ -1,7 +1,7 @@
 import type { ObjectView, PresentedRecord } from '@retainer/shared';
-import { createContext, useCallback, useContext } from 'react';
+import { useCallback, useContext } from 'react';
 import { ApiName, Code, CopyButton, Property, PropertyList, Row, Section } from '../ui/index.js';
-import { asViewLevel, VIEW_LEVELS, type ViewLevel } from '../ui/view-level.js';
+import { asViewLevel, DeveloperContext, VIEW_LEVELS, type ViewLevel } from '../ui/view-level.js';
 
 /**
  * The View control (D8, agent view spec §3): Standard, Developer or Agent.
@@ -11,7 +11,7 @@ import { asViewLevel, VIEW_LEVELS, type ViewLevel } from '../ui/view-level.js';
  * displayed, never what is sent.
  */
 export const VIEW_LEVEL_KEY = 'retainer:view-level:v1';
-export { VIEW_LEVELS, type ViewLevel };
+export { DeveloperContext, VIEW_LEVELS, type ViewLevel };
 
 /** The level left on in this browser; Standard when storage is refused or holds something else. */
 export function readViewLevel(storage: () => Pick<Storage, 'getItem'>): ViewLevel {
@@ -33,10 +33,6 @@ export function writeViewLevel(storage: () => Pick<Storage, 'setItem'>, level: V
   }
 }
 
-export const DeveloperContext = createContext<{
-  level: ViewLevel;
-  set: (level: ViewLevel) => void;
-}>({ level: 'off', set: () => {} });
 /** Whether developer view is on: true at Developer and Agent. */
 export const useDeveloper = () => useContext(DeveloperContext).level !== 'off';
 /** Whether agent view is on: true at Agent only. */
