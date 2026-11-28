@@ -25,7 +25,7 @@ import {
   Stack,
 } from '../../ui/index.js';
 import { ViaLabel } from '../events/event-details.js';
-import { eventTitle, objectByName, objectLabel, QueryError } from '../state.js';
+import { eventTitle, objectByName, objectLabel, QueryError, useRecordLabel } from '../state.js';
 
 /**
  * The budgets the tab offers (agent view spec §5): what an agent gets by
@@ -262,9 +262,11 @@ export function AgentContextView({
                         <Muted small>Internal note</Muted>
                       ) : (
                         fact.sources.map((source) => (
-                          <EventLink key={source} id={source}>
-                            {eventTitles.get(source) ?? 'Source event'}
-                          </EventLink>
+                          <SourceEventLink
+                            key={source}
+                            id={source}
+                            title={eventTitles.get(source)}
+                          />
                         ))
                       )
                     }
@@ -313,4 +315,14 @@ export function AgentContextView({
       )}
     </Stack>
   );
+}
+
+/**
+ * A fact's source event by its title: from the pack when the event is among
+ * its recent events, otherwise read, since facts and events are budgeted apart.
+ */
+function SourceEventLink({ id, title }: { id: string; title: string | undefined }) {
+  const label = useRecordLabel(id, title === undefined);
+  const fetched = label.data ? eventTitle({ title: label.data.label }) : undefined;
+  return <EventLink id={id}>{title ?? fetched ?? 'Source event'}</EventLink>;
 }

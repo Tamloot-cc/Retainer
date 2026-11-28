@@ -1,9 +1,10 @@
 import type { ContextPack, ObjectView, SchemaDescription, Session } from '@retainer/shared';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WorkspaceContext } from '../../api/client.js';
+import { api, WorkspaceContext } from '../../api/client.js';
 import {
   AgentContextView,
   fieldsNotSent,
@@ -132,25 +133,27 @@ describe('the agent context helpers', () => {
 });
 
 describe('the Agent context tab', () => {
-  function show(options: { raw?: boolean; budget?: 2000 | 8000 | 16000 } = {}) {
+  function show(options: { raw?: boolean; budget?: 2000 | 8000 | 16000; pack?: ContextPack } = {}) {
     const onBudget = vi.fn(),
       onRaw = vi.fn();
     render(
-      <WorkspaceContext.Provider
-        value={{
-          session: { workspace: { id: 'w1' } } as unknown as Session,
-          schema: { objects: [company, person, meeting] } as unknown as SchemaDescription,
-        }}
-      >
-        <AgentContextView
-          pack={pack}
-          object={company}
-          budget={options.budget ?? 2000}
-          onBudget={onBudget}
-          raw={options.raw ?? false}
-          onRaw={onRaw}
-        />
-      </WorkspaceContext.Provider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <WorkspaceContext.Provider
+          value={{
+            session: { workspace: { id: 'w1' } } as unknown as Session,
+            schema: { objects: [company, person, meeting] } as unknown as SchemaDescription,
+          }}
+        >
+          <AgentContextView
+            pack={options.pack ?? pack}
+            object={company}
+            budget={options.budget ?? 2000}
+            onBudget={onBudget}
+            raw={options.raw ?? false}
+            onRaw={onRaw}
+          />
+        </WorkspaceContext.Provider>
+      </QueryClientProvider>,
     );
     return { onBudget, onRaw };
   }
@@ -175,6 +178,23 @@ describe('the Agent context tab', () => {
     const events = screen.getByRole('list', { name: 'Events in the pack' });
     expect(within(events).getByText('Pricing call')).toBeTruthy();
     expect(within(events).getByText('About')).toBeTruthy();
+  });
+
+  it('names a fact’s source event even when the pack left the event out', async () => {
+    const read = vi.spyOn(api, 'record').mockResolvedValue({ label: 'Kickoff call' } as never);
+    const fact = { ...pack.facts[0], sources: ['e9'] } as ContextPack['facts'][number];
+    show({ pack: { ...pack, facts: [fact] } });
+    const facts = screen.getByRole('list', { name: 'Facts in the pack' });
+    expect(await within(facts).findByText('Kickoff call')).toBeTruthy();
+    expect(read).toHaveBeenCalledWith('e9', [], expect.anything());
+    // A source among the recent events is named from the pack, with no read.
+    read.mockClear();
+    cleanup();
+    show();
+    expect(
+      within(screen.getByRole('list', { name: 'Facts in the pack' })).getByText('Pricing call'),
+    ).toBeTruthy();
+    expect(read).not.toHaveBeenCalled();
   });
 
   it('ends a section with what did not fit, and raises the budget from there', async () => {
