@@ -118,6 +118,8 @@ export type AppDeps = {
     modelOrigin?: string | undefined;
     modelName?: string;
     modelCallsPerDay?: number;
+    /** Starts the executor's pass after a run is queued (`RoutineConfig.wake`). */
+    wake?: (() => Promise<void>) | undefined;
   };
 };
 
@@ -168,6 +170,7 @@ export function createApp(deps: AppDeps) {
     modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
     // `retainer.ai.agent` needs the agent's runtime and a way to deliver task jobs.
     agentAvailable: !!deps.agent?.runtimeSecret && (deps.agent?.tasks ?? true),
+    wake: deps.routines?.wake,
   };
   // What connected agents and the chat get: one MCP server, routine tools
   // included where routines are enabled (routines-in-chat spec §3.1).

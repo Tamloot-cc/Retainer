@@ -47,7 +47,7 @@ export type LambdaEventInvoke = (
 ) => Promise<number | undefined>;
 
 let lambdaClient: Promise<LambdaEventInvoke> | undefined;
-const invokeEvent: LambdaEventInvoke = async (target, payload) => {
+export const invokeEvent: LambdaEventInvoke = async (target, payload) => {
   lambdaClient ??= import('@aws-sdk/client-lambda').then(({ LambdaClient, InvokeCommand }) => {
     const lambda = new LambdaClient({ maxAttempts: 1 });
     return async (FunctionName, Payload) =>
