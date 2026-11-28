@@ -60,9 +60,14 @@ export function DashboardsPage() {
             description="Ask the agent for one, such as ‘deals by stage this quarter’, then pin it."
           />
           <Button asChild>
-            <Link to="/chat" search={{ new: 'dashboard' }}>
-              Open chat
-            </Link>
+            {/* A reader can still ask about dashboards, in a plain chat. */}
+            {canBuild ? (
+              <Link to="/chat" search={{ new: 'dashboard' }}>
+                Open chat
+              </Link>
+            ) : (
+              <Link to="/chat">Open chat</Link>
+            )}
           </Button>
         </div>
       ) : (
