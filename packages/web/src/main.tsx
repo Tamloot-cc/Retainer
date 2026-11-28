@@ -20,7 +20,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -90,17 +89,18 @@ function Layout() {
   );
   // A report that belongs to the page it was made on goes when the person
   // leaves that page (#147); others stay above the next screen until dismissed.
+  // A report's page is the browser's pathname; the router's subscription
+  // only renders the shell again when it changes.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const here = useRef(pathname);
-  here.current = pathname;
-  const report = shown && (!shown.path || shown.path === pathname) ? shown.node : null;
+  const here = typeof window === 'undefined' ? pathname : window.location.pathname;
+  const report = shown && (!shown.path || shown.path === here) ? shown.node : null;
   // Leaving its page ends a page-scoped report, so coming back does not revive it.
   useEffect(() => {
-    if (shown?.path && shown.path !== pathname) setShown(null);
-  }, [pathname, shown]);
+    if (shown?.path && shown.path !== here) setShown(null);
+  }, [here, shown]);
   const setReport = useCallback<ReportFn>(
     (node, options) =>
-      setShown(node ? { node, ...(options?.thisPage ? { path: here.current } : {}) } : null),
+      setShown(node ? { node, ...(options?.page ? { path: options.page } : {}) } : null),
     [],
   );
   const client = useQueryClient();

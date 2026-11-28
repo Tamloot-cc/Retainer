@@ -33,7 +33,9 @@ export function useRunRoutineButton() {
   return useMutation({
     mutationFn: ({ button, recordIds }: { button: RoutineButton; recordIds: string[] }) =>
       api.runRoutine(button.routineId, recordIds),
-    onSuccess: ({ runs }, { button, recordIds }) => {
+    // The page the button was pressed on, before any navigation while it runs.
+    onMutate: () => ({ page: window.location.pathname }),
+    onSuccess: ({ runs }, { button, recordIds }, context) => {
       const runId = runs[0];
       report(
         recordIds.length === 1 ? (
@@ -57,8 +59,8 @@ export function useRunRoutineButton() {
             </Link>
           </>
         ),
-        // The run link belongs to this record's page (#147).
-        { thisPage: true },
+        // The run link belongs to the record page it was pressed on (#147).
+        { page: context.page },
       );
       void client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) });
     },

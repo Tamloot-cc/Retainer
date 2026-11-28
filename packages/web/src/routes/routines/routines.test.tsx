@@ -768,6 +768,8 @@ describe('routine buttons on a record', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Welcome' }));
     expect(start).toHaveBeenCalledWith('routine-1', [RECORD]);
     await vi.waitFor(() => expect(report).toHaveBeenCalled());
+    // The report belongs to the page the button was pressed on (#147).
+    expect(report.mock.calls[0]?.[1]).toEqual({ page: window.location.pathname });
     render(<div>{report.mock.calls[0]?.[0]}</div>);
     expect(screen.getByText(/Started “Welcome” on this record/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'See what it does' }).getAttribute('href')).toBe(
