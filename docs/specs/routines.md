@@ -1500,9 +1500,12 @@ they left open:
 - **Name and description follow the approved version.** Proposals carry
   their own name and description. Approval makes that version's name and
   description the routine's live metadata.
-- **Re-approval creates a version.** Approving an already approved version,
-  including resuming on behalf of an approver who has left, records a new
-  version and preserves the prior approval. Only the active version's runs
+- **Re-approval creates a version.** Approving an already approved version
+  records a new version and preserves the prior approval. Resume never
+  approves: when the active version's approver is no longer an admin,
+  however the routine paused, `resume` refuses with `approval_required`
+  and the routine reads as `approver_left` until an admin approves it on
+  the review screen (#167). Only the active version's runs
   can change the Routine's health.
 - **The approver is checked at every effect.** An approver who stops being
   an admin refuses the run's next effect as `routine_paused` and cancels a

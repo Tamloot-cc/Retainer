@@ -37,12 +37,13 @@ import {
   type WriteContext,
   writeFields,
 } from '../records/write.js';
+import { runDeadline } from '../routine-runtime/admission.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
 import { contextTypeFor, fieldFor, mapFilter, objectFor } from './manifest.js';
-import { pauseRoutine, RUN_GRACE_SECONDS, useUp } from './runs.js';
+import { pauseRoutine, useUp } from './runs.js';
 import { workspaceZone } from './service.js';
 
 export type RuntimeConfig = RoutineConfig & {
@@ -165,8 +166,7 @@ export class RoutineRuntime {
   private async run(tx: Tx, runId: string, lock = false): Promise<RunState> {
     const [run] = await tx<RunState[]>`
       select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.started_at,r.expires_at,
-        least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
-          -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond') as deadline,
+        ${runDeadline(tx)} as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
         s.manifest,s.code,v.types_fingerprint,v.tool_contracts
       from routine_runs r left join routine_sources s on s.id=r.source_id
@@ -386,14 +386,17 @@ export class RoutineRuntime {
       code?: string | null;
       toolJobId?: string | null;
       recordId?: string | null;
+      tool?: { name: string; effect: string } | undefined;
     },
   ) {
-    await tx`insert into routine_run_results(workspace_id,run_id,position,operation,args_hash,state,result,code,tool_job_id,record_id)
+    await tx`insert into routine_run_results(workspace_id,run_id,position,operation,args_hash,state,result,code,tool_job_id,record_id,tool_name,tool_effect)
       values(${workspace},${runId},${request.position},${request.operation},${hash},${row.state},
         ${row.result === undefined ? null : tx.json(jsonValue(row.result))},${row.code ?? null},
-        ${row.toolJobId ?? null},${row.recordId ?? null})
+        ${row.toolJobId ?? null},${row.recordId ?? null},${row.tool?.name ?? null},${row.tool?.effect ?? null})
       on conflict(run_id,position) do update set state=excluded.state,result=excluded.result,code=excluded.code,
         tool_job_id=coalesce(excluded.tool_job_id,routine_run_results.tool_job_id),
+        tool_name=coalesce(excluded.tool_name,routine_run_results.tool_name),
+        tool_effect=coalesce(excluded.tool_effect,routine_run_results.tool_effect),
         record_id=coalesce(excluded.record_id,routine_run_results.record_id),updated_at=clock_timestamp()`;
   }
 
@@ -719,6 +722,7 @@ export class RoutineRuntime {
     await this.record(tx, caller.workspaceId, run.id, request, hash, {
       state: 'started',
       toolJobId: jobId,
+      tool: { name, effect: tool.effect },
     });
     return { state: 'pending', tool: { callId: jobId } };
   }

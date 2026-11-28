@@ -28,7 +28,7 @@ import {
 import { MessageScroller, MessageScrollerItem } from '../../ui/message.js';
 import { QueryError } from '../state.js';
 import type { ChatsSearch } from './chats-search.js';
-import { firstMessages } from './first-message.js';
+import { firstMessages, newChat } from './first-message.js';
 import { ChatMessages } from './messages.js';
 import {
   agentKey,
@@ -197,12 +197,8 @@ export function ChatsPage() {
     queryFn: ({ signal }) => api.agentChats(signal),
   });
   const start = useMutation({
-    mutationFn: (text: string | undefined) =>
-      api.createAgentChat(undefined, 'web').then((chat) => ({ chat, text })),
-    onSuccess: ({ chat, text }) => {
-      if (text) firstMessages.set(chat.id, text);
-      void navigate({ to: '/chat/$id', params: { id: chat.id } });
-    },
+    mutationFn: (text: string | undefined) => newChat(text),
+    onSuccess: (chat) => void navigate({ to: '/chat/$id', params: { id: chat.id } }),
   });
   const [draft, setDraft] = useState('');
   const startChat = (text: string) => start.mutate(text);

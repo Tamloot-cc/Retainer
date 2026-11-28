@@ -72,13 +72,13 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
     case 'schedule_over_limit':
       return 'A scheduled run matched more than 200 records, so Retainer paused it and held those runs. Nothing was done for them. Resume it, then run or discard them. Narrowing which records it runs on is the lasting fix.';
     case 'schedule_too_large':
-      return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Describe it again with fewer records to run on, then approve the new version.';
+      return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Ask the agent to narrow it to fewer records, then approve the new version.';
     case 'tool_changed':
       return 'A tool it uses changed what it does or how it connects. An admin needs to approve it again before it runs.';
     case 'approver_left':
       return 'The admin who approved it is no longer an admin. Another admin needs to approve it before it runs.';
     case 'check_failed':
-      return 'The workspace changed (a field, object or tool) and its code no longer fits. Describe it again to repair it, then approve the new version.';
+      return 'The workspace changed (a field, object or tool) and its code no longer fits. Ask the agent to repair it, then approve the new version.';
     case 'failing':
       return 'Its runs kept failing, so Retainer paused it. Check the recent runs below before you resume it.';
     case null:
@@ -113,12 +113,25 @@ export const runStatus = (status: RoutineRunStatus) =>
 export const runFinished = (status: RoutineRunStatus) =>
   !['queued', 'held', 'running', 'waiting'].includes(status);
 
+/** Why a run was skipped, by the code it ended with (#147). */
+const SKIPPED: Record<string, string> = {
+  condition_false: 'Its condition did not match the record when it started.',
+  record_used_up: 'It had already acted on this record, and it acts once per record.',
+  record_gone: 'Its record was deleted before it started.',
+};
+
+/** A run's status, explained in words when the word alone is not enough. */
+export function runStatusText(run: Pick<RoutineRunView, 'status' | 'code'>) {
+  if (run.status === 'skipped' && run.code && SKIPPED[run.code]) return SKIPPED[run.code];
+  return RUN_STATUS_TEXT[run.status];
+}
+
 /** What a run's status means, when the word alone is not enough. */
-export const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
+const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
   held: 'It waits for an admin to run or discard it.',
   waiting:
     'It handed the workspace agent a task and continues from the start when the answer arrives.',
-  skipped: 'Its condition did not match when it started, or it had already acted on this record.',
+  skipped: 'It did not run on this record.',
   expired: 'It ran past its time limit and did nothing more.',
   stopped: 'The routine was paused or archived while it ran, so it did nothing more.',
   diverged:
@@ -156,7 +169,11 @@ const WRITES = ['record.create', 'record.update', 'events.log', 'remember'];
 export const madeChanges = (run: Pick<RoutineRunView, 'calls'>) =>
   run.calls.some(
     (call) =>
-      call.state === 'done' && (WRITES.includes(call.operation) || call.operation === 'tool'),
+      call.state === 'done' &&
+      (WRITES.includes(call.operation) ||
+        // A read-only tool only answers; a call recorded before tools carried
+        // their effect counts as a change, as it did then (#151).
+        (call.operation === 'tool' && call.tool?.effect !== 'read')),
   );
 
 /** A finished run's status, saying when it succeeded without changing anything. */

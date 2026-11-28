@@ -40,7 +40,7 @@ import {
   Toolbar,
 } from '../../ui/index.js';
 import { canStart } from '../agent/chats-search.js';
-import { firstMessages } from '../agent/first-message.js';
+import { newChat } from '../agent/first-message.js';
 import { useRememberCommand } from '../command-recents.js';
 import { useAgentDescription, useApiName } from '../developer.js';
 import {
@@ -481,11 +481,9 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     mutationFn: async () => {
       if (!saved) return;
       const current = await api.view(saved.id);
-      const chat = await api.createAgentChat(undefined, 'web');
       const context = { view: current.id, ...viewSettings(current) };
       const fence = '```';
-      firstMessages.set(
-        chat.id,
+      const chat = await newChat(
         [
           `I'd like to change my view "${current.name}" on the ${current.object} object. Use these settings as the starting point and ask me what to change.`,
           ...current.issues.map((issue) => `- ${issue}`),

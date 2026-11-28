@@ -104,8 +104,9 @@ function Routine({ routine }: { routine: RoutineDetail }) {
     onSuccess: async (_, action) => {
       setConfirmArchive(false);
       setOutcome(
+        // A paused routine's notice already says so; one banner is enough (#147).
         action === 'pause'
-          ? 'Paused. It does nothing until it is resumed.'
+          ? null
           : action === 'resume'
             ? 'Resumed. It acts on what happens from now on, not on what happened while it was paused.'
             : 'Archived. It will not run again.',
@@ -220,7 +221,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
         </Notice>
       ) : null}
       {routine.status === 'draft' && !proposals.length ? (
-        <Notice>No version waits for review. Describe it again below to build one.</Notice>
+        <Notice>No version waits for review. Ask the agent for a new one below.</Notice>
       ) : null}
       {error ? <Notice error>{errorText(error, errorAction)}</Notice> : null}
       {outcome ? <Notice onDismiss={() => setOutcome(null)}>{outcome}</Notice> : null}
@@ -267,6 +268,11 @@ function Routine({ routine }: { routine: RoutineDetail }) {
         <div key={version.id} id={`routine-version-${version.id}`}>
           <Panel title={`Version ${version.number}, waiting for review`}>
             <Stack>
+              {/* The header describes the approved version; a proposal under
+                  review that changes it says what it asks for (#147). */}
+              {version.description && version.description !== routine.description ? (
+                <p className="text-sm">Described as: “{version.description}”</p>
+              ) : null}
               <VersionDetails version={version} />
               {admin ? (
                 <>

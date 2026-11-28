@@ -24,7 +24,7 @@ beforeAll(async () => {
   );
   workspace = setup.workspace.id;
   const [run] = await db.owner<{ id: string }[]>`
-    insert into routine_runs(workspace_id,mode,trigger_kind,status) values(${workspace},'build','build','running')
+    insert into routine_runs(workspace_id,mode,trigger_kind,status) values(${workspace},'dry','preview','running')
     returning id`;
   runId = run?.id as string;
 });

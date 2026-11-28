@@ -36,14 +36,11 @@ export type RoutineDriver = {
 /** Failed runs in a row before the routine pauses (§6.2). */
 const FAILURES_BEFORE_PAUSE = 3;
 
-/** Nothing queues `build` runs since the builder went (routines-in-chat spec §8). */
-type RunnableMode = Exclude<RoutineRunMode, 'build'>;
-
 export type ClaimedRun = {
   workspaceId: string;
   runId: string;
   routineId: string | null;
-  mode: RunnableMode;
+  mode: RoutineRunMode;
   fence: string;
   tools: string[];
   attempt: number;
@@ -163,11 +160,6 @@ export class RoutineExecutor {
       }
       if (run.attempt >= ROUTINE_LIMITS.attempts) {
         await this.end(tx, id, 'failed', 'retry_exhausted');
-        return null;
-      }
-      // A build queued before the builder was removed has nothing to run it.
-      if (run.mode === 'build') {
-        await this.end(tx, id, 'failed', 'builder_removed');
         return null;
       }
       const schema = await getSchema(tx, workspace);
@@ -293,11 +285,11 @@ export class RoutineExecutor {
       // other. The index decides a race; this check only spares the error. A
       // run that was already running on the merged-away record when another
       // ran on the survivor keeps that ID until it ends, so it counts too.
+      // Due-run discovery asks the same function, so it leaves out what this skips.
       if (run.mode === 'run' && run.routine_id && recordId) {
-        const [busy] = await tx`select 1 from routine_runs where routine_id=${run.routine_id}
-          and (record_id=${recordId} or record_id in (select r.id from records r where r.merged_into_id=${recordId}))
-          and mode='run' and status in ('running','waiting') and id<>${id}`;
-        if (busy) return null;
+        const [busy] = await tx<{ busy: boolean }[]>`
+          select retainer_routine_record_busy(${run.routine_id},${recordId},${id}) as busy`;
+        if (busy?.busy) return null;
       }
       // The initial record is an input, like the clock. A routine may change
       // that record itself before losing its lease.

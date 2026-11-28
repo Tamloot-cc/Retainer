@@ -27,11 +27,11 @@ import {
   madeChanges,
   operationText,
   pendingReviews,
-  RUN_STATUS_TEXT,
   routineObject,
   routinesKey,
   runFinished,
   runOutcome,
+  runStatusText,
   triggerText,
   useRoutineCapabilities,
   writtenFields,
@@ -72,6 +72,7 @@ export function RoutineRunPage() {
     );
   const r = run.data;
   const { label, tone } = runOutcome(r);
+  const statusText = runStatusText(r);
   const test = r.mode === 'test';
   const waiting = pendingReviews(r);
   const output = r.output ?? {};
@@ -89,7 +90,7 @@ export function RoutineRunPage() {
         {r.code ? <Muted>{r.code.replaceAll('_', ' ')}</Muted> : null}
       </Row>
       {failureText(r) ? <Notice error>{failureText(r)}</Notice> : null}
-      {RUN_STATUS_TEXT[r.status] ? <Notice>{RUN_STATUS_TEXT[r.status]}</Notice> : null}
+      {statusText ? <Notice>{statusText}</Notice> : null}
       {r.needsAttention ? (
         <Notice error>
           Needs attention: data this run read changed while it waited for the agent, so it stopped
@@ -135,12 +136,17 @@ export function RoutineRunPage() {
           )}
         </Property>
         <Property label="Started">
-          {r.startedAt ? new Date(r.startedAt).toLocaleString() : <Muted>Not yet</Muted>}
+          {r.startedAt ? (
+            new Date(r.startedAt).toLocaleString()
+          ) : (
+            // A run skipped before it started never will (#147).
+            <Muted>{runFinished(r.status) ? 'It did not start' : 'Not yet'}</Muted>
+          )}
         </Property>
         <Property label="Finished">
           {r.finishedAt ? new Date(r.finishedAt).toLocaleString() : <Muted>Not yet</Muted>}
         </Property>
-        <Property label="Attempt">{r.attempt}</Property>
+        {r.attempt > 0 ? <Property label="Attempt">{r.attempt}</Property> : null}
         <Property label="Model calls">{r.modelCalls}</Property>
       </PropertyList>
       <Section title="What it did, in order">

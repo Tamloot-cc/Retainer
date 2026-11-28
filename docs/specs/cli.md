@@ -375,12 +375,11 @@ field values but requires `keep`, which of the pair's two records survives
 the values the merge rules pick. Choosing
 values field by field stays in the web app.
 
-**Routine resume keeps the existing approval.** Today `resume` re-approves a
-copy of the version under the caller when its approver is no longer an admin
-(`routines/service.ts`). For an elevated CLI caller that would approve a
-routine without the person's click, so in that case `resume` refuses with
-`approval_required` and the link to the routine's review screen (§5.3). When the approval is
-still valid, it resumes as today.
+**Routine resume keeps the existing approval.** When the active version's
+approver is no longer an admin, `resume` refuses with `approval_required`
+for every caller, CLI or not (#167), and the CLI shows the link to the
+routine's review screen (§5.3). When the approval is still valid, it
+resumes as today.
 
 **The record says how a decision was made.** `Actor` gets an optional `via`
 field, for display only, added to `actorSchema` explicitly (it is a

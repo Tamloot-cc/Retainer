@@ -682,11 +682,12 @@ Decided on 2026-11-28, each as recommended.
   `byYou`, which the card matches on with the words and the target.
 - **The card treats a dry run as no longer kept** once all its runs ended
   more than 7 days ago, since retention clears their results then.
-- **A `build` run left from before** is ended as `failed` with
-  `builder_removed` when an executor claims it. The runner's internal
+- **`build` runs are gone.** A follow-up deleted the builder's old runs
+  and dropped `build` as a run mode and trigger (migrations 0160–0161).
+  The card reads the draft once and, while a dry run goes, polls only its
+  runs. The runner's internal
   `/routines/runtime/capabilities` route, used only by the builder, is gone
   too.
 - **The routine tools in the chat** go through the in-process MCP host,
-  which now gets the routine configuration (`api/app.ts`). A tool the host
-  does not offer is left out of a new chat's pinned list rather than
-  failing chat creation, for the routine tools only.
+  which now gets the routine configuration (`api/app.ts`). A chat pins them
+  when the server has routines enabled.

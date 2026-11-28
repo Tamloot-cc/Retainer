@@ -10,8 +10,18 @@ import {
   Outlet,
   RouterProvider,
   redirect,
+  useRouterState,
 } from '@tanstack/react-router';
-import { lazy, type ReactNode, StrictMode, Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  StrictMode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AccountContext,
@@ -48,7 +58,7 @@ import {
   writeViewLevel,
 } from './routes/developer.js';
 import { appLinksKey } from './routes/extensions/model.js';
-import type { ViewSearch } from './routes/state.js';
+import type { ReportFn, ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
 import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
 import './style.css';
@@ -66,7 +76,7 @@ function Layout() {
   const accountState = useAccount();
   const [creating, setCreating] = useState(false);
   const [command, setCommand] = useState(false),
-    [report, setReport] = useState<ReactNode>(null),
+    [shown, setShown] = useState<{ node: ReactNode; path?: string } | null>(null),
     [viewLevel, setViewLevel] = useState(() => readViewLevel(() => localStorage));
   const developerView = useMemo(
     () => ({
@@ -77,6 +87,22 @@ function Layout() {
       },
     }),
     [viewLevel],
+  );
+  // A report that belongs to the page it was made on goes when the person
+  // leaves that page (#147); others stay above the next screen until dismissed.
+  // A report's page is the browser's pathname; the router's subscription
+  // only renders the shell again when it changes.
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const here = typeof window === 'undefined' ? pathname : window.location.pathname;
+  const report = shown && (!shown.path || shown.path === here) ? shown.node : null;
+  // Leaving its page ends a page-scoped report, so coming back does not revive it.
+  useEffect(() => {
+    if (shown?.path && shown.path !== here) setShown(null);
+  }, [here, shown]);
+  const setReport = useCallback<ReportFn>(
+    (node, options) =>
+      setShown(node ? { node, ...(options?.page ? { path: options.page } : {}) } : null),
+    [],
   );
   const client = useQueryClient();
   const schema = useQuery({
@@ -208,7 +234,7 @@ function Layout() {
                 changes.
               </Notice>
             ) : null}
-            {report ? <Notice onDismiss={() => setReport(null)}>{report}</Notice> : null}
+            {report ? <Notice onDismiss={() => setShown(null)}>{report}</Notice> : null}
             <Outlet />
           </Shell>
           <CommandPalette

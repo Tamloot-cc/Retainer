@@ -133,7 +133,9 @@ export function QueryError({ error, retry }: { error: Error; retry?: () => void 
 /**
  * Reports the outcome of an action whose screen goes away with it (a
  * deleted, merged or erased record): the shell shows it above the next
- * screen until dismissed.
+ * screen until dismissed. `page` keeps it to that page (the browser's
+ * pathname when the action started), for an outcome that means nothing elsewhere.
  */
-export const ReportContext = createContext<(report: ReactNode) => void>(() => {});
+export type ReportFn = (report: ReactNode, options?: { page?: string }) => void;
+export const ReportContext = createContext<ReportFn>(() => {});
 export const useReport = () => useContext(ReportContext);

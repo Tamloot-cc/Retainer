@@ -2,6 +2,7 @@ import { RetainerApiError } from '@retainer/sdk';
 import type {
   RoutineCapabilities,
   RoutineDetail,
+  RoutineRunCall,
   RoutineRunView,
   RoutineVersionView,
   RoutineView,
@@ -18,6 +19,7 @@ import { router } from '../extensions/test-router.js';
 import { ReportContext } from '../state.js';
 import { RoutinePage, runNowText } from './detail.js';
 import { RoutinesPage } from './list.js';
+import { madeChanges } from './model.js';
 import { RoutineButtons } from './record-buttons.js';
 import { RoutineRunPage } from './run.js';
 import { TimeZoneSetting } from './time-zone.js';
@@ -654,6 +656,53 @@ describe('what a run did, in words', () => {
   });
 });
 
+describe('a skipped run (#147)', () => {
+  it('says why it was skipped, and that it never started', async () => {
+    router.params = { id: 'routine-1', run: 'run-s' };
+    vi.spyOn(api, 'routineRun').mockResolvedValue(
+      run({
+        id: 'run-s',
+        status: 'skipped',
+        code: 'condition_false',
+        attempt: 0,
+        startedAt: null,
+        calls: [],
+      }),
+    );
+    mount(<RoutineRunPage />);
+    expect(
+      await screen.findByText('Its condition did not match the record when it started.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/already acted on this record/)).toBeNull();
+    expect(screen.getByText('It did not start')).toBeTruthy();
+    expect(screen.queryByText('Attempt')).toBeNull();
+  });
+});
+
+describe('what counts as a change (#151)', () => {
+  const call = (over: Partial<RoutineRunCall>): RoutineRunCall => ({
+    position: 1,
+    operation: 'tool',
+    state: 'done',
+    code: null,
+    differs: false,
+    recordId: null,
+    ...over,
+  });
+  it('a read-only tool is not a change; a write or send tool, a write, and an older call are', () => {
+    expect(madeChanges({ calls: [call({ tool: { name: 'lookup', effect: 'read' } })] })).toBe(
+      false,
+    );
+    expect(madeChanges({ calls: [call({ tool: { name: 'crm', effect: 'write' } })] })).toBe(true);
+    expect(madeChanges({ calls: [call({ tool: { name: 'mail', effect: 'send' } })] })).toBe(true);
+    expect(madeChanges({ calls: [call({ operation: 'record.update' })] })).toBe(true);
+    expect(madeChanges({ calls: [call({})] })).toBe(true);
+    expect(
+      madeChanges({ calls: [call({ state: 'failed', tool: { name: 'crm', effect: 'write' } })] }),
+    ).toBe(false);
+  });
+});
+
 describe('a failed run', () => {
   it('says why it failed, and marks a refused model call with the provider’s words', async () => {
     router.params = { id: 'routine-1', run: 'run-9' };
@@ -714,6 +763,8 @@ describe('routine buttons on a record', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Welcome' }));
     expect(start).toHaveBeenCalledWith('routine-1', [RECORD]);
     await vi.waitFor(() => expect(report).toHaveBeenCalled());
+    // The report belongs to the page the button was pressed on (#147).
+    expect(report.mock.calls[0]?.[1]).toEqual({ page: window.location.pathname });
     render(<div>{report.mock.calls[0]?.[0]}</div>);
     expect(screen.getByText(/Started “Welcome” on this record/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'See what it does' }).getAttribute('href')).toBe(

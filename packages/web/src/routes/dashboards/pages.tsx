@@ -19,7 +19,7 @@ import {
 import { Menu, MenuAction } from '../../ui/menu.js';
 import { type BlockHistory, extendMessageBlockHistory } from '../agent/chat-blocks.js';
 import { canStart } from '../agent/chats-search.js';
-import { firstMessages } from '../agent/first-message.js';
+import { firstMessages, newChat } from '../agent/first-message.js';
 import { agentKey, type ChatMessage } from '../agent/model.js';
 import { QueryError } from '../state.js';
 import { dashboardKey } from './keys.js';
@@ -148,8 +148,7 @@ function DashboardDetail({ dashboard }: { dashboard: SavedDashboard }) {
           if (!(error instanceof RetainerApiError) || error.status !== 404) throw error;
         }
       }
-      const chat = await api.createAgentChat(undefined, 'web');
-      firstMessages.set(chat.id, firstDashboardMessage(current));
+      const chat = await newChat(firstDashboardMessage(current));
       return { chatId: chat.id, current };
     },
     onSuccess: ({ chatId, current }) => {

@@ -319,6 +319,15 @@ describe('routine tool calls', () => {
     expect(
       (await s.app.request('/v1/routines/runtime/effects/2', { key: other.token })).status,
     ).toBe(404);
+    // The run's view names the tool and its effect, so a read-only call is not a change (#151).
+    const view = await s.app.request(`/v1/routines/${s.routineId}/runs/${runId}`, {
+      key: s.keys.admin,
+    });
+    expect(view.body.calls.find((c: { position: number }) => c.position === 2)).toMatchObject({
+      operation: 'tool',
+      state: 'done',
+      tool: { name: 'check_address', effect: 'read' },
+    });
   });
 
   it('output outside the schema fails the call', async () => {

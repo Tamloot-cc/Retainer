@@ -71,7 +71,7 @@ export const ROUTINE_STATUSES = [
 export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
 
 /** How the code runs (§5.1), plus the two sandbox jobs that run no routine code. */
-export const ROUTINE_RUN_MODES = ['run', 'test', 'dry', 'check', 'build'] as const;
+export const ROUTINE_RUN_MODES = ['run', 'test', 'dry', 'check'] as const;
 export type RoutineRunMode = (typeof ROUTINE_RUN_MODES)[number];
 
 export const ROUTINE_RUN_STATUSES = [
@@ -200,9 +200,12 @@ export type RoutineManifest = z.infer<typeof routineManifestSchema>;
 export type RoutineTrigger = RoutineManifest['when'];
 
 /** A tool's contract, pinned by a version (§5.3): a change pauses the routine. */
+/** What a tool declares it does: answers, writes, or sends something out. */
+export type ToolEffect = 'read' | 'write' | 'send';
+
 export type ToolContract = {
   registrationId: string;
-  effect: 'read' | 'write' | 'send';
+  effect: ToolEffect;
   connection: 'workspace' | 'member';
   model: boolean;
 };
@@ -913,6 +916,8 @@ export type RoutineRunCall = {
   code: string | null;
   differs: boolean;
   recordId: string | null;
+  /** A `tool` call's tool and its declared effect (#151). */
+  tool?: { name: string; effect: ToolEffect };
   result?: unknown;
 };
 

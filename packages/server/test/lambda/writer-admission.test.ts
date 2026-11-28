@@ -272,7 +272,7 @@ it('fences transactions, pooled reconnects, stale builds and interrupted migrati
     left.id,
     (tx) => tx`
     insert into routine_runs (workspace_id, mode, trigger_kind, status, lease_owner, lease_until)
-      values (${left.id}, 'build', 'build', 'running', 'writer-test', now() + interval '1 minute') returning id`,
+      values (${left.id}, 'dry', 'preview', 'running', 'writer-test', now() + interval '1 minute') returning id`,
   );
   const effect = await acquireWriterLease(old, 1, { effect: 'routine-tool:fixture' });
   expect(effect).toBeDefined();

@@ -3445,14 +3445,14 @@ export const routineRuns = pgTable(
         sql`${t.status} in ('running', 'waiting') and ${t.mode} = 'run' and ${t.recordId} is not null`,
       ),
     index('routine_runs_waiting_idx').on(t.expiresAt).where(sql`${t.status} = 'waiting'`),
-    check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check', 'build')`),
+    check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check')`),
     check(
       'routine_runs_status',
       sql`${t.status} in ('queued', 'held', 'running', 'waiting', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')`,
     ),
     check(
       'routine_runs_trigger_kind',
-      sql`${t.triggerKind} in ('record', 'schedule', 'manual', 'test', 'preview', 'check', 'build')`,
+      sql`${t.triggerKind} in ('record', 'schedule', 'manual', 'test', 'preview', 'check')`,
     ),
     check(
       'routine_runs_pinned',
@@ -3484,6 +3484,9 @@ export const routineRunResults = pgTable(
     differs: boolean('differs').notNull().default(false),
     /** The tool job a `tool` effect started. */
     toolJobId: uuid('tool_job_id'),
+    /** A `tool` effect's tool and its declared effect, `read`, `write` or `send` (#151). */
+    toolName: text('tool_name'),
+    toolEffect: text('tool_effect'),
     /** The agent task an `ai.agent` effect started (agent spec §9.2). */
     agentTaskId: uuid('agent_task_id'),
     /** An answered `ai.agent` effect the resumed run reached (agent spec §9.2). */

@@ -825,6 +825,49 @@ describe('routines', () => {
     expect(record.body.fields.source).toBe('web');
   });
 
+  it('discovery skips queued runs a running run on the same record blocks (#131)', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main() {
+  return 'ok';
+}
+`,
+    });
+    const busy = await createCompany(s.app, s.keys.admin, 'Acme Busy');
+    const merged = await createCompany(s.app, s.keys.admin, 'Acme Busy Duplicate');
+    const free = await createCompany(s.app, s.keys.admin, 'Acme Free');
+    const press = async (recordId: string) =>
+      (
+        await s.app.request(`/v1/routines/${routineId}/run`, {
+          key: s.keys.admin,
+          body: { recordIds: [recordId] },
+        })
+      ).body.runs[0] as string;
+    const running = await press(busy);
+    const claimed = await s.executor.claim(s.workspace, running);
+    if (!claimed) throw new Error('run not claimed');
+    const blocked = [await press(busy), await press(busy), await press(merged)];
+    const runnable = await press(free);
+    // A record merged into the busy one waits for the same run.
+    await db.owner`update records set merged_into_id=${busy} where id=${merged}`;
+    const due = async () =>
+      (
+        await db.owner<{ run_id: string }[]>`select run_id from retainer_routine_runs_due(1000)`
+      ).map((row) => row.run_id);
+    const first = await due();
+    expect(first).toContain(runnable);
+    for (const id of blocked) expect(first).not.toContain(id);
+    // Once the running run ends, the waiting runs are due again.
+    await db.owner`update routine_runs set status='succeeded',finished_at=now(),lease_owner=null,lease_until=null
+      where id=${running}`;
+    const after = await due();
+    for (const id of blocked) expect(after).toContain(id);
+  });
+
   it('wakes the executor once each queued run has committed, and only then', async () => {
     // What each wake saw: the runs another connection can already read.
     const seen: string[][] = [];
@@ -1447,22 +1490,43 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
-  it('an admin who resumes for an approver who left records a fresh approval', async () => {
+  it('resuming for an approver who left asks for approval, however it paused (#167)', async () => {
     const s = await setup();
     const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    // Paused by hand first; the approver leaves while it is paused, so its
+    // pause reason stays manual.
     const paused = await s.app.request(`/v1/routines/${routineId}/pause`, {
       key: s.keys.admin,
       body: {},
     });
     expect(paused.status).toBe(200);
-    // The original approver is no longer an admin, and approved long ago.
     await db.owner`update routine_versions set approver_user_id='someone-who-left',
       approved_at=now()-interval '10 days' where id=${versionId}`;
     const resumed = await s.app.request(`/v1/routines/${routineId}/resume`, {
       key: s.keys.admin,
       body: {},
     });
-    expect(resumed.status).toBe(200);
+    expect(resumed.status).toBe(409);
+    expect(resumed.body.error).toMatchObject({
+      code: 'approval_required',
+      details: { routineId, versionId },
+    });
+    // Nothing changed, and the routine reads as needing a new approval.
+    const [still] =
+      await db.owner`select status,active_version_id from routines where id=${routineId}`;
+    expect(still).toMatchObject({ status: 'paused', active_version_id: versionId });
+    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(view.body.pausedReason).toBe('approver_left');
+    const listed = await s.app.request('/v1/routines', { key: s.keys.admin });
+    expect(listed.body.routines.find((r: { id: string }) => r.id === routineId).pausedReason).toBe(
+      'approver_left',
+    );
+    // Approving on the review screen records a new version and keeps the earlier approval.
+    const approved = await s.app.request(
+      `/v1/routines/${routineId}/versions/${versionId}/approve`,
+      { key: s.keys.admin, body: {} },
+    );
+    expect(approved.status).toBe(200);
     const versions = await db.owner<
       { id: string; approver_user_id: string; fresh: boolean; state: string }[]
     >`
@@ -1472,8 +1536,21 @@ describe('routines', () => {
       { id: versionId, approver_user_id: 'someone-who-left', fresh: false, state: 'superseded' },
       { approver_user_id: 'key:admin', fresh: true, state: 'approved' },
     ]);
-    const [active] = await db.owner`select active_version_id from routines where id=${routineId}`;
-    expect(active?.active_version_id).toBe(versions[1]?.id);
+    const [active] =
+      await db.owner`select status,active_version_id from routines where id=${routineId}`;
+    expect(active).toMatchObject({ status: 'active', active_version_id: versions[1]?.id });
+    const again = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(again.body.pausedReason).toBeNull();
+  });
+
+  it('a routine paused for a repair keeps that reason when its approver leaves', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    await db.owner`update routines set status='needs_attention',paused_reason='check_failed',
+      paused_at=now() where id=${routineId}`;
+    await db.owner`update routine_versions set approver_user_id='someone-who-left' where id=${versionId}`;
+    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(view.body.pausedReason).toBe('check_failed');
   });
 
   it('a preview samples distinct records, however busy the newest one is', async () => {
@@ -1717,6 +1794,27 @@ describe('routines', () => {
     expect((await approve()).body.error.details.jobId).toBe(jobId);
     await s.executor.tick();
     expect((await approve()).status).toBe(200);
+  });
+
+  it('a write past the attempt deadline is refused, as tool and model calls are (#131)', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Late');
+    const { runId, effect } = await drive(s, routineId, versionId, acme);
+    const args = { object: 'company', id: acme, values: { [s.key('tier')]: 'gold' } };
+    // The lease is still held, but only its grace for recording the outcome is left.
+    await db.owner`update routine_runs set lease_until=clock_timestamp()+interval '10 seconds'
+      where id=${runId}`;
+    const late = await effect(1, 'record.update', args);
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('run_expired');
+    // The refusal is recorded at its position, and nothing was written.
+    const results =
+      await db.owner`select state,code from routine_run_results where run_id=${runId}`;
+    expect(results).toEqual([{ state: 'failed', code: 'run_expired' }]);
+    const written = await db.owner`select 1 from field_assertions
+      where record_id=${acme} and actor->>'id'=${routineId}`;
+    expect(written).toHaveLength(0);
   });
 
   it('a daily cap of 0 allows no model call', async () => {

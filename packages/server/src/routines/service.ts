@@ -8,6 +8,7 @@ import {
   routineFacts,
   routineReportSchema,
   type ToolContract,
+  type ToolEffect,
 } from '@retainer/shared';
 import { z } from 'zod';
 import { cancelRunTasks } from '../agent-runtime/tasks.js';
@@ -422,7 +423,8 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const rows = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
+          ${approverGone(tx)}
         from routines r order by r.created_at desc,r.id`;
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
       const versions = await this.versions(
@@ -452,7 +454,8 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const [row] = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
+          ${approverGone(tx)}
         from routines r where r.id=${id}`;
       if (!row) throw notFound('routine');
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
@@ -470,7 +473,7 @@ export class Routines {
           caps,
         ),
         versions: versionRows.map((version) => presentVersion(version, names)),
-        runs: await Promise.all(runs.map((run) => presentRun(tx, run, false))),
+        runs: await presentRuns(tx, runs, false),
       };
     });
   }
@@ -649,7 +652,7 @@ export class Routines {
    * paused, and due times that passed, are not handled later.
    */
   async resume(caller: Caller, routineId: string) {
-    const who = requireAdmin(caller);
+    requireAdmin(caller);
     return this.tx(caller, async (tx) => {
       const [routine] = await tx<
         RoutineRow[]
@@ -668,31 +671,17 @@ export class Routines {
           'approval_required',
           'this routine paused because something it depends on changed; repair it and approve the new version',
         );
-      let activeVersion = version.id;
-      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id))) {
-        if (caller.cli)
-          throw new AppError(
-            409,
-            'approval_required',
-            'Review and approve the routine in Retainer.',
-            {
-              routineId,
-              versionId: version.id,
-            },
-          );
-        activeVersion = await this.copyVersionForApproval(
-          tx,
-          caller.workspaceId,
-          version,
-          version.source_id,
+      // Whoever resumes must not become the approver of code they never saw:
+      // an approver who left means approving again, however it paused (#167).
+      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
+        throw new AppError(
+          409,
+          'approval_required',
+          'its approver is no longer an admin; review and approve the routine to resume it',
+          { routineId, versionId: version.id },
         );
-        await this.discardUnstarted(tx, routineId);
-        await tx`update routine_versions set state='superseded' where id=${version.id}`;
-        await tx`update routine_versions set state='approved',approver_user_id=${who},
-          approved_by=${tx.json(jsonValue(caller.actor))},approved_at=clock_timestamp() where id=${activeVersion}`;
-      }
       const zone = await workspaceZone(tx);
-      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, activeVersion);
+      await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, version.id);
       await tx`update routines set state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null} where id=${routineId}`;
       return { routineId, status: 'active' };
     });
@@ -1040,6 +1029,8 @@ export type RoutineRow = {
   updated_at: Date;
   held?: number;
   proposals?: number;
+  /** The active version's approver is no longer an admin (routines spec §5.3). */
+  approver_gone?: boolean;
 };
 export type VersionRow = {
   id: string;
@@ -1104,7 +1095,7 @@ function safeFacts(manifest: RoutineManifest, names: FactsNames): string[] {
   }
 }
 
-type PreviewRuns = { done: boolean; runs: Awaited<ReturnType<typeof presentRun>>[] };
+type PreviewRuns = { done: boolean; runs: ReturnType<typeof runView>[] };
 
 /** A preview's dry runs in order, whether they are all done, and as history shows them. */
 async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { rows: RunRow[] }> {
@@ -1113,7 +1104,7 @@ async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { r
   return {
     rows,
     done: rows.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
-    runs: await Promise.all(rows.map((run) => presentRun(tx, run, true))),
+    runs: await presentRuns(tx, rows, true),
   };
 }
 
@@ -1139,6 +1130,18 @@ function presentVersion(version: VersionRow, names: FactsNames) {
   };
 }
 
+/** Pause reasons more telling than `approver_left`: what must change before it runs again. */
+const NEEDS_REPAIR = ['check_failed', 'tool_changed', 'schedule_too_large'];
+
+/**
+ * Whether a stopped routine's approver is no longer an admin (#167), as the
+ * `approver_gone` column; a running or archived routine never asks. The
+ * query aliases `routines` as `r`.
+ */
+const approverGone = (tx: Tx) => tx`case when r.status not in ('active','archived') then
+  (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
+    from routine_versions a where a.id=r.active_version_id) end as approver_gone`;
+
 function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: Capabilities) {
   const names = factsNames(caps);
   return {
@@ -1146,7 +1149,16 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     name: row.name,
     description: row.description,
     status: row.status,
-    pausedReason: row.paused_reason,
+    // A routine paused for another reason whose approver has since left can
+    // only be approved again, never simply resumed (#167).
+    // A pause that says more (the code must change, or the tool did) keeps its reason.
+    pausedReason:
+      row.status !== 'active' &&
+      row.status !== 'archived' &&
+      row.approver_gone &&
+      !NEEDS_REPAIR.includes(row.paused_reason ?? '')
+        ? 'approver_left'
+        : row.paused_reason,
     ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
     pausedAt: row.paused_at?.toISOString() ?? null,
     // A paused routine fires nothing; resuming sets its next time afresh.
@@ -1159,20 +1171,42 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
   };
 }
 
-/** A run as history shows it: statuses, operations and outcomes; results only while kept. */
+type CallRow = {
+  run_id: string;
+  position: number;
+  operation: string;
+  state: string;
+  code: string | null;
+  differs: boolean;
+  record_id: string | null;
+  result: unknown;
+  tool_name: string | null;
+  tool_effect: ToolEffect | null;
+};
+
+/** Runs as history shows them, with every run's calls read in one query. */
+export async function presentRuns(tx: Tx, runs: RunRow[], withResults: boolean) {
+  if (!runs.length) return [];
+  const rows = await tx<CallRow[]>`
+    select run_id,position,operation,state,code,differs,record_id,result,tool_name,tool_effect
+    from routine_run_results where run_id=any(${runs.map((run) => run.id)}::uuid[])
+    order by run_id,position`;
+  const byRun = new Map<string, CallRow[]>();
+  for (const row of rows) {
+    const calls = byRun.get(row.run_id);
+    if (calls) calls.push(row);
+    else byRun.set(row.run_id, [row]);
+  }
+  return runs.map((run) => runView(run, byRun.get(run.id) ?? [], withResults));
+}
+
 export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
-  const calls = await tx<
-    {
-      position: number;
-      operation: string;
-      state: string;
-      code: string | null;
-      differs: boolean;
-      record_id: string | null;
-      result: unknown;
-    }[]
-  >`select position,operation,state,code,differs,record_id,result from routine_run_results
-    where run_id=${run.id} order by position`;
+  const [view] = await presentRuns(tx, [run], withResults);
+  return view as ReturnType<typeof runView>;
+}
+
+/** A run as history shows it: statuses, operations and outcomes; results only while kept. */
+function runView(run: RunRow, calls: CallRow[], withResults: boolean) {
   const usedAgent = calls.some((call) => call.operation === 'ai.agent');
   return {
     id: run.id,
@@ -1199,6 +1233,9 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
       code: call.code,
       differs: call.differs,
       recordId: call.record_id,
+      ...(call.tool_name && call.tool_effect
+        ? { tool: { name: call.tool_name, effect: call.tool_effect } }
+        : {}),
       ...(withResults && call.result !== null ? { result: call.result } : {}),
     })),
     // A run that waited for an agent task and then diverged needs a person
