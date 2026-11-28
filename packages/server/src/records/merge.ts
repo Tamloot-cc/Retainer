@@ -10,6 +10,7 @@ import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
 import { getRecord } from './read.js';
 import { normalizeFieldValue, prepareValues } from './values.js';
+import { pruneHiddenViewGroups } from './view-groups.js';
 import { sameValue } from './winner.js';
 import {
   closeSuggestionsFor,
@@ -285,6 +286,7 @@ export async function mergeRecords(
       updated_at = clock_timestamp(), updated_by = ${tx.json(context.actor)},
       data = '{}'::jsonb, label = null, search = null
     where id = ${b}`;
+  await pruneHiddenViewGroups(tx, workspaceId, [b], context.actor);
   await tx`update records set merged_into_id = ${a} where merged_into_id = ${b}`;
   await moveRoutineRecord(tx, workspaceId, b, a);
   await tx`

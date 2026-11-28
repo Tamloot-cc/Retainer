@@ -47,6 +47,35 @@ beforeAll(async () => {
 
 const runtimeBase = (id: string) => `/v1/agent/runtime/sessions/${id}`;
 
+it('lets the key-mode agent list and run only its own key’s private views', async () => {
+  const createView = (key: string, name: string) =>
+    t.request('/v1/objects/deal/views', {
+      key,
+      body: { name, kind: 'table', visibility: 'private' },
+    });
+  const own = await createView(keys.writer, 'My pipeline');
+  const other = await createView(keys.second, 'Their pipeline');
+  expect([own.status, other.status]).toEqual([201, 201]);
+  const id = await newChat();
+  const turn = await claimed(id);
+  const call = (name: string, input: object = {}) =>
+    runtime(id, turn.turnToken, `/tools/${name}`, { toolCallId: crypto.randomUUID(), input });
+  expect(turn.session.tools.map(({ name }) => name)).toEqual(
+    expect.arrayContaining(['list_views', 'check_view']),
+  );
+  expect((await call('list_views')).body).toMatchObject({
+    ok: true,
+    output: { views: [{ id: own.body.id }] },
+  });
+  expect((await call('query_records', { view: own.body.id })).body).toMatchObject({
+    ok: true,
+    output: { records: [] },
+  });
+  expect((await call('aggregate_records', { view: other.body.id })).body).toMatchObject({
+    ok: false,
+  });
+});
+
 it('tells the web app the agent runs only when it is set up', async () => {
   const me = await t.request<{ agentAvailable?: boolean }>('/v1/me', { key: keys.admin });
   expect(me.body.agentAvailable).toBe(true);

@@ -251,12 +251,13 @@ last `updatedAt` in `expectedUpdatedAt`. A concurrent edit returns
 `409 dashboard_changed`. See the [dashboards spec](specs/dashboards.md).
 
 A saved view is a named filter, sort and column set for one object, shown
-as a `table`, a `board` (needs `groupBy`, a single-select field) or a
+as a `table`, a `board` (needs `groupBy`, a select or single relation) or a
 `calendar` (needs `dateField`, a date or date-time field):
 
 ```json
 {
   "name": "Pipeline",
+  "description": "Deals for the weekly pipeline review",
   "kind": "board",
   "groupBy": "stage",
   "filter": { "amount": { "gte": 10000000000 } },
@@ -268,15 +269,45 @@ as a `table`, a `board` (needs `groupBy`, a single-select field) or a
 }
 ```
 
-Fields are named as in the schema; the filter and sort are checked like a
-query's, and a bad one fails with 422 `invalid_filter` or `invalid_view`.
-`PATCH` changes only the keys sent, and `null` clears one. A `private` view
-is visible only to the key's actor that created it (others get 404), and
-only that actor can change `visibility` (403 otherwise). A view follows a
-renamed field. A schema change that removes a field or option, or stops a
-field being filterable, rewrites the views that named it; anything a read
-still has to drop is named in the view's `issues`. Saved views are display settings: they never change
-records, and moving a board card is a record `PATCH`.
+Fields are named as in the schema. Tables can also group by select, single
+relation or date, including `createdAt`, `updatedAt`, and an event's
+`occurredAt`. `granularity` sets a date group's period (`day`, `week`,
+`month`, `quarter`, `year`). `groupOrder` takes `default`, `asc`, or
+`desc`. `hideEmptyGroups` applies to select groupings. `hiddenGroups`
+contains stored option values, record IDs, period starts, or `null` for
+the empty group. `description` is optional and limited to 500 characters.
+`search` saves up to 200 characters of full-text keywords.
+
+`PATCH` changes only the keys sent. Pass `null` to clear a setting and
+`expectedUpdatedAt` to get `409 view_changed` when the view has changed.
+Private views are writable by their creator. The creator and agents acting
+for them can read and run the view. Only the creator can change its
+visibility. A schema repair that removes a setting is reported in `issues`
+on the view until it is saved again.
+
+`POST /v1/objects/:object/views/check` validates a draft and counts matching
+records. Send the create body without `visibility` or `position`, or a
+patch with `view` naming the saved view. `POST /v1/views/check` also takes
+that edit form, or a new draft with `object`. The result reports `ok` and
+`problems`, plus `count`, normalized preview settings, and any groups
+when validation succeeds. Checking a draft makes no write.
+
+The query and aggregate routes accept `view` as a saved view ID on that
+object. The saved filter and search both apply alongside any additional
+filter or search. An explicit `sort`, `groupBy` or `aggregates` overrides
+the saved counterpart. Hidden groups do not change which records match.
+Outstanding repair issues are returned with query and aggregate results.
+For a grouped list, the aggregate route takes `viewGroups: { hidden? }`
+and returns per-group `match` conditions, including a paginatable Other
+or Earlier group past the limit. Pass the condition as `groupMatch` to
+the query route to read exactly that section.
+
+Date filters take `within` with named periods such as `this_quarter`
+and rolling periods such as `{ "last": 30, "unit": "day" }`.
+Comparisons can use a relative day, for example `{ "lt": "today" }` or
+`{ "lt": { "ago": 30, "unit": "day" } }`. Periods and relative days
+resolve at query time in the workspace time zone, UTC when unset.
+
 
 Events are records of event types (`class: "event"` in `GET /v1/schema`):
 `conversation` (meetings, calls, emails and chats, told apart by its

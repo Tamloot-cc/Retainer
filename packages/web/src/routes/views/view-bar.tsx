@@ -51,6 +51,7 @@ import {
   Row,
   Segmented,
   SelectMenu,
+  Textarea,
   Truncate,
 } from '../../ui/index.js';
 import type { ColumnPrefs } from './list-state.js';
@@ -135,6 +136,7 @@ export function ViewSwitcher({
   onSelect,
   onNew,
   onEdit,
+  onEditAgent,
   onDelete,
 }: {
   object: ObjectView;
@@ -144,6 +146,7 @@ export function ViewSwitcher({
   onSelect: (id: string | undefined) => void;
   onNew: () => void;
   onEdit: () => void;
+  onEditAgent?: () => void;
   onDelete: () => void;
 }) {
   const Icon = current ? KIND_ICONS[current.kind] : Table2;
@@ -172,10 +175,21 @@ export function ViewSwitcher({
               ) : undefined
             }
           >
-            <IconLabel icon={KIND_ICONS[v.kind]}>{v.name}</IconLabel>
+            <div className="min-w-0">
+              <IconLabel icon={KIND_ICONS[v.kind]}>{v.name}</IconLabel>
+              {v.description && (
+                <p className="truncate pl-6 text-xs text-muted-foreground">{v.description}</p>
+              )}
+            </div>
           </MenuChoice>
         ))}
       </MenuChoices>
+      {onEditAgent && (
+        <>
+          <MenuSeparator />
+          <MenuAction onSelect={onEditAgent}>Edit with the agent</MenuAction>
+        </>
+      )}
       {writable ? (
         <>
           <MenuSeparator />
@@ -278,13 +292,20 @@ export function ViewDialog({
   const { session } = useWorkspace();
   const updateViews = useUpdateViews(object);
   const saveView = useSaveView(object);
+  const [description, setDescription] = useState(view?.description ?? '');
   const [name, setName] = useState(view?.name ?? ''),
     [kind, setKind] = useState<SavedViewKind>(view?.kind ?? 'table'),
     // The field each layout would use, kept while switching between them.
-    [picked, setPicked] = useState<Record<FieldLayout, string>>(() => ({
-      board: view?.groupBy ?? layoutFields(object, 'board')[0]?.name ?? '',
-      calendar: view?.dateField ?? layoutFields(object, 'calendar')[0]?.name ?? '',
-    })),
+    [picked, setPicked] = useState<Record<FieldLayout, string>>(() => {
+      const boardFields = layoutFields(object, 'board');
+      return {
+        board:
+          boardFields.find((field) => field.name === view?.groupBy)?.name ??
+          boardFields[0]?.name ??
+          '',
+        calendar: view?.dateField ?? layoutFields(object, 'calendar')[0]?.name ?? '',
+      };
+    }),
     [visibility, setVisibility] = useState<SavedViewVisibility>(view?.visibility ?? 'workspace'),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -312,7 +333,9 @@ export function ViewDialog({
         onSaved(
           await saveView(view.id, {
             name: name.trim(),
+            description: description.trim() || null,
             ...shape,
+            ...(view.kind === 'board' && kind === 'table' ? { groupBy: null } : {}),
             // Hidden columns belong to the field they were hidden under.
             ...(kind === 'board' && picked.board !== view.groupBy ? { hiddenGroups: null } : {}),
             ...(ownsIt && visibility !== view.visibility ? { visibility } : {}),
@@ -322,6 +345,7 @@ export function ViewDialog({
       }
       const created = await api.createView(object.nameSingular, {
         name: name.trim(),
+        description: description.trim() || null,
         visibility,
         ...shape,
         ...(base.filter ? { filter: base.filter } : {}),
@@ -357,6 +381,14 @@ export function ViewDialog({
             maxLength={100}
             placeholder={`Open ${object.labelPlural.toLowerCase()}`}
             onChange={(e) => setName(e.target.value)}
+          />
+        </FormField>
+        <FormField label="Description">
+          <Textarea
+            aria-label="Description"
+            value={description}
+            maxLength={500}
+            onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>
         <FormField label="Layout">
@@ -482,7 +514,7 @@ export function ViewOptions({
 }) {
   const group = object.fields.find((f) => f.name === view.groupBy);
   // Every column the board has, hidden ones included.
-  const columns = group ? boardGroups(group) : undefined;
+  const columns = group?.type === 'select' ? boardGroups(group) : undefined;
   // The fields that add up: number and money.
   const totals = object.fields
     .filter((f) => aggregateOps(f).includes('sum'))

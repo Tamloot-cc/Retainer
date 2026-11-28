@@ -1,5 +1,6 @@
 import {
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
   type FieldView,
   type ObjectView,
@@ -128,12 +129,12 @@ export const LAYOUT_FIELDS = {
   board: {
     setting: 'groupBy',
     label: 'Group by',
-    hint: 'Each option becomes a column',
-    fits: canGroupBy,
+    hint: 'Each group becomes a column',
+    fits: (field: FieldView) => canGroupBy(field) || canGroupByRelation(field),
     choose: 'Choose the field whose options become columns',
-    none: (plural: string) => `${plural} have no single-select field to group by`,
+    none: (plural: string) => `${plural} have no select or single relation to group by`,
     removed: 'The field this board was grouped by was removed, or can no longer group it. ',
-    prompt: 'Choose a single-select field to group the board by.',
+    prompt: 'Choose a select or single relation to group the board by.',
   },
   calendar: {
     setting: 'dateField',

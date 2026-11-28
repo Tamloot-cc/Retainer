@@ -13,6 +13,7 @@ type ChatBlockProps = {
 };
 
 const blocks = new Map<string, ComponentType<ChatBlockProps>>([
+  ['retainer-view', lazy(() => import('../views/chat-block.js'))],
   ['openui-lang', lazy(() => import('../dashboards/chat-block.js'))],
 ]);
 

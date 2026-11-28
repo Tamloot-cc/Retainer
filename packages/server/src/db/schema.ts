@@ -1356,6 +1356,11 @@ export const mergeSuggestions = pgTable(
  * (rule 1.4.1). The API translates to and from field names.
  */
 export type StoredViewConfig = {
+  issues?: string[];
+  search?: string;
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year';
+  groupOrder?: 'default' | 'asc' | 'desc';
+  hideEmptyGroups?: boolean;
   filter?: Record<string, unknown>;
   sort?: { field: string; direction: 'asc' | 'desc' }[];
   columns?: {
@@ -1377,6 +1382,7 @@ export const views = pgTable(
     workspaceId: workspaceId(),
     objectTypeId: uuid('object_type_id').notNull(),
     name: text('name').notNull(),
+    description: text('description'),
     kind: text('kind').$type<'table' | 'board' | 'calendar'>().notNull(),
     visibility: text('visibility').$type<'workspace' | 'private'>().notNull(),
     /** Order in the object's list of views; fractional, so one move is one update. */

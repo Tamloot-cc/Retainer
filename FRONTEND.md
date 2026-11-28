@@ -447,6 +447,21 @@ set for one object, shown as a table, a board or a calendar. Source:
   `groupBy`. Options shows or hides columns and picks the total. Cards show
   the label and up to four non-empty fields in the view's column order
   (the Card fields menu).
+- **Grouped tables and relation boards.** Grouped tables show collapsible sections
+  with counts and optional totals. Sections fetch 25 records on entry to the
+  viewport and page with **Show more**. Grouped tables can use a select, single
+  relation or date. A relation board has columns for the linked records,
+  with a separate column for unlinked records. Non-select groupings show
+  up to 50 groups, then Other or Earlier for the remaining records.
+- **View settings.** The description appears in the switcher and can be edited
+  in the dialog. The summary shows grouping, sort, columns, saved search
+  and filters the regular chips cannot show. Removing a setting is an
+  unsaved change until **Save view** is pressed.
+- **Chat drafts.** The `retainer-view` card checks JSON against the current
+  schema and previews real records or groups with the viewer's access.
+  **Open** shows the draft on the object page as unsaved settings in `?draft=`.
+  A new view is saved private from either surface. **Edit with the agent**
+  opens a new chat carrying the saved settings and any repair issues.
 - **Calendar.** A month of whole weeks, starting on the viewer's first day
   of the week (`Intl.Locale` week info), with records on the day of a date
   or date-time field (a date-time on the viewer's local day). The month is

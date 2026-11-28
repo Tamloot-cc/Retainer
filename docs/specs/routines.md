@@ -358,6 +358,12 @@ Routines act on every live record: an older message of a Gmail thread, which
 lists and the feed leave out to show only the newest, still runs and matches
 a schedule's filter.
 
+Trigger filters resolve relative dates at run time. A routine based on a
+saved view copies its filter into the proposal and keeps that copy after
+approval. The routines guide asks the person to review any view issues
+before copying and to agree on an equivalent filter when the view has
+saved search. See [Views](views.md#8-views-and-routines).
+
 A condition sees the record's current values. "The stage changed to
 Proposal" works: watch the field and test its value. "Changed from Lead" does
 not, because the change feed records which fields changed, not their earlier

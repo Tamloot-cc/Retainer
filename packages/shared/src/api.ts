@@ -223,7 +223,15 @@ export type UpsertRecordsResponse = {
 /** How an event is attached to a record (7.1). */
 export const EVENT_ATTACHMENTS = ['participant', 'about', 'field'] as const;
 export type EventAttachment = (typeof EVENT_ATTACHMENTS)[number];
+export type GroupMatch = {
+  field: string;
+  granularity?: (typeof AGGREGATE_GRANULARITIES)[number];
+  values: (string | null)[];
+  exclude?: boolean;
+};
 export type QueryInput = {
+  view?: string;
+  groupMatch?: GroupMatch;
   search?: string;
   /**
    * Event types only: events directly attached to this record, as a
@@ -237,6 +245,7 @@ export type QueryInput = {
   include?: string[];
 };
 export type RecordPage = {
+  issues?: string[];
   records: PresentedRecord[];
   nextCursor: string | null;
   relationReferences?: Record<string, RecordReference>;
@@ -260,7 +269,7 @@ export type EventQueryColumn = (typeof EVENT_QUERY_COLUMNS)[number];
  * and `type` (the event type's API name, with `eq`, `neq` and `in`; not a sort);
  * `search` matches the core title and summary. Newest first by default.
  */
-export type EventQueryInput = Omit<QueryInput, 'filter' | 'sort'> & {
+export type EventQueryInput = Omit<QueryInput, 'filter' | 'sort' | 'view' | 'groupMatch'> & {
   filter?: Record<string, unknown>;
   sort?: { field: EventQueryColumn; direction: 'asc' | 'desc' }[];
 };
@@ -946,8 +955,11 @@ export function aggregateOps(field: {
 export const AGGREGATE_GRANULARITIES = ['day', 'week', 'month', 'quarter', 'year'] as const;
 /** The most groups one grouped aggregate returns. */
 export const AGGREGATE_MAX_GROUPS = 200;
+export const AGGREGATE_MAX_MEASURES = 50;
 /** `POST /v1/objects/:object/aggregate`. */
 export type AggregateInput = {
+  view?: string;
+  viewGroups?: { hidden?: (string | null)[] };
   search?: string;
   filter?: Record<string, unknown>;
   aggregates?: { field: string; op: AggregateOp; as?: string }[];
@@ -970,12 +982,15 @@ export type AggregateValue = {
 };
 /** One option's share of a grouped aggregate; `value` is null for records with no value. */
 export type AggregateGroup = {
+  overflow?: true;
+  match?: GroupMatch;
   value: string | null;
   label: string;
   total: number;
   values: AggregateValue[];
 };
 export type AggregateResult = {
+  issues?: string[];
   total: number;
   values: AggregateValue[];
   /** With `groupBy`: a bounded list of groups. */
@@ -1000,6 +1015,16 @@ export const canGroupBy = (field: KindFieldCandidate) =>
 /** A calendar places records by a filterable date or date-time. */
 export const canPlaceBy = (field: KindFieldCandidate) =>
   (field.type === 'date' || field.type === 'date_time') && field.isFilterable;
+/** Records also group by a filterable single relation; each related record is a group. */
+export const canGroupByRelation = (
+  field: KindFieldCandidate & {
+    settings: { relationCardinality?: string; isInverse?: boolean };
+  },
+) =>
+  field.type === 'relation' &&
+  field.isFilterable &&
+  field.settings.relationCardinality === 'many_to_one' &&
+  !isInverseRelation(field);
 
 export type ViewColumns = {
   /** Visible fields after the label field, in order. */
@@ -1011,6 +1036,10 @@ export type ViewColumns = {
 export type ViewSort = { field: string; direction: 'asc' | 'desc' };
 /** What a view shows; every key is optional and `null` clears it on update. */
 export type ViewConfig = {
+  search?: string | null;
+  granularity?: (typeof AGGREGATE_GRANULARITIES)[number] | null;
+  groupOrder?: 'default' | 'asc' | 'desc' | null;
+  hideEmptyGroups?: boolean | null;
   filter?: Record<string, unknown> | null;
   sort?: ViewSort[] | null;
   columns?: ViewColumns | null;
@@ -1023,7 +1052,11 @@ export type ViewConfig = {
   /** Calendar: the `date` or `date_time` field records are placed by. */
   dateField?: string | null;
 };
-export type SavedView = {
+export type SavedView = Pick<
+  ViewConfig,
+  'search' | 'granularity' | 'groupOrder' | 'hideEmptyGroups'
+> & {
+  description?: string | null;
   id: string;
   object: string;
   name: string;
@@ -1044,8 +1077,68 @@ export type SavedView = {
   /** References to fields that are no longer active, dropped from what is returned. */
   issues: string[];
 };
+export type ViewCheckResult =
+  | { ok: false; problems: { path: string; message: string }[] }
+  | { ok: true; problems: []; count: number; groups?: AggregateGroup[]; preview: SavedView };
+
+export function displayViewGroups(
+  groups: AggregateGroup[],
+  view: Pick<SavedView, 'groupBy' | 'groupOrder' | 'hideEmptyGroups' | 'hiddenGroups'> & {
+    kind?: SavedViewKind;
+  },
+  field?: Pick<FieldView, 'type' | 'label' | 'settings' | 'isNullable'>,
+): AggregateGroup[] {
+  const byValue = new Map(
+    groups.filter((group) => !group.overflow).map((group) => [group.value, group]),
+  );
+  const emptyLabel = field ? `No ${field.label.toLowerCase()}` : 'No value';
+  const selected =
+    field?.type === 'select'
+      ? [
+          ...(field.settings.options ?? []).map(
+            ({ label, value }) => byValue.get(value) ?? { value, label, total: 0, values: [] },
+          ),
+          ...(field.isNullable
+            ? [byValue.get(null) ?? { value: null, label: emptyLabel, total: 0, values: [] }]
+            : []),
+        ]
+      : [...byValue.values()];
+  if (
+    field?.type === 'relation' &&
+    view.kind === 'board' &&
+    field.isNullable &&
+    !byValue.has(null) &&
+    view.groupBy
+  )
+    selected.push({
+      value: null,
+      label: emptyLabel,
+      total: 0,
+      values: [],
+      match: { field: view.groupBy, values: [null] },
+    });
+  const visible = selected
+    .filter(
+      (group) =>
+        !view.hiddenGroups.includes(group.value) && (!view.hideEmptyGroups || group.total > 0),
+    )
+    .map((group) => (group.value === null ? { ...group, label: emptyLabel } : group));
+  const date = !field || field.type === 'date' || field.type === 'date_time';
+  if (date || field?.type === 'relation' || (view.groupOrder && view.groupOrder !== 'default')) {
+    const direction = view.groupOrder === 'desc' ? -1 : 1;
+    visible.sort((a, b) => {
+      if (a.value === null || b.value === null)
+        return a.value === b.value ? 0 : a.value === null ? 1 : -1;
+      if (!date && (!view.groupOrder || view.groupOrder === 'default')) return 0;
+      return direction * (date ? a.value.localeCompare(b.value) : a.label.localeCompare(b.label));
+    });
+  }
+  return [...visible, ...groups.filter((group) => group.overflow)];
+}
+
 /** `POST /v1/objects/:object/views`. */
 export type CreateViewInput = ViewConfig & {
+  description?: string | null;
   name: string;
   kind: SavedViewKind;
   visibility?: SavedViewVisibility;
@@ -1053,6 +1146,8 @@ export type CreateViewInput = ViewConfig & {
 };
 /** `PATCH /v1/views/:id`: only the keys given change. */
 export type UpdateViewInput = ViewConfig & {
+  description?: string | null;
+  expectedUpdatedAt?: string;
   name?: string;
   kind?: SavedViewKind;
   visibility?: SavedViewVisibility;
@@ -1080,13 +1175,14 @@ export type FilterOperator =
   | 'isNull'
   | 'containsAny'
   | 'containsAll'
-  | 'isEmpty';
+  | 'isEmpty'
+  | 'within';
 export const FILTER_OPERATORS: Record<FieldType, readonly FilterOperator[]> = {
   text: ['eq', 'neq', 'in', 'contains'],
   number: ['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte'],
   boolean: ['eq', 'neq'],
-  date: ['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte'],
-  date_time: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'],
+  date: ['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte', 'within'],
+  date_time: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'within'],
   select: ['eq', 'neq', 'in'],
   multi_select: ['contains'],
   money: ['gt', 'gte', 'lt', 'lte'],

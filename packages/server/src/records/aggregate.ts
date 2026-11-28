@@ -1,6 +1,7 @@
 import {
   AGGREGATE_GRANULARITIES,
   AGGREGATE_MAX_GROUPS,
+  AGGREGATE_MAX_MEASURES,
   AGGREGATE_OPS,
   type AggregateGroup,
   type AggregateOp,
@@ -8,7 +9,9 @@ import {
   type AggregateValue,
   aggregateOps,
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
+  type GroupMatch,
 } from '@retainer/shared';
 import type { Fragment } from 'postgres';
 import { z } from 'zod';
@@ -29,13 +32,14 @@ import {
   typed,
 } from './query.js';
 import { references } from './references.js';
+import { workspaceTimeZone } from './relative-date.js';
 
 export const aggregateInputSchema = queryInputSchema.pick({ search: true, filter: true }).extend({
   aggregates: z
     .array(
       z.strictObject({ field: z.string(), op: z.enum(AGGREGATE_OPS), as: z.string().optional() }),
     )
-    .max(50)
+    .max(AGGREGATE_MAX_MEASURES)
     .default([]),
   groupBy: z
     .string()
@@ -143,13 +147,8 @@ function planAggregateGrouping(
       : field && canPlaceBy(field)
         ? typed(tx, field)
         : undefined;
-  const relation =
-    field?.type === 'relation' &&
-    field.isFilterable &&
-    field.settings.relationCardinality === 'many_to_one' &&
-    !field.settings.isInverse;
   if (dateColumn) return { kind: 'date' as const, dateColumn, field };
-  if (field && relation) return { kind: 'relation' as const, field };
+  if (field && canGroupByRelation(field)) return { kind: 'relation' as const, field };
   if (field && canGroupBy(field)) return { kind: 'select' as const, field };
   throw invalidAggregate(
     `groupBy requires a filterable select, date or single relation; "${name}" is not one`,
@@ -181,6 +180,8 @@ export async function aggregateRecords(
   schema: CompiledSchema,
   object: CompiledObject | undefined,
   input: AggregateInput,
+  extra = tx`true`,
+  viewGroups?: { hidden?: (string | null)[] | undefined },
 ): Promise<AggregateResult> {
   const requests = planAggregateRequests(object, input.aggregates);
   const selected = [
@@ -191,9 +192,10 @@ export async function aggregateRecords(
     ? tx`records r`
     : tx`records r join event_records e
     on e.record_id = r.id and e.workspace_id = r.workspace_id`;
-  const where = object
+  const matches = object
     ? matchingRecords(tx, workspaceId, schema, object, input)
     : matchingEvents(tx, workspaceId, schema, input);
+  const where = tx`${matches} and ${extra}`;
   const grouping = aggregateGrouping(tx, object, input);
   if (!grouping) {
     const [row] = await tx<AggregateRow[]>`select ${selected} from ${from} where ${where}`;
@@ -203,39 +205,52 @@ export async function aggregateRecords(
   const date = grouping.kind === 'date';
   const granularity = input.granularity ?? 'month';
   // A select's groups are bounded by its options; the others take a default limit.
-  const limit = input.limit ?? (grouping.kind === 'select' ? null : 50);
-  let expression: Fragment;
-  if (grouping.kind === 'date') {
-    const zone = tx`coalesce((select settings ->> 'timeZone' from workspaces
-      where id = ${workspaceId}), 'UTC')`;
-    const local =
-      field?.type === 'date'
-        ? grouping.dateColumn
-        : tx`(${grouping.dateColumn} at time zone ${zone})`;
-    expression = tx`date_trunc(${granularity}::text, ${local}::timestamp)::date`;
-  } else if (grouping.kind === 'relation') {
-    expression = tx`(select l.target_record_id ${liveLinks(tx, grouping.field)}
-      and t.object_type_id = any(${schema.visibleObjectIds}::uuid[]) limit 1)`;
-  } else {
-    expression = tx`r.data ->> ${grouping.field.key}`;
-  }
-  const next = date ? tx`r.g desc nulls last` : tx`total desc, r.g asc nulls last`;
-  // The overall row uses all matching records. Return one extra group to
-  // detect truncation, and retain the earliest date for bounded gap filling.
-  const rows = await tx<AggregateRow[]>`
+  const defaultLimit = grouping.kind === 'select' ? null : 50;
+  const limit = viewGroups ? defaultLimit : (input.limit ?? defaultLimit);
+  const expression = groupExpression(tx, schema, grouping, granularity);
+  const next = date
+    ? tx`r.g desc nulls last`
+    : viewGroups && grouping.kind === 'relation'
+      ? tx`(r.g is null) desc, total desc, r.g asc`
+      : tx`total desc, r.g asc nulls last`;
+  // The overall row uses all matching records. Chart reads keep one extra
+  // row to detect truncation; view reads calculate the remainder from the
+  // same snapshot as the chosen groups.
+  const matched = tx`(select r.*, ${expression} as g from ${from} where ${where})`;
+  const grouped = (source: Fragment, max: number | null) => tx`
     select r.g::text as g, grouping(r.g) as overall, ${selected},
-      ${date ? tx`min(r.g) over ()::text` : tx`null::text`} as earliest
-    from (select r.*, ${expression} as g from ${from} where ${where}) r
+      ${date && !viewGroups ? tx`min(r.g) over ()::text` : tx`null::text`} as earliest
+    from ${source} r
     group by grouping sets ((r.g), ())
     order by grouping(r.g) desc, ${next}
-    ${limit === null ? tx`` : tx`limit ${limit + 2}`}`;
-  const [overall, ...groupRows] = rows;
+    ${max === null ? tx`` : tx`limit ${max}`}`;
+  const hidden = viewGroups?.hidden ?? [];
+  const rows =
+    viewGroups && limit !== null
+      ? await tx<AggregateRow[]>`
+      with matched as not materialized ${matched},
+        shown as (${grouped(tx`matched`, limit + 1)}),
+        output as (
+          select * from shown
+          union all
+          select null, 2, ${selected}, null
+          from matched r
+          where (select count(*) from shown) = ${limit + 1}
+            and not exists (select 1 from shown g
+              where g.overall = 0 and g.g is not distinct from r.g::text)
+            and ${groupValues(tx, tx`r.g`, { values: hidden, exclude: true })}
+        )
+      select * from output r order by overall desc, ${next}`
+      : await tx<AggregateRow[]>`${grouped(matched, limit === null ? null : limit + 2)}`;
+  const overall = rows.find((row) => row.overall === 1);
+  const overflow = rows.find((row) => row.overall === 2);
+  const groupRows = rows.filter((row) => row.overall === 0);
   const groups: AggregateGroup[] = groupRows.map((row) => ({
     value: row.g === null ? null : String(row.g),
     label: row.g === null ? 'No value' : String(row.g),
     ...valuesOf(requests, row),
   }));
-  if (date)
+  if (date && !viewGroups)
     return {
       ...valuesOf(requests, overall),
       ...dateGroups(
@@ -252,14 +267,86 @@ export async function aggregateRecords(
     const labels = await references(tx, schema, ids);
     for (const id of ids) options.set(id, labels[id]?.label ?? 'Unnamed record');
   }
+  const visible = groups.slice(0, limit ?? undefined).map((group) => ({
+    ...group,
+    label:
+      date && group.value
+        ? periodLabel(group.value, new Date(`${group.value}T00:00:00Z`), granularity)
+        : group.value === null
+          ? group.label
+          : (options.get(group.value) ?? group.label),
+  }));
+  const tooManyGroups = limit !== null && groups.length > limit;
+  if (viewGroups && input.groupBy !== undefined) {
+    const fieldName = input.groupBy;
+    const match = { field: fieldName, ...(date ? { granularity } : {}) };
+    const sections: AggregateGroup[] = visible
+      .filter((group) => !hidden.includes(group.value))
+      .map((group) => ({ ...group, match: { ...match, values: [group.value] } }));
+    const totals = valuesOf(requests, overflow);
+    if (totals.total)
+      sections.push({
+        value: null,
+        label: date ? 'Earlier' : 'Other',
+        overflow: true,
+        match: {
+          ...match,
+          values: [...new Set([...visible.map((group) => group.value), ...hidden])],
+          exclude: true,
+        },
+        ...totals,
+      });
+    return { ...valuesOf(requests, overall), groups: sections };
+  }
   return {
     ...valuesOf(requests, overall),
-    groups: groups.slice(0, limit ?? undefined).map((group) => ({
-      ...group,
-      label: group.value === null ? group.label : (options.get(group.value) ?? group.label),
-    })),
-    ...(limit !== null && groups.length > limit ? { tooManyGroups: true as const } : {}),
+    groups: visible,
+    ...(tooManyGroups ? { tooManyGroups: true as const } : {}),
   };
+}
+
+function groupExpression(
+  tx: Tx,
+  schema: CompiledSchema,
+  grouping: NonNullable<ReturnType<typeof planAggregateGrouping>>,
+  granularity: Granularity,
+): Fragment {
+  if (grouping.kind === 'date') {
+    const local =
+      grouping.field?.type === 'date'
+        ? grouping.dateColumn
+        : tx`(${grouping.dateColumn} at time zone ${workspaceTimeZone(tx)})`;
+    return tx`date_trunc(${granularity}::text, ${local}::timestamp)::date`;
+  }
+  if (grouping.kind === 'relation')
+    return tx`(select l.target_record_id ${liveLinks(tx, grouping.field)}
+      and t.object_type_id = any(${schema.visibleObjectIds}::uuid[]) limit 1)`;
+  return tx`r.data ->> ${grouping.field.key}`;
+}
+
+function groupValues(tx: Tx, expression: Fragment, match: Pick<GroupMatch, 'values' | 'exclude'>) {
+  const values = match.values.filter((value): value is string => value !== null);
+  const condition = tx`(coalesce((${expression})::text = any(${values}::text[]), false)
+    ${match.values.includes(null) ? tx`or (${expression}) is null` : tx``})`;
+  return match.exclude ? tx`not ${condition}` : condition;
+}
+
+export function groupConstraint(
+  tx: Tx,
+  schema: CompiledSchema,
+  object: CompiledObject,
+  match: GroupMatch,
+) {
+  const grouping = aggregateGrouping(tx, object, {
+    groupBy: match.field,
+    granularity: match.granularity,
+  });
+  if (!grouping) throw invalidAggregate('Provide a group field');
+  return groupValues(
+    tx,
+    groupExpression(tx, schema, grouping, match.granularity ?? 'month'),
+    match,
+  );
 }
 
 type AggregateRow = Record<string, number | string | null>;

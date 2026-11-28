@@ -6,6 +6,7 @@ import { liveFactSource } from '../memory/events.js';
 import { type Handle, parseHandle } from '../memory/handles.js';
 import { inboundRelationFields } from '../records/merge.js';
 import { phraseQuery } from '../records/search-sql.js';
+import { pruneHiddenViewGroups } from '../records/view-groups.js';
 import {
   lockRecordsForUpdate,
   type RemovedClaim,
@@ -254,6 +255,7 @@ export async function forgetRecord(
   await tx`
     delete from event_links
     where workspace_id = ${workspaceId} and record_id = any(${recordIds}::uuid[])`;
+  await pruneHiddenViewGroups(tx, workspaceId, erased, context.actor);
   await tx`delete from records where id = any(${erased}::uuid[])`;
   await tx`delete from record_changes where record_id=any(${erased}::uuid[])`;
   await tx`update record_changes set related_record_ids=coalesce((select jsonb_agg(value) from jsonb_array_elements(related_record_ids) value where value #>> '{}'<>all(${erased}::text[])),'[]'::jsonb),

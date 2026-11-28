@@ -1347,7 +1347,13 @@ describe('routines', () => {
           kind: 'schedule',
           cron: '0 9 * * 1',
           object: 'company',
-          filter: { [s.key('name')]: { contains: 'Acme' } },
+          filter: {
+            and: [
+              { [s.key('name')]: { contains: 'Acme' } },
+              { createdAt: { within: { last: 1, unit: 'day' } } },
+              { createdAt: { gte: 'today' } },
+            ],
+          },
         },
         uses: { tools: [], model: false },
       },

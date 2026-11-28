@@ -1,12 +1,17 @@
 import {
   type Actor,
+  AGGREGATE_GRANULARITIES,
   AGGREGATE_OPS,
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
+  displayViewGroups,
+  isRecordId,
   SAVED_VIEW_KINDS,
   SAVED_VIEW_VISIBILITIES,
   type SavedView,
   sameActor,
+  type ViewCheckResult,
   type ViewColumns,
 } from '@retainer/shared';
 import { z } from 'zod';
@@ -16,9 +21,10 @@ import type { StoredViewConfig } from '../db/schema.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { admitCaller } from '../extension-runtime/admission.js';
-import { checkAggregateOp } from '../records/aggregate.js';
+import { aggregateRecords, checkAggregateOp } from '../records/aggregate.js';
 import { builtInNames, compileFilter, compileSort, queryInputSchema } from '../records/query.js';
-import { requireObject } from '../records/service.js';
+import { requireObject, withRead } from '../records/service.js';
+import { relationTargets } from '../records/write.js';
 import { type CompiledObject, type CompiledSchema, getSchema } from '../schema/compiled.js';
 import type { FieldState } from '../schema/types.js';
 
@@ -35,6 +41,10 @@ const columnsSchema = z.strictObject({
   aggregates: z.record(z.string(), z.enum(AGGREGATE_OPS)).optional(),
 });
 const configShape = {
+  search: z.string().trim().min(1).max(200).nullable().optional(),
+  granularity: z.enum(AGGREGATE_GRANULARITIES).nullable().optional(),
+  groupOrder: z.enum(['default', 'asc', 'desc']).nullable().optional(),
+  hideEmptyGroups: z.boolean().nullable().optional(),
   filter: filterSchema.nullable().optional(),
   sort: sortSchema.nullable().optional(),
   columns: columnsSchema.nullable().optional(),
@@ -47,10 +57,12 @@ const configShape = {
   dateField: z.string().nullable().optional(),
 };
 const name = z.string().trim().min(1).max(100);
+const description = z.string().trim().max(500).nullable().optional();
 const position = z.number().finite();
 
 export const createViewSchema = z.strictObject({
   name,
+  description,
   kind: z.enum(SAVED_VIEW_KINDS),
   visibility: z.enum(SAVED_VIEW_VISIBILITIES).default('workspace'),
   position: position.optional(),
@@ -60,6 +72,8 @@ export type CreateViewInput = z.infer<typeof createViewSchema>;
 
 export const updateViewSchema = z.strictObject({
   name: name.optional(),
+  description,
+  expectedUpdatedAt: z.iso.datetime().optional(),
   kind: z.enum(SAVED_VIEW_KINDS).optional(),
   visibility: z.enum(SAVED_VIEW_VISIBILITIES).optional(),
   position: position.optional(),
@@ -157,6 +171,7 @@ function renameFilter(
   filter: Record<string, unknown>,
   rename: (field: string, condition: unknown) => [string, unknown] | undefined,
 ): Record<string, unknown> | undefined {
+  if (Object.keys(filter).length === 0) return {};
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(filter)) {
     if (k === 'and' || k === 'or') {
@@ -165,7 +180,7 @@ function renameFilter(
         .filter(isPlainObject)
         .map((f) => renameFilter(f, rename))
         .filter((f): f is Record<string, unknown> => !!f);
-      if (parts.length) out[k] = parts;
+      if (parts.length || v.length === 0) out[k] = parts;
     } else if (k === 'not') {
       const part = isPlainObject(v) ? renameFilter(v, rename) : undefined;
       if (part) out[k] = part;
@@ -293,15 +308,10 @@ function toStored(
         }
       : undefined;
   }
+  for (const key of ['search', 'granularity', 'groupOrder', 'hideEmptyGroups'] as const)
+    if (given(key)) out[key] = input[key] ?? undefined;
   if (given('groupBy'))
-    out.groupBy = input.groupBy
-      ? kindField(
-          input.groupBy,
-          'groupBy',
-          canGroupBy,
-          'a board groups by a filterable select field',
-        )
-      : undefined;
+    out.groupBy = input.groupBy ? fields.key(input.groupBy, 'groupBy') : undefined;
   if (given('hiddenGroups'))
     out.hiddenGroups = input.hiddenGroups?.length ? input.hiddenGroups : undefined;
   if (given('groupAggregate')) {
@@ -350,6 +360,139 @@ function requireKindField(
     throw invalidView('a calendar needs dateField: the date field its records are placed by');
 }
 
+function groupingKind(object: CompiledObject, name: string) {
+  if (name === 'createdAt' || name === 'updatedAt' || (object.isEvent && name === OCCURRED_AT))
+    return 'date';
+  const field = object.fieldsByName.get(name);
+  if (!field?.isFilterable) return;
+  if (canGroupBy(field)) return 'select';
+  if (canPlaceBy(field)) return 'date';
+  if (canGroupByRelation(field)) return 'relation';
+}
+
+function isPeriodStart(value: string, granularity: NonNullable<StoredViewConfig['granularity']>) {
+  if (!z.iso.date().safeParse(value).success || value.startsWith('0000')) return false;
+  const period = new Date(`${value}T00:00:00Z`);
+  switch (granularity) {
+    case 'day':
+      return true;
+    case 'week':
+      return period.getUTCDay() === 1;
+    case 'month':
+      return period.getUTCDate() === 1;
+    case 'quarter':
+      return period.getUTCDate() === 1 && period.getUTCMonth() % 3 === 0;
+    case 'year':
+      return period.getUTCDate() === 1 && period.getUTCMonth() === 0;
+  }
+}
+
+async function checkRelationGroups(
+  tx: Tx,
+  schema: CompiledSchema,
+  object: CompiledObject,
+  config: StoredViewConfig,
+  write = false,
+) {
+  const name = config.groupBy && new FieldNames(object).name(config.groupBy, 'The grouping');
+  const field = name ? object.fieldsByName.get(name) : undefined;
+  if (field?.type !== 'relation') return;
+  const ids = [...new Set((config.hiddenGroups ?? []).filter((id): id is string => id !== null))];
+  if (!ids.length) return;
+  const targets = relationTargets(schema, field)
+    .filter((target) => !target.hidden && target.state.status === 'active')
+    .map((target) => target.id);
+  try {
+    const rows = await tx<{ id: string }[]>`
+      select id from records where id = any(${ids}::uuid[]) and deleted_at is null
+        and object_type_id = any(${targets}::uuid[])
+      ${write ? tx`for share nowait` : tx``}`;
+    if (rows.length !== ids.length)
+      throw invalidView('Each hidden relation group must name a live related record', {
+        path: 'hiddenGroups',
+      });
+  } catch (error) {
+    // A deletion locks the record first and then prunes its view settings.
+    // Releasing this view lock lets the deletion finish before a retry.
+    if ((error as { code?: string }).code === '55P03')
+      throw new AppError(
+        409,
+        'view_group_changed',
+        'A hidden group is changing. Review the view and try again.',
+      );
+    throw error;
+  }
+}
+
+function validateGrouping(
+  object: CompiledObject,
+  kind: SavedView['kind'],
+  config: StoredViewConfig,
+) {
+  const fields = new FieldNames(object);
+  const name = config.groupBy && fields.name(config.groupBy, 'The grouping');
+  const grouping = name ? groupingKind(object, name) : undefined;
+  const fail = (path: string, message: string) => {
+    throw invalidView(message, { path });
+  };
+  if (
+    config.groupBy &&
+    (!grouping || kind === 'calendar' || (kind === 'board' && grouping === 'date'))
+  )
+    fail('groupBy', 'Choose a filterable select, single relation, or (for a table) a date field');
+  if (config.granularity && grouping !== 'date')
+    fail('granularity', 'Granularity requires a date grouping');
+  if (config.hideEmptyGroups !== undefined && grouping !== 'select')
+    fail('hideEmptyGroups', 'Hiding empty groups requires a select grouping');
+  if ((config.groupOrder || config.groupAggregate || config.hiddenGroups?.length) && !grouping)
+    fail('groupBy', 'Group settings require groupBy');
+  const options = name && object.fieldsByName.get(name)?.settings.options;
+  for (const value of config.hiddenGroups ?? []) {
+    if (value === null) continue;
+    const valid =
+      grouping === 'select'
+        ? !!options && options.some((option) => option.value === value)
+        : grouping === 'relation'
+          ? isRecordId(value)
+          : isPeriodStart(value, config.granularity ?? 'month');
+    if (!valid) fail('hiddenGroups', `Invalid hidden group "${value}"`);
+  }
+}
+
+function nextConfig(
+  tx: Tx,
+  object: CompiledObject,
+  before: StoredViewConfig,
+  kind: SavedView['kind'],
+  input: ConfigInput,
+) {
+  const changes = toStored(tx, object, input);
+  if (Object.hasOwn(changes, 'groupBy') && changes.groupBy !== before.groupBy) {
+    for (const key of ['granularity', 'hiddenGroups', 'hideEmptyGroups'] as const)
+      if (!Object.hasOwn(changes, key)) changes[key] = undefined;
+  }
+  if (
+    Object.hasOwn(changes, 'granularity') &&
+    changes.granularity !== before.granularity &&
+    !Object.hasOwn(changes, 'hiddenGroups')
+  )
+    changes.hiddenGroups = undefined;
+  if (kind === 'calendar' || (changes.groupBy === undefined && Object.hasOwn(changes, 'groupBy'))) {
+    for (const key of [
+      'groupBy',
+      'granularity',
+      'hiddenGroups',
+      'hideEmptyGroups',
+      'groupOrder',
+      'groupAggregate',
+    ] as const)
+      if (!Object.hasOwn(changes, key)) changes[key] = undefined;
+  }
+  const config = merge(before, changes);
+  validateGrouping(object, kind, config);
+  return config;
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
@@ -358,6 +501,7 @@ type ViewRow = {
   id: string;
   object_type_id: string;
   name: string;
+  description: string | null;
   kind: SavedView['kind'];
   visibility: SavedView['visibility'];
   position: number;
@@ -425,14 +569,16 @@ export function presentView(tx: Tx, object: CompiledObject, row: ViewRow): Saved
           : {}),
       }
     : null;
-  const groupBy = layoutField(
-    config.groupBy,
-    'The board grouping',
-    canGroupBy,
-    'filterable select',
-  );
+  const groupName = config.groupBy && fields.name(config.groupBy, 'The grouping');
+  const grouping = groupName ? groupingKind(object, groupName) : undefined;
+  const groupBy =
+    grouping && row.kind !== 'calendar' && !(row.kind === 'board' && grouping === 'date')
+      ? (groupName ?? null)
+      : null;
+  if (groupName && !groupBy)
+    fields.issues.push(`The grouping on "${groupName}" no longer applies; it was dropped`);
   const groupField = groupBy ? object.fieldsByName.get(groupBy) : undefined;
-  const groupOptions = groupField && optionValues(groupField);
+  const groupOptions = grouping === 'select' && groupField ? optionValues(groupField) : undefined;
   const sort =
     config.sort
       ?.map((s) => {
@@ -450,6 +596,11 @@ export function presentView(tx: Tx, object: CompiledObject, row: ViewRow): Saved
     id: row.id,
     object: object.name,
     name: row.name,
+    description: row.description,
+    search: config.search ?? null,
+    granularity: groupBy && grouping === 'date' ? (config.granularity ?? null) : null,
+    groupOrder: groupBy ? (config.groupOrder ?? null) : null,
+    hideEmptyGroups: groupBy && grouping === 'select' ? (config.hideEmptyGroups ?? null) : null,
     kind: row.kind,
     visibility: row.visibility,
     position: row.position,
@@ -476,11 +627,11 @@ export function presentView(tx: Tx, object: CompiledObject, row: ViewRow): Saved
     columns,
     groupBy,
     // A hidden column for an option that was removed has nothing left to hide.
-    hiddenGroups: (config.hiddenGroups ?? []).filter(
+    hiddenGroups: (groupBy ? (config.hiddenGroups ?? []) : []).filter(
       (v) => v === null || !groupOptions || groupOptions.has(v),
     ),
     groupAggregate:
-      aggregateField && config.groupAggregate
+      groupBy && aggregateField && config.groupAggregate
         ? {
             field: aggregateField,
             op: config.groupAggregate.op as NonNullable<SavedView['groupAggregate']>['op'],
@@ -496,14 +647,20 @@ export function presentView(tx: Tx, object: CompiledObject, row: ViewRow): Saved
     updatedBy: row.updated_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
-    issues: fields.issues,
+    issues: [...new Set([...(config.issues ?? []), ...fields.issues])],
   };
 }
 
+/** The person whose private views the caller also sees: the one an agent acts for, or the signed-in person. */
+function viewReader(caller: Caller): Actor | undefined {
+  return caller.viewReader ?? (caller.person && { type: 'user', id: caller.person.id });
+}
+
 /** Views the caller may see: the workspace's, and their own private ones (rule 1.4.4). */
-function visibleTo(tx: Tx, actor: Actor) {
+function visibleTo(tx: Tx, actor: Actor, reader?: Actor) {
   return tx`(v.visibility = 'workspace'
-    or (v.created_by ->> 'type' = ${actor.type} and v.created_by ->> 'id' = ${actor.id}))`;
+    or (v.created_by ->> 'type' = ${actor.type} and v.created_by ->> 'id' = ${actor.id})
+    ${reader ? tx`or (v.created_by ->> 'type' = ${reader.type} and v.created_by ->> 'id' = ${reader.id})` : tx``})`;
 }
 
 /**
@@ -516,6 +673,7 @@ async function withViews<T>(
   fn: (tx: Tx, schema: CompiledSchema) => Promise<T>,
   write = false,
 ): Promise<T> {
+  if (!write) return withRead(sql, caller, fn, { schema: true });
   return inWorkspace(sql, caller.workspaceId, async (tx) => {
     await lockSchemaShared(tx, caller.workspaceId);
     await admitCaller(tx, caller, write);
@@ -524,7 +682,7 @@ async function withViews<T>(
 }
 
 /** The view and its active object; `forUpdate` locks the row until commit. */
-async function loadView(
+export async function loadView(
   tx: Tx,
   schema: CompiledSchema,
   caller: Caller,
@@ -532,25 +690,31 @@ async function loadView(
   forUpdate = false,
 ): Promise<{ row: ViewRow; object: CompiledObject }> {
   const [row] = await tx<ViewRow[]>`
-    select v.* from views v where v.id = ${id} and ${visibleTo(tx, caller.actor)}
+    select v.* from views v where v.id = ${id} and ${visibleTo(tx, caller.actor, forUpdate ? undefined : viewReader(caller))}
     ${forUpdate ? tx`for update` : tx``}`;
   const object = row && schema.objectsById.get(row.object_type_id);
-  if (!row || !object || object.state.status !== 'active') throw notFound(`view ${id}`);
+  if (!row || !object || object.hidden || object.state.status !== 'active')
+    throw notFound(`view ${id}`);
   return { row, object };
 }
 
 export async function listViews(
   sql: Sql,
   caller: Caller,
-  objectName: string,
+  objectName?: string,
 ): Promise<{ views: SavedView[] }> {
   return withViews(sql, caller, async (tx, schema) => {
-    const object = requireObject(schema, objectName);
+    const ids = objectName ? [requireObject(schema, objectName).id] : schema.visibleObjectIds;
     const rows = await tx<ViewRow[]>`
       select v.* from views v
-      where v.object_type_id = ${object.id} and ${visibleTo(tx, caller.actor)}
+      where v.object_type_id = any(${ids}::uuid[]) and ${visibleTo(tx, caller.actor, viewReader(caller))}
       order by v.position, v.created_at, v.id`;
-    return { views: rows.map((r) => presentView(tx, object, r)) };
+    return {
+      views: rows.flatMap((row) => {
+        const object = schema.objectsById.get(row.object_type_id);
+        return object ? [presentView(tx, object, row)] : [];
+      }),
+    };
   });
 }
 
@@ -588,8 +752,9 @@ export async function createViewInTransaction(
 ): Promise<SavedView> {
   const schema = await getSchema(tx, caller.workspaceId);
   const object = requireObject(schema, objectName);
-  const config = merge({}, toStored(tx, object, input));
+  const config = nextConfig(tx, object, {}, input.kind, input);
   requireKindField(input.kind, config);
+  await checkRelationGroups(tx, schema, object, config, true);
   let { position } = input;
   if (position === undefined) {
     const [last] = await tx<{ max: number | null }[]>`
@@ -598,9 +763,9 @@ export async function createViewInTransaction(
     position = (last?.max ?? 0) + 1;
   }
   const [row] = await tx<ViewRow[]>`
-      insert into views (workspace_id, object_type_id, name, kind, visibility, position, config,
+      insert into views (workspace_id, object_type_id, name, description, kind, visibility, position, config,
         created_by, updated_by)
-      values (${caller.workspaceId}, ${object.id}, ${input.name}, ${input.kind}, ${input.visibility},
+      values (${caller.workspaceId}, ${object.id}, ${input.name}, ${input.description ?? null}, ${input.kind}, ${input.visibility},
         ${position}, ${tx.json(jsonValue(config))}, ${tx.json(caller.actor)},
         ${tx.json(caller.actor)})
       returning *`;
@@ -697,8 +862,16 @@ export async function updateView(
         if (!sameActor(row.created_by, caller.actor))
           throw forbidden('only the person or agent that created a view can change who sees it');
       }
-      const config = merge(row.config, toStored(tx, object, input));
+      if (input.expectedUpdatedAt && input.expectedUpdatedAt !== row.updated_at.toISOString())
+        throw new AppError(
+          409,
+          'view_changed',
+          'This view changed. Review the latest version and try again.',
+        );
       const kind = input.kind ?? row.kind;
+      const config = nextConfig(tx, object, row.config, kind, input);
+      delete config.issues;
+      await checkRelationGroups(tx, schema, object, config, true);
       // Check the kind's field when the request changes either, so a view
       // whose field was removed can still be renamed or moved.
       if (input.kind !== undefined || input.groupBy === null || input.dateField === null)
@@ -706,12 +879,13 @@ export async function updateView(
       const [updated] = await tx<ViewRow[]>`
       update views set
         name = ${input.name ?? row.name},
+        description = ${input.description === undefined ? row.description : input.description},
         kind = ${kind},
         visibility = ${input.visibility ?? row.visibility},
         position = ${input.position ?? row.position},
         config = ${tx.json(jsonValue(config))},
         updated_by = ${tx.json(caller.actor)},
-        updated_at = now()
+        updated_at = greatest(clock_timestamp(), updated_at + interval '1 millisecond')
       where id = ${id}
       returning *`;
       if (!updated) throw notFound(`view ${id}`);
@@ -768,6 +942,9 @@ export async function repairViews(
           sort: view.sort,
           columns: view.columns,
           groupBy: view.groupBy,
+          granularity: view.granularity,
+          groupOrder: view.groupOrder,
+          hideEmptyGroups: view.hideEmptyGroups,
           hiddenGroups: view.hiddenGroups,
           groupAggregate: view.groupAggregate,
           dateField: view.dateField,
@@ -777,10 +954,118 @@ export async function repairViews(
       if (!(e instanceof AppError) || e.status >= 500) throw e;
       continue;
     }
+    if (view.issues.length) config.issues = view.issues;
     if (JSON.stringify(config) === JSON.stringify(row.config)) continue;
     await tx`
       update views set config = ${tx.json(jsonValue(config))}, updated_by = ${tx.json(actor)},
-        updated_at = now()
+        updated_at = greatest(clock_timestamp(), updated_at + interval '1 millisecond')
       where id = ${row.id}`;
+  }
+}
+
+const createDraftSchema = createViewSchema
+  .omit({ visibility: true, position: true })
+  .extend({ object: z.string().min(1).optional() });
+const editDraftSchema = updateViewSchema
+  .omit({ visibility: true, position: true, expectedUpdatedAt: true })
+  .extend({ view: z.uuid() });
+
+export const viewDraftSchema = z.union([createDraftSchema, editDraftSchema]);
+
+/** Resolve a chat draft through the same config validation used by create and update. */
+export async function checkView(
+  sql: Sql,
+  caller: Caller,
+  draft: unknown,
+  objectName?: string,
+): Promise<ViewCheckResult> {
+  const parsed =
+    isPlainObject(draft) && Object.hasOwn(draft, 'view')
+      ? editDraftSchema.safeParse(draft)
+      : createDraftSchema.safeParse(draft);
+  if (!parsed.success)
+    return {
+      ok: false as const,
+      problems: parsed.error.issues.map((issue) => ({
+        path: issue.path.join('.') || 'draft',
+        message: issue.message,
+      })),
+    };
+  try {
+    return await withRead(
+      sql,
+      caller,
+      async (tx, schema) => {
+        const input = parsed.data;
+        const saved = 'view' in input ? await loadView(tx, schema, caller, input.view) : undefined;
+        const name = 'object' in input ? (input.object ?? objectName) : objectName;
+        const object = saved?.object ?? (name && requireObject(schema, name));
+        if (!object) throw invalidView('A new draft requires object', { path: 'object' });
+        if (name && requireObject(schema, name).id !== object.id)
+          throw invalidView('The view belongs to a different object', { path: 'object' });
+        const kind = input.kind ?? saved?.row.kind;
+        if (!kind) throw invalidView('A draft requires a layout', { path: 'kind' });
+        const before = saved?.row;
+        const config = nextConfig(tx, object, before?.config ?? {}, kind, input);
+        const unchanged = 'view' in input && Object.keys(input).length === 1;
+        if (!unchanged) requireKindField(kind, config);
+        await checkRelationGroups(tx, schema, object, config);
+        const now = new Date();
+        const preview = presentView(tx, object, {
+          id: before?.id ?? '',
+          object_type_id: object.id,
+          kind,
+          config,
+          name: input.name ?? before?.name ?? '',
+          description:
+            input.description === undefined ? (before?.description ?? null) : input.description,
+          visibility: before?.visibility ?? 'private',
+          position: before?.position ?? 0,
+          created_by: before?.created_by ?? caller.actor,
+          updated_by: before?.updated_by ?? caller.actor,
+          created_at: before?.created_at ?? now,
+          updated_at: before?.updated_at ?? now,
+        });
+        const result = await aggregateRecords(
+          tx,
+          caller.workspaceId,
+          schema,
+          object,
+          {
+            filter: preview.filter ?? undefined,
+            search: preview.search ?? undefined,
+            groupBy: preview.groupBy ?? undefined,
+            granularity: preview.granularity ?? undefined,
+            aggregates: preview.groupAggregate ? [preview.groupAggregate] : [],
+          },
+          undefined,
+          { hidden: preview.hiddenGroups },
+        );
+        return {
+          ok: true as const,
+          problems: [],
+          count: result.total,
+          groups:
+            result.groups &&
+            displayViewGroups(
+              result.groups,
+              preview,
+              object.fieldsByName.get(preview.groupBy ?? ''),
+            ),
+          preview,
+        };
+      },
+      { schema: true },
+    );
+  } catch (error) {
+    if (!(error instanceof AppError) || error.status >= 500) throw error;
+    const details = error.details;
+    const path =
+      typeof details?.path === 'string'
+        ? details.path
+        : typeof details?.field === 'string'
+          ? details.field
+          : 'draft';
+    return { ok: false as const, problems: [{ path, message: error.message }] };
   }
 }

@@ -169,7 +169,7 @@ export type FilterClause = { field: string; operator: string; value: unknown };
 export type FilterParts = { clauses: FilterClause[]; custom: Record<string, unknown>[] };
 
 const NESTING = new Set(['and', 'or', 'not']);
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** Splits a filter into its top-level ANDed parts, flattening nested `and`s. */
@@ -183,7 +183,15 @@ function splitFilter(filter: Record<string, unknown>, out: FilterParts): FilterP
     else if (isPlainObject(condition)) {
       const entries = Object.entries(condition);
       if (!entries.length) out.custom.push({ [key]: condition });
-      for (const [operator, value] of entries) out.clauses.push({ field: key, operator, value });
+      for (const [operator, value] of entries) {
+        if (
+          operator === 'within' ||
+          (['gt', 'gte', 'lt', 'lte'].includes(operator) &&
+            (isPlainObject(value) || ['today', 'tomorrow', 'yesterday'].includes(String(value))))
+        ) {
+          out.custom.push({ [key]: { [operator]: value } });
+        } else out.clauses.push({ field: key, operator, value });
+      }
     } else out.clauses.push({ field: key, operator: 'eq', value: condition });
   }
   return out;
@@ -204,6 +212,7 @@ export function addClause(clauses: FilterClause[], clause: FilterClause): Filter
 }
 
 const OPERATOR_LABELS: Record<FilterOperator, string> = {
+  within: 'is within',
   eq: 'is',
   neq: 'is not',
   in: 'is any of',

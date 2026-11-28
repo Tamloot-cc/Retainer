@@ -270,7 +270,7 @@ agent to say so before acting on the records.
 **Web chats.** The line the server adds to a web chat's first message
 (dashboards.md §5.1) names both guides: "This chat is in Retainer's web
 app, which can show dashboards and views; read get_guide("dashboards") or
-get_guide("views") before drafting one." One line, so the base prompt and
+get_guide("views") before drafting one. For checked views, use a retainer-view fence." One line, so the base prompt and
 its cache stay shared.
 
 ### 5.2 The draft
@@ -470,7 +470,8 @@ One PR, as features land whole:
    (`records/query.ts`, the shared filter types), for every reader at
    once.
 2. **Views**: `description` as a column beside `name` (`db/schema.ts`,
-   one migration); the new `config` keys in `views/service.ts` (`search`,
+   a schema migration); an upgrade migration for dormant grouping settings
+   from older views; the new `config` keys in `views/service.ts` (`search`,
    `granularity`, `groupOrder`, `hideEmptyGroups`); the wider `groupBy`
    with its Other group, their checks and repair, the
    issue a widening repair leaves (§4.6), the check route,

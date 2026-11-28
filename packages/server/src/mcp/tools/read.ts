@@ -6,13 +6,18 @@ import { listComments, readRecordWithComments } from '../../comments/service.js'
 import { checkDashboard } from '../../dashboards/service.js';
 import type { Sql } from '../../db/client.js';
 import { readEventContent } from '../../memory/service.js';
-import { aggregateInputSchema } from '../../records/aggregate.js';
 import { queryInputSchema } from '../../records/query.js';
-import { aggregate, findRecords } from '../../records/service.js';
 import { contextInputSchema } from '../../retrieval/context.js';
 import { searchInputSchema } from '../../retrieval/search.js';
 import { contextFor, searchFor, timelineFor } from '../../retrieval/service.js';
 import { timelineInputSchema } from '../../retrieval/timeline.js';
+import {
+  aggregateWithView,
+  queryWithView,
+  viewAggregateSchema,
+  viewQuerySchema,
+} from '../../views/read.js';
+import { checkView, listViews } from '../../views/service.js';
 import { objectName, run } from '../shared.js';
 
 /**
@@ -49,14 +54,16 @@ const listCommentsInput = z.strictObject({
 });
 
 const queryRecordsInput = z.strictObject({
-  object: objectName.describe(
-    'Singular API name of the object, e.g. "person", as describe_schema lists it; or ' +
-      '"event" for events of every event type at once.',
-  ),
-  ...queryInputSchema.shape,
+  object: objectName
+    .describe(
+      'Singular API name of the object, e.g. "person", as describe_schema lists it; or ' +
+        '"event" for events of every event type at once.',
+    )
+    .optional(),
+  ...viewQuerySchema.omit({ groupMatch: true }).shape,
   filter: queryInputSchema.shape.filter.describe(
-    'Field name to a value (equality) or to operators: eq, neq, in, gt, gte, lt, lte, ' +
-      'e.g. { "status": "todo", "dueDate": { "lte": "2026-11-30" } }. Only filterable fields. ' +
+    'Field name to a value (equality) or to operators: eq, neq, in, gt, gte, lt, lte, isNull (true or false), ' +
+      'or within for dates, e.g. { "status": "todo", "dueDate": { "lte": "2026-11-30" } }. Only filterable fields. ' +
       'Event types also filter and sort by occurredAt, channel and externalId; with object ' +
       '"event", only those and type (event type API names: eq, neq or in) apply. A ' +
       'many_to_many relation takes containsAny or containsAll (lists of record IDs) and ' +
@@ -126,7 +133,7 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
       inputSchema: queryRecordsInput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ object, ...input }) => run(caller, 'read', () => findRecords(sql, caller, object, input)),
+    ({ object, ...input }) => run(caller, 'read', () => queryWithView(sql, caller, object, input)),
   );
 
   server.registerTool(
@@ -135,10 +142,49 @@ export function registerReadTools(server: McpServer, sql: Sql, caller: Caller): 
       title: 'Aggregate records',
       description:
         'Count records that match a filter or search and calculate aggregates over them. Group by a filterable select, date or single relation, or a built-in date. An optional as identifies each aggregate in the response.',
-      inputSchema: aggregateInputSchema.extend({ object: objectName }),
+      inputSchema: viewAggregateSchema
+        .omit({ viewGroups: true })
+        .extend({ object: objectName.optional() }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    ({ object, ...input }) => run(caller, 'read', () => aggregate(sql, caller, object, input)),
+    ({ object, ...input }) =>
+      run(caller, 'read', () => aggregateWithView(sql, caller, object, input)),
+  );
+
+  server.registerTool(
+    'list_views',
+    {
+      title: 'List saved views',
+      description:
+        'Find saved views by name and description, optionally for one object. Their IDs can be passed as view to query_records and aggregate_records. Tell the person about any issues before acting on the results.',
+      inputSchema: z.strictObject({ object: objectName.optional() }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ object }) => run(caller, 'read', () => listViews(sql, caller, object)),
+  );
+  server.registerTool(
+    'check_view',
+    {
+      title: 'Check a view draft',
+      description:
+        'Validate view settings and preview live counts with your access. Read the views guide first. In Retainer web chat, put the exact checked draft in a ```retainer-view fence so the person can open or save it.',
+      inputSchema: z.strictObject({ draft: z.record(z.string(), z.unknown()) }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ draft }) =>
+      run(caller, 'read', async () => {
+        const check = await checkView(sql, caller, draft);
+        if (!check.ok) return check;
+        const { count, groups } = check;
+        return {
+          ok: true,
+          problems: [],
+          count,
+          ...(groups && {
+            groups: groups.map(({ label, total }) => ({ label, count: total })),
+          }),
+        };
+      }),
   );
 
   server.registerTool(

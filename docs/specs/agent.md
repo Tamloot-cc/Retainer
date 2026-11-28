@@ -972,7 +972,7 @@ can still report its usage, which counts, and the answer is `stop`
 
 - The chat creation request can include `client: "web"` or `client: "cli"`.
   Agent tasks record `task` as their client. On the first turn of a web chat,
-  the server adds a short instruction to read `get_guide("dashboards")`
+  the server adds one line naming `get_guide("dashboards")` and `get_guide("views")`
   before drafting one. The guide is retrieved on demand. See the
   [dashboards spec](dashboards.md#5-the-agent).
 
@@ -1122,7 +1122,7 @@ of the agent's.
 
 | Group            | Tools                                                                                                          | Runs where                         | Chat        | Task                   |
 | ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------- |
-| `retainer.read`  | `search`, `query_records`, `aggregate_records`, `check_dashboard`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content`, `get_guide` | Agent runtime, through the API     | Yes         | If listed              |
+| `retainer.read`  | `search`, `query_records`, `aggregate_records`, `check_dashboard`, `list_views`, `check_view`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content`, `get_guide` | Agent runtime, through the API     | Yes         | If listed              |
 | `retainer.write` | `upsert_record`, `upsert_records`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
 | `web.search`     | Anthropic's `web_search_20250305`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
 | `tools.<name>`   | Extension tools declared `read` (`extensions-tools.md`)                                                        | Through Retainer, as their own job | `read` only | `read` only, if listed |

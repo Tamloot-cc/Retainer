@@ -240,6 +240,7 @@ function validateSearch(raw: Record<string, unknown>): ViewSearch {
     'fact',
     'record',
     'view',
+    'draft',
     'month',
     'object',
     'field',

@@ -160,7 +160,8 @@ export function withEventValues<T extends PresentedRecord>(record: T): T {
 
 /** The operators the query engine takes on a built-in column; fields keep their own. */
 export function listFilterOperators(field: FieldView): readonly string[] {
-  if (!isEventColumn(field.name) || !field.readOnly) return filterOperatorsFor(field);
+  if (!isEventColumn(field.name) || !field.readOnly)
+    return filterOperatorsFor(field).filter((op) => op !== 'within');
   return field.type === 'date_time' ? ['gte', 'lt', 'gt', 'lte', 'eq'] : ['eq', 'neq'];
 }
 

@@ -56,6 +56,7 @@ export function CalendarView({
   object,
   view,
   filter,
+  search,
   sort,
   month: monthRaw,
   writable,
@@ -67,6 +68,7 @@ export function CalendarView({
   object: ObjectView;
   view: SavedView;
   filter: Record<string, unknown> | undefined;
+  search?: string;
   sort: QueryInput['sort'];
   month: string | undefined;
   /** Can write: records can be moved, and the view changed. */
@@ -87,6 +89,7 @@ export function CalendarView({
 
   const input: QueryInput | undefined = field
     ? {
+        search,
         filter: andFilter(filter, rangeCondition(field, first, last)),
         // Within a day: the view's order, or by the date itself.
         sort: sort?.length ? sort : [{ field: field.name, direction: 'asc' }],
@@ -100,11 +103,11 @@ export function CalendarView({
     placeholderData: (previous) => previous,
   });
   const undated = useQuery({
-    queryKey: [session.workspace.id, 'aggregate', name, 'undated', filter, field?.name],
+    queryKey: [session.workspace.id, 'aggregate', name, 'undated', filter, search, field?.name],
     queryFn: ({ signal }) =>
       api.aggregate(
         name,
-        { filter: andFilter(filter, { [field?.name as string]: { isNull: true } }) },
+        { search, filter: andFilter(filter, { [field?.name as string]: { isNull: true } }) },
         signal,
       ),
     // An event's time is never empty, and the totals route doesn't take built-in columns.

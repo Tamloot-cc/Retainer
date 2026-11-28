@@ -21,6 +21,7 @@ export type ViewSearch = {
   record?: string;
   /** Object list: the saved view shown; absent for all records. */
   view?: string;
+  draft?: string;
   /** Calendar view: the month shown, `yyyy-MM`. */
   month?: string;
   /** Schema page: the selected object (singular API name). */

@@ -331,7 +331,7 @@ describe('POST /v1/objects/:object/query', () => {
     const cases: [Record<string, unknown>, string][] = [
       [{ id: 'not-a-uuid' }, 'id'],
       [{ id: { neq: '123' } }, 'id'],
-      [{ createdAt: { gt: 'yesterday' } }, 'createdAt'],
+      [{ createdAt: { gt: 'last week' } }, 'createdAt'],
       [{ updatedAt: { lte: '2026-13-45T00:00:00Z' } }, 'updatedAt'],
       // A time without a UTC offset is ambiguous, as for date_time fields.
       [{ createdAt: { gte: '2026-10-01T00:00:00' } }, 'createdAt'],

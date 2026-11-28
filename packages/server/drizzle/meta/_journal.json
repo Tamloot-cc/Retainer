@@ -1093,6 +1093,20 @@
       "when": 1795781483060,
       "tag": "0155_dashboards_security",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1795836203605,
+      "tag": "0156_agent_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1795839750559,
+      "tag": "0157_normalize_legacy_view_groups",
+      "breakpoints": true
     }
   ]
 }

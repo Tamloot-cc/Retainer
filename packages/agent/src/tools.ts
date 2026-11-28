@@ -12,6 +12,8 @@ export const RETAINER_READ_TOOL_NAMES = [
   'query_records',
   'aggregate_records',
   'check_dashboard',
+  'list_views',
+  'check_view',
   'get_record',
   'get_context',
   'get_timeline',

@@ -55,7 +55,7 @@ export function chatContext(input: {
     `- ${datePart(input.date)}`,
     ...(input.client === 'web'
       ? [
-          '- This chat is in Retainer’s web app, which can show dashboards. Read get_guide("dashboards") before writing one.',
+          '- This chat is in Retainer’s web app, which can show dashboards and views; read get_guide("dashboards") or get_guide("views") before drafting one. For checked views, use a ```retainer-view fence.',
         ]
       : []),
   ].join('\n');
