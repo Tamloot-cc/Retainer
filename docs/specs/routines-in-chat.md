@@ -499,7 +499,12 @@ Removed, in the PR that ships this, after the eval (§9):
 - The describe box on the Routines page and on a routine's page
   (`routines/describe.tsx`). The list page gets a **New routine** link
   that opens a plain chat (`chat-builds.md` §2); a routine's page gets
-  **Edit with the agent**.
+  **Edit with the agent**. Since 2026-11-28 (not built yet), **New
+  routine** opens a chat that says how building a routine works and offers
+  "Suggest a few routines that would save time in this workspace." The
+  routines guide's **Suggesting** section keeps ideas within
+  `get_routine_capabilities` and runs no check or dry run until the person
+  picks one (`chat-builds.md` §5.2).
 - `POST /v1/routines/build`, the runner's internal
   `/routines/runtime/build/check` and `/routines/runtime/build/propose`,
   the code that queues and runs a `build` run, and

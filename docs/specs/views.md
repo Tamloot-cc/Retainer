@@ -411,7 +411,17 @@ draft card (`draft-card.tsx`):
   draft that fails shows its problems in place of the preview, and no
   Save or Open.
 
-### 6.4 The Edit dialog
+### 6.4 New view from the chat
+
+2026-11-28, not built yet. The view bar gains **New view**, which opens a
+new chat for the page's object (`/chat?new=view&object=<key>`). The chat
+says how building a view works and offers one prompt: "Suggest a few views
+of Companies I could keep." The views guide gains a **Suggesting** section:
+three to five ideas grounded in the object's data, none a near copy of a
+view `list_views` returns, and no draft until the person picks one.
+Shared with dashboards and routines: `chat-builds.md` §5.2.
+
+### 6.5 The Edit dialog
 
 The existing dialog gains a **Description** box. It is the only new
 control in this spec.

@@ -5,6 +5,8 @@ Each feature's own spec says how it does each step:
 [dashboards.md](dashboards.md) (shipped), [views.md](views.md) (shipped)
 and [routines.md](routines.md), built in the chat as
 [routines-in-chat.md](routines-in-chat.md) says (shipped; §5.1 here).
+Updated 2026-11-28: each feature page's **New** button opens a chat that
+explains the steps and offers one suggestion prompt (§5.2). Not built yet.
 
 ## 1. The pattern
 
@@ -31,10 +33,15 @@ thing in it.
 
 With the product owner, 2026-11-27:
 
-- **The chat is the only way in.** No "Describe…" button on the object
-  page, the Dashboards page or the Routines page, though the object page
-  would be the natural place for views. One entry keeps the app simple. A
-  feature page may link to the chat, but it opens a plain chat.
+- **The chat is the only place to build.** No describe box on the object
+  page, the Dashboards page or the Routines page. One place keeps the app
+  simple.
+- **Each feature page has a New button into the chat** (2026-11-28, §5.2).
+  It opens a new chat that says how building works and offers one prompt
+  that asks the agent for ideas. This replaces "a feature page may link to
+  the chat, but it opens a plain chat": a plain chat left people at an
+  empty box, not knowing what to ask for or what the agent could make
+  from their data.
 - **MCP comes later.** Agents connected over MCP (Claude Code, Claude's
   apps) will build the same things with the same guides and check tools,
   which are MCP tools already. What they lack is the preview and the keep
@@ -144,11 +151,86 @@ How the `retainer-routine` fence and the card work in detail is in
 dry runs stop at half of it, so a long chat cannot use up what live
 routines need.
 
+### 5.2 Starting from a feature page
+
+Decided with the product owner, 2026-11-28, after trying the prompt by
+hand on dashboards and views. It teaches the pattern by example: the
+person sees what the agent can make from their own data before they have
+to describe anything.
+
+**The button.** Each feature page has a **New** button, shown when the
+workspace agent is available and the person has `write`:
+
+| Page                            | Button            | Opens                                |
+| ------------------------------- | ----------------- | ------------------------------------ |
+| Dashboards                      | **New dashboard** | `/chat?new=dashboard`                |
+| An object page, in the view bar | **New view**      | `/chat?new=view&object=<object key>` |
+| Routines                        | **New routine**   | `/chat?new=routine`                  |
+
+Each opens a new, empty chat; nothing is created until the person sends
+a message, as with any new chat. **New routine** exists today and starts a
+plain chat; it opens this one instead. Without the agent, a page keeps
+what it shows today (the Routines page's MCP note, for one).
+
+**The top of the chat.** In place of the general intro and suggestions,
+an empty chat opened this way shows:
+
+- **A short explanation** of the five steps in the feature's words, three
+  lines at most. For dashboards: "Describe a dashboard and the agent drafts
+  it from your workspace's data. You see it live here, with real numbers.
+  Pin it to keep it; only you see it until you share it." Views say Save;
+  routines say Propose and that an admin approves before anything runs.
+- **One suggestion prompt**, a button that sends it:
+  - "Suggest a few dashboards I could build from this workspace's data."
+  - "Suggest a few views of `<Companies>` I could keep." (the object's
+    plural name)
+  - "Suggest a few routines that would save time in this workspace."
+
+The person can press it or type their own request. The prompt is plain
+words the person sees in the thread; the web app adds nothing hidden to
+it. How the agent answers lives in the guide (below), so MCP agents asked
+the same thing answer the same way.
+
+**The answer.** Each guide gains a short **Suggesting** section. When asked
+for ideas, the agent:
+
+1. Reads the guide, as for any draft (rule 3), and `describe_schema`.
+2. Looks at the data: counts and groupings with `aggregate_records`, a few
+   records with `query_records`, enough to tell which objects and fields
+   are filled and which are empty.
+3. Looks at what exists: `list_views` for the object, `list_routines` for
+   routines, so it does not suggest a near copy.
+4. Answers with three to five ideas. Each has a short name, one line on
+   what it shows or does, and why it fits this workspace ("212 deals, 80%
+   with a stage and amount"). It leaves out ideas the data cannot support:
+   no "revenue by month" when no record has an amount.
+5. Ends by asking which one to build. It drafts nothing until the person
+   picks one or describes their own; then the five steps run as usual.
+
+For routines, suggesting never validates or previews: a dry run calls the
+model and counts against the daily cap (§3), so it waits until the person
+picks an idea. Every idea uses only what `get_routine_capabilities`
+offers. The person's pick is the request "built only from what the person
+asked" refers to.
+
+**Limits.** The agent has no tool that lists dashboards, so it may suggest
+one the person already has. Accepted: the person sees their dashboards one
+page back. The ideas come from a model and vary between chats; the guide
+asks for ideas grounded in the data, not a fixed list.
+
+**Tests.** Web unit tests: each page's button opens the right URL, shown
+only with the agent and `write`; the chat at each `new=` value shows its
+explanation and prompt, and the prompt sends as typed text. An end-to-end
+test per feature: press New, press the prompt, the agent's answer arrives
+(the e2e agent fixture). The guide sections are checked by hand on a
+seeded workspace before merging, as the product owner did with the
+dashboards and views prompts.
+
 ## 6. Later
 
 - **MCP clients.** An MCP agent can draft and check today. To keep, it
   could hand the person a link that opens the draft in the web app, where
   the card and its buttons are. Not designed yet.
-- **A "Describe…" entry on feature pages**, if the chat as the only way in
-  proves hard to find. It would open a chat that already knows the object
-  or page.
+- **A describe box on feature pages**, if the New button (§5.2) still
+  proves hard to find. It would open the chat with the person's words as
+  the first message.
