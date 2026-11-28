@@ -22,22 +22,28 @@ export const router: {
   },
 };
 
-const href = (to: string, params?: Record<string, string>) =>
-  to.replace(/\$(\w+)/g, (_, key: string) => params?.[key] ?? '');
+const href = (to: string, params?: Record<string, string>, search?: unknown) => {
+  const path = to.replace(/\$(\w+)/g, (_, key: string) => params?.[key] ?? '');
+  if (!search || typeof search !== 'object') return path;
+  const query = new URLSearchParams(search as Record<string, string>).toString();
+  return query ? `${path}?${query}` : path;
+};
 
 function MockLink({
   children,
   to,
   params,
+  search,
   'aria-label': label,
 }: {
   children: ReactNode;
   to: string;
   params?: Record<string, string>;
+  search?: unknown;
   'aria-label'?: string;
 }) {
   return (
-    <a href={href(to, params)} aria-label={label}>
+    <a href={href(to, params, search)} aria-label={label}>
       {children}
     </a>
   );

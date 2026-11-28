@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Lock,
   type LucideIcon,
+  MessageSquarePlus,
   Plus,
   Settings2,
   SlidersHorizontal,
@@ -135,6 +136,7 @@ export function ViewSwitcher({
   writable,
   onSelect,
   onNew,
+  onNewAgent,
   onEdit,
   onEditAgent,
   onDelete,
@@ -145,6 +147,8 @@ export function ViewSwitcher({
   writable: boolean;
   onSelect: (id: string | undefined) => void;
   onNew: () => void;
+  /** Opens the chat's starter for a new view (chat-builds.md §5.2); absent without the agent. */
+  onNewAgent?: () => void;
   onEdit: () => void;
   onEditAgent?: () => void;
   onDelete: () => void;
@@ -193,6 +197,12 @@ export function ViewSwitcher({
       {writable ? (
         <>
           <MenuSeparator />
+          {onNewAgent ? (
+            <MenuAction onSelect={onNewAgent}>
+              <MessageSquarePlus size={14} />
+              New view with the agent
+            </MenuAction>
+          ) : null}
           <MenuAction onSelect={onNew}>
             <Plus size={14} />
             New view…

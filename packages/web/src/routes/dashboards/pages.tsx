@@ -2,9 +2,9 @@ import { RetainerApiError } from '@retainer/sdk';
 import { type SavedDashboard, sameActor, type UpdateDashboard } from '@retainer/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis, LayoutDashboard } from 'lucide-react';
+import { Ellipsis, LayoutDashboard, MessageSquarePlus } from 'lucide-react';
 import { lazy, Suspense, useId, useState } from 'react';
-import { api, hasScope, useWorkspace } from '../../api/client.js';
+import { api, canMutate, hasScope, useWorkspace } from '../../api/client.js';
 import { actorLabel } from '../../provenance/index.js';
 import {
   Button,
@@ -33,8 +33,25 @@ export function DashboardsPage() {
     queryKey: [...dashboardKey(session.workspace.id), 'list'],
     queryFn: ({ signal }) => api.dashboards(undefined, signal),
   });
+  // The chat's starter for a new dashboard (chat-builds.md §5.2); a reader gets a plain chat.
+  const canBuild = canMutate(session);
+  const chatLink = canBuild
+    ? ({ to: '/chat', search: { new: 'dashboard' } } as const)
+    : ({ to: '/chat' } as const);
   return (
-    <Page title="Dashboards" icon={<LayoutDashboard size={16} />}>
+    <Page
+      title="Dashboards"
+      icon={<LayoutDashboard size={16} />}
+      actions={
+        canBuild ? (
+          <Button asChild>
+            <Link {...chatLink}>
+              <MessageSquarePlus size={14} /> New dashboard
+            </Link>
+          </Button>
+        ) : undefined
+      }
+    >
       {list.error ? (
         <QueryError error={list.error} retry={() => void list.refetch()} />
       ) : !list.data ? (
@@ -46,7 +63,7 @@ export function DashboardsPage() {
             description="Ask the agent for one, such as ‘deals by stage this quarter’, then pin it."
           />
           <Button asChild>
-            <Link to="/chat">Open chat</Link>
+            <Link {...chatLink}>Open chat</Link>
           </Button>
         </div>
       ) : (

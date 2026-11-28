@@ -694,6 +694,15 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
             writable={writable}
             onSelect={(id) => selectView(id)}
             onNew={() => setViewDialog('new')}
+            onNewAgent={
+              writable && session.agentAvailable
+                ? () =>
+                    void navigate({
+                      to: '/chat',
+                      search: { new: 'view', object: object.nameSingular },
+                    })
+                : undefined
+            }
             onEdit={() => setViewDialog('edit')}
             onEditAgent={saved ? () => editWithAgent.mutate() : undefined}
             onDelete={() => setViewDialog('delete')}

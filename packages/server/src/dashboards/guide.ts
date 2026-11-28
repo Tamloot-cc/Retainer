@@ -30,6 +30,7 @@ export const dashboardGuide = dashboardLibrary.prompt({
     'For a category breakdown, query with groupBy and read groups.label and groups.total or groups.<alias>. Never enumerate options or issue a query per option.',
     'For time charts, group on a date such as createdAt or occurredAt, and choose day, week, month, quarter or year. A Series takes one value per label.',
     'Money carries its currency. Use the optional percent format only for values from 0 to 100.',
+    'Suggesting: when the person asks for ideas rather than one dashboard, suggest; do not write a program yet. Call describe_schema and look at the data with aggregate_records and query_records: which objects and fields are filled, and how they group. Answer with up to five ideas, each a short name, one line on what it shows, and why it fits, citing what you saw ("212 deals, 80% with a stage and amount"). Skip ideas the data cannot support, such as revenue by month when no record has an amount. Fewer is fine, even none: then say what is missing. End by asking which one to build.',
     'Call check_dashboard with the complete merged program before answering. Fix reported problems before replying. When editing, send only changed statements in the answer fence. For a new independent dashboard, include the root and all statements it needs.',
   ],
   examples: [

@@ -1,4 +1,5 @@
 import type { RoutineView } from '@retainer/shared';
+import { Link } from '@tanstack/react-router';
 import { MessageSquarePlus, Workflow } from 'lucide-react';
 import { canMutate, useWorkspace } from '../../api/client.js';
 import {
@@ -10,13 +11,11 @@ import {
   ItemCards,
   Loading,
   Muted,
-  Notice,
   Page,
   Stack,
 } from '../../ui/index.js';
 import { QueryError } from '../state.js';
-import { useRoutineChat } from './agent-chat.js';
-import { errorText, routineStatus, useRoutines } from './model.js';
+import { routineStatus, useRoutines } from './model.js';
 import { TimeZoneLine } from './time-zone.js';
 
 /**
@@ -26,7 +25,6 @@ import { TimeZoneLine } from './time-zone.js';
 export function RoutinesPage() {
   const { session } = useWorkspace();
   const routines = useRoutines();
-  const chat = useRoutineChat();
   const canBuild = canMutate(session);
   const inChat = canBuild && session.agentAvailable === true;
   const all = routines.data?.routines ?? [];
@@ -38,14 +36,15 @@ export function RoutinesPage() {
       description="A routine is a standing instruction: when something happens, Retainer does what you described. You describe it to the agent in the chat, it writes a small program and dry-runs it, and an admin approves it before it runs."
       actions={
         inChat ? (
-          <Button disabled={chat.isPending} onClick={() => chat.mutate(undefined)}>
-            <MessageSquarePlus size={14} /> New routine
+          <Button asChild>
+            <Link to="/chat" search={{ new: 'routine' }}>
+              <MessageSquarePlus size={14} /> New routine
+            </Link>
           </Button>
         ) : undefined
       }
     >
       <Stack>
-        {chat.error ? <Notice error>{errorText(chat.error, 'start a chat')}</Notice> : null}
         {canBuild && !inChat ? (
           <Muted>
             This server has no workspace agent, so routines are built by an agent you connect over
