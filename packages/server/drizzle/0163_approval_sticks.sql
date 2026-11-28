@@ -1,8 +1,9 @@
 -- An approval sticks (routines spec §5.3, #229): a routine keeps running on
 -- its approved version when the approver later loses admin, and a test run
 -- keeps running when its initiator does. Nothing re-checks them, so the
--- triggers that stored `approver_left` (0162) and `retainer_routine_admin`
--- (0123) go.
+-- triggers that stored `approver_left` (0162) go. `retainer_routine_admin`
+-- (0123) stays until this has deployed: the previous code, still running
+-- while this migration applies, calls it for every routine run.
 DROP TRIGGER routines_stopped ON public.routines;
 --> statement-breakpoint
 DROP TRIGGER routines_admin_lost_role ON public.organization_members;
@@ -24,8 +25,6 @@ DROP FUNCTION public.retainer_routine_stopped();
 DROP FUNCTION public.retainer_admin_lost();
 --> statement-breakpoint
 DROP FUNCTION public.retainer_routines_approver_left(uuid[],text);
---> statement-breakpoint
-DROP FUNCTION public.retainer_routine_admin(uuid,text);
 --> statement-breakpoint
 -- Routines stopped because their approver left become plain pauses, so an
 -- admin can resume them without approving again. They stay paused, so
