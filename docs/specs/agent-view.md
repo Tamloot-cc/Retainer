@@ -66,8 +66,8 @@ labelled **View**, with **Standard**, **Developer** and **Agent**.
   more.
 - **⌘.** (Ctrl+. on Windows and Linux) steps Standard → Developer → Agent →
   Standard, shown beside the control's heading. Unlike ⌘K it also works
-  before the workspace is set up, where a person signed in with a key still
-  sees the app. Find anything (⌘K) lists **Switch to … view** for the two
+  before the workspace is set up where a person signed in with a key still
+  sees the app; on the setup screen, which shows no level, it does nothing. Find anything (⌘K) lists **Switch to … view** for the two
   other levels, for every actor.
 
 - Remembered per browser in `localStorage` under `retainer:view-level:v1`,

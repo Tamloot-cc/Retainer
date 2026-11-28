@@ -167,8 +167,11 @@ function Layout() {
     return () => window.removeEventListener('keydown', key);
   }, [settingUp]);
   // ⌘. steps through the View levels. Unlike ⌘K it works before the
-  // workspace is set up, where a key-signed-in person still sees the app.
+  // workspace is set up while the app is shown (signed in with a key), but
+  // not on the setup screen, which shows no level to change.
+  const setupScreen = !!accountState && settingUp;
   useEffect(() => {
+    if (setupScreen) return;
     function key(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key !== '.') return;
       e.preventDefault();
@@ -176,7 +179,7 @@ function Layout() {
     }
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [developerView]);
+  }, [developerView, setupScreen]);
   if (!schema.data && !schema.error) return <Splash label="Loading workspace…" />;
   if (!schema.data)
     return (
