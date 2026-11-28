@@ -4,7 +4,8 @@ Status: **decided**, 2026-11-27. A short shared design, not a build spec.
 Each feature's own spec says how it does each step:
 [dashboards.md](dashboards.md) (shipped), [views.md](views.md) (decided)
 and [routines.md](routines.md) (shipped with its own builder; the move into
-the chat is §5.1 here).
+the chat is §5.1 here, and its spec is
+[routines-in-chat.md](routines-in-chat.md), proposed).
 
 ## 1. The pattern
 
@@ -141,10 +142,10 @@ change when the chat builds routines:
   that calls the model through the proxy, stay as they are. After it, the
   chat's agent is the built-in builder.
 
-How the `retainer-routine` fence and the card work in detail goes into
-`routines.md` when that work starts, after Views. That includes whether
-dry runs started from a chat need their own share of the daily model cap,
-so that a long chat cannot use up what live routines need.
+How the `retainer-routine` fence and the card work in detail is in
+[routines-in-chat.md](routines-in-chat.md) (proposed). That includes
+whether dry runs started from a chat need their own share of the daily
+model cap, so that a long chat cannot use up what live routines need.
 
 ## 6. Later
 
