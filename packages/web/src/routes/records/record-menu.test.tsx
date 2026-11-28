@@ -2,7 +2,7 @@ import type { ObjectView, PresentedRecord, SchemaDescription, Session } from '@r
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { ReportContext } from '../state.js';
@@ -36,6 +36,8 @@ const records = ['a', 'b', 'c'].map(
 /** A list like the table: rows with a link and an input, and checkbox selection. */
 function List({ initial = [] as string[], selectable = true }) {
   const [selected, setSelected] = useState(initial);
+  const renders = useRef(0);
+  renders.current += 1;
   const actions = useActionHost({ openRecord: vi.fn() });
   const menu = useRecordMenu({
     object: person,
@@ -60,6 +62,7 @@ function List({ initial = [] as string[], selectable = true }) {
         </tbody>
       </table>
       <output>{selected.join(',')}</output>
+      <p data-testid="renders">{renders.current}</p>
       {menu.element}
       {actions.element}
     </>
@@ -194,5 +197,33 @@ describe('record right-click menu', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'History of Name' }));
     expect(await screen.findByRole('dialog', { name: 'History of Name' })).toBeTruthy();
     expect(history).toHaveBeenCalledWith('a', expect.objectContaining({ field: 'name' }));
+  });
+
+  it('opens and closes without re-rendering the list', async () => {
+    vi.spyOn(api, 'extensionRecordButtons').mockResolvedValue({ buttons: [] });
+    mount(<List initial={['a', 'b']} />);
+    const before = screen.getByTestId('renders').textContent;
+    // A selected row: the selection doesn't change, so the list has no reason to render.
+    fireEvent.contextMenu(link('a'), { clientX: 40, clientY: 60 });
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByTestId('renders').textContent).toBe(before);
+  });
+
+  it('says whether Copy link copied', async () => {
+    vi.spyOn(api, 'extensionRecordButtons').mockResolvedValue({ buttons: [] });
+    const writeText = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('denied'))
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const report = mount(<List />);
+    for (const expected of ['Couldn’t copy: the browser blocked the clipboard.', 'Copied.']) {
+      fireEvent.contextMenu(link('a'), { clientX: 40, clientY: 60 });
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Copy link' }));
+      await vi.waitFor(() => expect(report).toHaveBeenLastCalledWith(expected));
+    }
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/app/r/a'));
   });
 });

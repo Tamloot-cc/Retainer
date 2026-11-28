@@ -90,6 +90,25 @@ export function ExtensionRunWatch({
   return null;
 }
 
+/**
+ * Starts an extension's record button and reports it: the run's ID, or
+ * undefined when it couldn't start (reported too).
+ */
+export async function startExtensionRun(
+  button: ExtensionRecordButton,
+  recordId: string,
+  report: (message: string) => void,
+): Promise<string | undefined> {
+  try {
+    const { id } = await api.runExtensionRecordButton(button, recordId);
+    report(`Started “${button.label}” on this record.`);
+    return id;
+  } catch (error) {
+    report(`Couldn’t start “${button.label}”. ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
 function RecordButton({
   button,
   recordId,
@@ -99,12 +118,14 @@ function RecordButton({
   recordId: string;
   report: (message: string) => void;
 }) {
-  const { mutate, reset, data, isPending } = useMutation({
-    mutationFn: () => api.runExtensionRecordButton(button, recordId),
-    onSuccess: () => report(`Started “${button.label}” on this record.`),
-    onError: (error) => report(`Couldn’t start “${button.label}”. ${error.message}`),
+  const {
+    mutate,
+    reset,
+    data: runId,
+    isPending,
+  } = useMutation({
+    mutationFn: () => startExtensionRun(button, recordId, report),
   });
-  const runId = data?.id;
   useRunWatch(button, runId, report, reset);
 
   const busy = isPending || !!runId;
@@ -131,6 +152,8 @@ export function useExtensionButtons(object: string, enabled = true) {
     queryKey: [...queryKey, session.workspace.id, 'record-buttons', object],
     queryFn: ({ signal }) => api.extensionRecordButtons(object, signal),
     enabled: allowed && enabled,
+    // Changes to extensions refresh this list (they invalidate `queryKey`).
+    staleTime: 5 * 60_000,
     retry: false,
   });
   return allowed ? (buttons.data?.buttons ?? []) : [];

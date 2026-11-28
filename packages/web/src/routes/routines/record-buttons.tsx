@@ -14,6 +14,8 @@ export function useRoutineButtons(object: string, enabled = true) {
     queryKey: [...routinesKey(session.workspace.id), 'buttons', object],
     queryFn: ({ signal }) => api.routineButtons(object, signal),
     enabled: allowed && enabled,
+    // Changes to routines refresh this list (they invalidate `routinesKey`).
+    staleTime: 5 * 60_000,
     retry: false,
   });
   return allowed ? (buttons.data?.buttons ?? []) : [];
