@@ -176,10 +176,13 @@ export function CalendarEntry({
   selected = false,
   pending = false,
   inPanel = false,
+  recordId,
   onOpen,
 }: {
   /** Unique among everything draggable on the calendar. */
   id: string;
+  /** The record's ID; `id` differs from it in a day's "more" panel. */
+  recordId: string;
   day: string;
   /** What `DragArea` hands back when this is moved. */
   item: unknown;
@@ -203,7 +206,8 @@ export function CalendarEntry({
       {...drag.handle}
       aria-label={calendarEntryLabel(title, time, category?.label)}
       aria-current={selected || undefined}
-      data-record-sheet-trigger={inPanel ? undefined : id}
+      data-record-sheet-trigger={inPanel ? undefined : recordId}
+      data-row={recordId}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}
       onClick={onOpen}

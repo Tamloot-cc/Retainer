@@ -164,6 +164,7 @@ export function CalendarView({
       selected={selected === r.id}
       pending={Object.hasOwn(moves.moving, r.id)}
       inPanel={inPanel}
+      recordId={r.id}
       onOpen={() => onOpen(r.id)}
     />
   );

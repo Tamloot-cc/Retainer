@@ -36,29 +36,45 @@ Today the same actions are written out in several places:
 | Routine buttons on a record                | One per approved `manual` routine | `routes/routines/record-buttons.tsx`   |
 | Extension buttons on a record (Enrich now) | One per installed record button   | `routes/extensions/record-buttons.tsx` |
 
-A new module, `routes/records/actions.ts`, returns the actions available for
+A new module, `routes/records/actions.tsx`, returns the actions available for
 a target. Every menu reads from it:
 
 ```ts
-type ActionTarget = { records: PresentedRecord[]; object: ObjectView };
+type ActionTarget = {
+  records: PresentedRecord[];
+  object: ObjectView | undefined;
+  field?: FieldView; // the cell right-clicked, if any
+};
 
 type RecordAction = {
   id: string;
   label: string; // "Delete…", "Delete 4 people…", "Enrich now"
   icon: LucideIcon;
-  group: 'open' | 'run' | 'change' | 'danger';
+  group: 'cell' | 'open' | 'run' | 'change' | 'danger';
   destructive?: boolean;
   run: () => void; // opens the existing dialog, or starts the run
 };
 
-function useRecordActions(target: ActionTarget): RecordAction[];
+function useRecordActions(target: ActionTarget | null, host: ActionHost): RecordAction[];
 ```
 
 The hook checks permissions (`canMutate`, `admin`), the record class (an
 event can't be merged) and the count (merge needs exactly two) in one place.
 The "…" menu, the bar for selected rows and the right-click menu all render
-what it returns. The dialogs (merge, delete, bulk delete, erase) stay where
-they are. An action only opens them.
+what it returns, each the groups it shows (§4). The dialogs (merge, delete,
+bulk delete, erase, field history) keep their code. An action only opens
+them.
+
+A menu closes as soon as an item is picked, and its target with it, so
+the dialog can't live in the menu. Each surface holds an **action host**
+(`useActionHost`): the dialog open now, with its own copy of the records,
+and the extension runs started from a menu. An extension button watches
+its run until it ends and then reports how it went
+(`extensions/record-buttons.tsx`); the host does the same for a run started
+from a menu, so the report still comes after the menu has gone. Reports go
+to the shell (`useReport`), as a deletion's does. After a delete, erase or
+merge, the host tells its surface which records are gone, so a list drops
+them from its selection and closes the sheet if it showed one.
 
 Routine and extension buttons are the only actions that come from the
 server. The hook reads them with the queries the buttons use today, so the
@@ -72,22 +88,38 @@ the server.
 
 ## 3. The menu
 
-A new `ContextMenu` in `ui/menu.tsx`, on `@radix-ui/react-context-menu`, with
-the same item styles as `Menu`. Radix places it at the pointer and keeps it
-inside the window. It also opens from the keyboard (Shift+F10 or the menu
-key) on the focused row, and with a long press on touch. Twenty builds the
-pointer positioning itself
-(`createVirtualElementFromPosition`). Radix gives it to us for free.
+A new `PointMenu` in `ui/menu.tsx`: the Radix dropdown menu `Menu` already
+uses, with the same item styles, opened at a point instead of under a
+button. Its trigger is an empty fixed element at the pointer, so Radix
+places the menu there and keeps it inside the window, as Twenty does with
+`createVirtualElementFromPosition`.
 
-The browser's own menu still opens on links and inputs inside a cell that is
-being edited, and anywhere outside a record.
+`@radix-ui/react-context-menu` doesn't fit a list. Its trigger wraps the
+element it serves: one per row is a menu per row, and one around the whole
+list takes over the browser's menu everywhere in it, between records too.
+Instead, one `PointMenu` serves a surface: a `contextmenu` listener on the
+list finds the record under the pointer (`data-row`, and `data-column` for
+the cell) and opens the menu there. When there is none, it does nothing and
+the browser's menu opens.
+
+It also opens from the keyboard (Shift+F10 or the menu key), which fires
+`contextmenu` on the focused link or button inside a row; with no pointer,
+the menu opens at that element. On touch it opens with a long press, except
+on a card that can be moved: there the long press picks the card up, as
+today, and the sheet's "…" menu has the same actions. When the menu closes
+without opening a dialog, focus goes back where it was.
+
+The browser's own menu still opens on inputs (a cell being edited) and
+anywhere outside a record.
 
 Groups, separated by a line, in this order:
 
-1. **Open:** Open, Open in new tab, Copy link.
-2. **Run:** the record's routine buttons, then its extension buttons.
-3. **Change:** Merge a duplicate… / Merge….
-4. **Danger:** Delete…, Erase for privacy….
+1. **Cell:** Copy value, History of the field (a right-clicked cell of one
+   record).
+2. **Open:** Open, Open in new tab, Copy link.
+3. **Run:** the record's routine buttons, then its extension buttons.
+4. **Change:** Merge a duplicate… / Merge….
+5. **Danger:** Delete…, Erase for privacy….
 
 An empty group is left out, with its line.
 
@@ -96,8 +128,10 @@ An empty group is left out, with its line.
 | Target                   | Actions                                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | One record               | Open, Open in new tab, Copy link; routine buttons; extension buttons; Merge a duplicate…; Delete…; Erase for privacy… (`admin`) |
-| One event                | Open, Open in new tab, Copy link; Delete… (no merge, as today)                                                                  |
+| One event                | As one record, without Merge a duplicate… (events can't be merged, as today)                                                    |
 | Several selected records | Run a routine on these N (one item per routine button); Merge… (exactly 2, not events); Delete N…                               |
+| The "…" menu             | Change and Danger, as today                                                                                                     |
+| Bar for selected rows    | Run (a "Run" menu when there are routine or extension buttons), Change and Danger                                               |
 | A value in a table cell  | The row's actions, after two of its own: **Copy value** and **History of this field**                                           |
 | Read-only people, agents | Open, Open in new tab, Copy link, Copy value, History of this field                                                             |
 
@@ -105,7 +139,11 @@ An empty group is left out, with its line.
   `api.runRoutine(routineId, ids)`, which already takes a list. The report
   says how many runs started and links the routine's runs. The routine's
   limit of 200 queued runs an hour still applies (`routines.md`), and a
-  refused run is reported like a refused button press.
+  refused run is reported like a refused button press. The route takes up
+  to 50 records, the size of a page, so a selection always fits.
+- **Open** opens the record in the sheet, as a click on the row does.
+  **Open in new tab** opens its page (`/r/:id`, or `/e/:id` for an event)
+  and **Copy link** copies that page's full address.
 - **Extension buttons** take one record (`runExtensionRecordButton`), so they
   appear only when one record is the target.
 - **Copy value** copies the cell's value with `primaryCopyValue`
@@ -115,7 +153,10 @@ An empty group is left out, with its line.
   already has (`record-view.tsx`, `api.assertions` filtered by field): every
   claim on that field, who made it, from which source, and which one won.
   Twenty has nothing like this. It is Retainer's provenance, put where a
-  person doubts a value.
+  person doubts a value. It is offered on the object's own fields, as in
+  the sheet, not on an event's built-in columns (when, participants,
+  about, source, external ID), which have no claims of their own.
+- **Copy value** is offered only when the cell has a value to copy.
 
 ## 5. Selection
 
@@ -128,8 +169,9 @@ Twenty instead adds the right-clicked row to the selection
 (`useOpenRecordContextMenu.ts`). That makes it easy to bulk-delete rows the
 person forgot were selected. We follow Finder and Gmail.
 
-Selection exists only in tables today (`GridSelection`). On boards and
-calendars the menu acts on the one card or entry right-clicked.
+Selection exists only in tables today (`GridSelection`), and only for
+people who can change records. On boards and calendars, and for read-only
+people, the menu acts on the one row, card or entry right-clicked.
 
 ## 6. Where it appears
 
@@ -138,8 +180,12 @@ calendars the menu acts on the one card or entry right-clicked.
 | Table rows and cells        | Yes           | `ui/data-grid.tsx`, `routes/views/objects.tsx`      |
 | Board cards                 | Yes           | `ui/board.tsx`, `routes/views/board-view.tsx`       |
 | Calendar entries            | Yes           | `ui/calendar.tsx`, `routes/views/calendar-view.tsx` |
-| Event list (Activity)       | Yes           | `routes/events/event-list.tsx`                      |
+| Activity feed               | No            | `routes/events/activity.tsx`                        |
 | Sidebar, dashboards, schema | No            |                                                     |
+
+An event type's list is an object list (`objects.tsx` with the helpers in
+`events/event-list.tsx`), so its table and calendar get the menu with the
+rest. The Activity feed lists changes, not records; it can come later.
 
 Twenty also has a sidebar menu (add item, new section, expand or collapse
 all). Retainer's sidebar is short and has no sections to edit, so it gets
@@ -166,7 +212,7 @@ they start with `packages/`.
 | The dropdown shows only actions on selected records, then "More actions" | `command-menu-item/components/RecordIndexCommandMenuDropdown.tsx`                                                                                                                                                                                                                                                              | Taken: the menu repeats actions found elsewhere                            |
 | Right-clicking a record adds it to the selection                         | `object-record/record-selection/hooks/useOpenRecordContextMenu.ts`                                                                                                                                                                                                                                                             | Changed: we replace the selection ([§5](#5-selection))                     |
 | Actions as server data with an availability expression                   | `packages/twenty-server/src/engine/workspace-manager/twenty-standard-application/constants/standard-command-menu-item.constant.ts`                                                                                                                                                                                             | Not taken: a client-side list is enough ([§2](#2-one-list-of-actions))     |
-| Sections in a fixed order                                                | `command-menu-item/constants/CommandMenuItemSectionsInDisplayOrder.ts`                                                                                                                                                                                                                                                         | Taken, simplified to four groups                                           |
+| Sections in a fixed order                                                | `command-menu-item/constants/CommandMenuItemSectionsInDisplayOrder.ts`                                                                                                                                                                                                                                                         | Taken, simplified to five groups                                           |
 | Workflows and apps add their own actions                                 | `packages/twenty-server/src/engine/core-modules/application/application-manifest/converters/` (workflow manifest → command menu item)                                                                                                                                                                                          | Taken: routine and extension buttons appear in the menu                    |
 | Where it is wired                                                        | `object-record/record-table/record-table-cell/components/RecordTableCellDisplayContainer.tsx`, `object-record/record-board/record-board-card/components/RecordBoardCard.tsx`, `object-record/record-calendar/record-calendar-card/components/RecordCalendarCard.tsx`, `object-record/record-list/components/RecordListRow.tsx` | Same surfaces ([§6](#6-where-it-appears))                                  |
 | Sidebar menu                                                             | `navigation/components/MainNavigationDrawerContextMenu.tsx`, `MainNavigationDrawerContextMenuContent.tsx`                                                                                                                                                                                                                      | Not taken                                                                  |
@@ -177,8 +223,11 @@ they start with `packages/`.
   one event, two and three selected, read-only, agent, admin, with and
   without routine and extension buttons. The "…" menu and the bar for
   selected rows render the same items for the same target.
-- **Component:** the selection rule (§5); the menu opens from Shift+F10 on
-  a focused row; empty groups leave no line.
+- **Component:** the selection rule (§5); the menu opens from a
+  `contextmenu` on a focused link in a row (what Shift+F10 fires); the
+  browser's menu is left alone outside a record and in an input; empty
+  groups leave no line; an extension run started from the menu is reported
+  after the menu has closed.
 - **End to end** (Playwright, real Postgres): right-click a row and delete
   it; select three rows, right-click one of them and delete all three;
   right-click an unselected row while two are selected and see only it

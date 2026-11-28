@@ -1,9 +1,8 @@
 import { RetainerApiError } from '@retainer/sdk';
 import type { ForgetResult, PresentedRecord, RecordReference } from '@retainer/shared';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Combine, MoreHorizontal, ShieldX, Trash2 } from 'lucide-react';
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, canMutate, useWorkspace } from '../../api/client.js';
+import { api, useWorkspace } from '../../api/client.js';
 import {
   Button,
   Dialog,
@@ -11,9 +10,6 @@ import {
   Form,
   FormField,
   Input,
-  Menu,
-  MenuAction,
-  MenuSeparator,
   Muted,
   Notice,
   RecordLink,
@@ -22,87 +18,12 @@ import {
 } from '../../ui/index.js';
 import {
   eventTitle,
-  objectByName,
   QueryError,
   recordTitle as title,
   useRecordLabel,
   useReport,
 } from '../state.js';
-import { MergePicker } from './merge.js';
 import { describeImpact, forgetConfirmation } from './write-model.js';
-
-/**
- * The record's actions menu, in the sheet and on the record page: merge a
- * duplicate in (not for events, which cannot be merged), delete, and erase
- * for privacy (admin). `onGone` leaves the
- * screen after the record is deleted or erased; `requestedId` is the ID the
- * screen was opened with, which differs from the record's after a merge.
- */
-export function RecordActions({
-  record,
-  requestedId,
-  onGone,
-}: {
-  record: PresentedRecord;
-  requestedId: string;
-  onGone: () => void;
-}) {
-  const { session, schema } = useWorkspace(),
-    client = useQueryClient();
-  const [action, setAction] = useState<'merge' | 'delete' | 'forget' | null>(null);
-  const isEvent = !!record.event || objectByName(schema, record.object)?.class === 'event';
-  const canWrite = canMutate(session),
-    canErase = canMutate(session, 'admin');
-  if (!canWrite) return null;
-  const close = () => setAction(null);
-  // Leave first, then drop the record's queries (under both IDs) so nothing
-  // refetches a record that no longer exists, and refresh the rest.
-  const leave = () => {
-    const wid = session.workspace.id;
-    onGone();
-    for (const id of new Set([record.id, requestedId]))
-      client.removeQueries({ queryKey: [wid, 'record', id] });
-    void client.invalidateQueries({ queryKey: [wid] });
-  };
-  return (
-    <>
-      <Menu
-        label="Record actions"
-        align="end"
-        trigger={
-          <Button variant="ghost" size="icon" aria-label="Record actions" title="Record actions">
-            <MoreHorizontal size={16} />
-          </Button>
-        }
-      >
-        {isEvent ? null : (
-          <>
-            <MenuAction onSelect={() => setAction('merge')}>
-              <Combine size={14} />
-              Merge a duplicate…
-            </MenuAction>
-            <MenuSeparator />
-          </>
-        )}
-        <MenuAction destructive onSelect={() => setAction('delete')}>
-          <Trash2 size={14} />
-          Delete…
-        </MenuAction>
-        {canErase ? (
-          <MenuAction destructive onSelect={() => setAction('forget')}>
-            <ShieldX size={14} />
-            Erase for privacy…
-          </MenuAction>
-        ) : null}
-      </Menu>
-      {action === 'merge' && !isEvent ? <MergePicker record={record} onClose={close} /> : null}
-      {action === 'delete' ? (
-        <DeleteDialog record={record} isEvent={isEvent} onClose={close} onGone={leave} />
-      ) : null}
-      {action === 'forget' ? <ForgetDialog record={record} onClose={close} onGone={leave} /> : null}
-    </>
-  );
-}
 
 type ActionProps = {
   record: PresentedRecord;
@@ -111,7 +32,12 @@ type ActionProps = {
   onGone: () => void;
 };
 
-function DeleteDialog({ record, isEvent, onClose, onGone }: ActionProps & { isEvent: boolean }) {
+export function DeleteDialog({
+  record,
+  isEvent,
+  onClose,
+  onGone,
+}: ActionProps & { isEvent: boolean }) {
   const { session, schema } = useWorkspace(),
     report = useReport();
   const [busy, setBusy] = useState(false),
@@ -239,8 +165,7 @@ export function BulkDeleteDialog({
     const deleted = ids.filter((id) => gone.has(id));
     const cascaded = gone.size - deleted.length;
     const wid = session.workspace.id;
-    for (const id of gone) client.removeQueries({ queryKey: [wid, 'record', id] });
-    void client.invalidateQueries({ queryKey: [wid] });
+    dropRecords(client, wid, gone);
     report(
       <Stack>
         <span>
@@ -297,7 +222,7 @@ export function BulkDeleteDialog({
 }
 
 /** The hard delete for a privacy request (ARCHITECTURE.md 2.1). */
-function ForgetDialog({ record, onClose, onGone }: ActionProps) {
+export function ForgetDialog({ record, onClose, onGone }: ActionProps) {
   const report = useReport();
   const [typed, setTyped] = useState(''),
     [busy, setBusy] = useState(false),
@@ -359,7 +284,7 @@ function ForgetDialog({ record, onClose, onGone }: ActionProps) {
 }
 
 const SHOWN = 10;
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** What `forget` removed, and the live rows that may still mention the person. */
 function ForgetReport({ label, result }: { label: string; result: ForgetResult }) {
@@ -442,4 +367,10 @@ function CandidateEvent({ id }: { id: string }) {
     queryFn: ({ signal }) => api.event(id, signal),
   });
   return <EventLink id={id}>{eventTitle({ title: event.data?.event?.title ?? null })}</EventLink>;
+}
+
+/** After records are deleted: drop their own queries and refresh the rest. */
+export function dropRecords(client: QueryClient, workspace: string, ids: Iterable<string>) {
+  for (const id of ids) client.removeQueries({ queryKey: [workspace, 'record', id] });
+  void client.invalidateQueries({ queryKey: [workspace] });
 }

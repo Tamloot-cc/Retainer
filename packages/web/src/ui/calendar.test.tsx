@@ -9,6 +9,7 @@ describe('calendar entry accessibility', () => {
     render(
       <CalendarEntry
         id="deal-1"
+        recordId="deal-1"
         day="2026-03-11"
         item={{}}
         title="Acme renewal"
@@ -30,6 +31,7 @@ describe('calendar entry accessibility', () => {
     render(
       <CalendarEntry
         id="deal-1"
+        recordId="deal-1"
         day="2026-03-11"
         item={{}}
         title="Acme renewal"
@@ -45,6 +47,7 @@ describe('calendar entry accessibility', () => {
     const view = render(
       <CalendarEntry
         id="deal-1"
+        recordId="deal-1"
         day="2026-03-11"
         item={{}}
         title="Acme renewal"
@@ -57,6 +60,7 @@ describe('calendar entry accessibility', () => {
     view.rerender(
       <CalendarEntry
         id="deal-1"
+        recordId="deal-1"
         day="2026-03-11"
         item={{}}
         title="Acme renewal"

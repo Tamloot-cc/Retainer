@@ -4,7 +4,7 @@ import { Notice, ObjectIcon, Page, RecordAvatar } from '../../ui/index.js';
 import { ExtensionRecordButtons } from '../extensions/record-buttons.js';
 import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle } from '../state.js';
-import { RecordActions } from './record-actions.js';
+import { RecordActions } from './actions.js';
 import { useMemoryNav } from './record-memory.js';
 import { RecordView, useRecord } from './record-view.js';
 

@@ -43,7 +43,7 @@ import { EventDetailsView } from '../events/event-details.js';
 import { ExtensionRecordButtons } from '../extensions/record-buttons.js';
 import { RoutineButtons } from '../routines/record-buttons.js';
 import { classLabel, objectByName, QueryError, recordTitle, relationsTo } from '../state.js';
-import { RecordActions } from './record-actions.js';
+import { RecordActions } from './actions.js';
 import { type MemoryNav, type MemoryState, MemoryTabs, pointsAt } from './record-memory.js';
 import { isWritable } from './write-model.js';
 
@@ -190,15 +190,8 @@ export function RecordView({
     apiName = useApiName(),
     agentDescription = useAgentDescription();
   useRememberCommand('record', r.id);
-  const [history, setHistory] = useState<FieldView | null>(null),
-    [historyCursor, setHistoryCursor] = useState<string>();
+  const [history, setHistory] = useState<FieldView | null>(null);
   const rid = r.id;
-  const hist = useQuery({
-    queryKey: [session.workspace.id, 'assertions', rid, history?.name, historyCursor],
-    queryFn: ({ signal }) =>
-      api.assertions(rid, { field: history?.name, cursor: historyCursor, signal }),
-    enabled: !!history,
-  });
   const object = objectByName(schema, r.object),
     canWrite = canMutate(session) && !r.event?.source;
   const own = object?.fields.filter((f) => !isInverseRelation(f)) ?? [];
@@ -224,10 +217,7 @@ export function RecordView({
               field={f}
               apiName={apiName(f.name)}
               editable={canWrite && isWritable(f)}
-              onHistory={() => {
-                setHistory(f);
-                setHistoryCursor(undefined);
-              }}
+              onHistory={() => setHistory(f)}
             />
           ))}
         </PropertyList>
@@ -286,35 +276,57 @@ export function RecordView({
         </Section>
       ) : null}
       <MemoryTabs record={r} nav={nav} />
-      <Dialog
-        open={!!history}
-        onOpenChange={(open) => {
-          if (!open) setHistory(null);
-        }}
-        title={`History of ${history?.label ?? 'field'}`}
-      >
-        <Stack>
-          {hist.error ? <QueryError error={hist.error} /> : null}
-          {hist.isPending ? <Notice>Loading history…</Notice> : null}
-          {hist.data?.items.map((a) => (
-            <AssertionCard key={a.id} assertion={a} />
-          ))}
-          {hist.data && !hist.data.items.length ? (
-            <Muted>No assertions for this field.</Muted>
-          ) : null}
-          <Row>
-            {historyCursor ? (
-              <Button onClick={() => setHistoryCursor(undefined)}>First page</Button>
-            ) : null}
-            {hist.data?.nextCursor ? (
-              <Button onClick={() => setHistoryCursor(hist.data?.nextCursor ?? undefined)}>
-                Next page of history
-              </Button>
-            ) : null}
-          </Row>
-        </Stack>
-      </Dialog>
+      {history ? (
+        <FieldHistoryDialog recordId={rid} field={history} onClose={() => setHistory(null)} />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Every claim on one field of a record: who made it, from which source, and
+ * which one won. From the sheet's History button and a cell's right-click menu.
+ */
+export function FieldHistoryDialog({
+  recordId,
+  field,
+  onClose,
+}: {
+  recordId: string;
+  field: Pick<FieldView, 'name' | 'label'>;
+  onClose: () => void;
+}) {
+  const { session } = useWorkspace();
+  const [cursor, setCursor] = useState<string>();
+  const hist = useQuery({
+    queryKey: [session.workspace.id, 'assertions', recordId, field.name, cursor],
+    queryFn: ({ signal }) => api.assertions(recordId, { field: field.name, cursor, signal }),
+  });
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`History of ${field.label}`}
+    >
+      <Stack>
+        {hist.error ? <QueryError error={hist.error} /> : null}
+        {hist.isPending ? <Notice>Loading history…</Notice> : null}
+        {hist.data?.items.map((a) => (
+          <AssertionCard key={a.id} assertion={a} />
+        ))}
+        {hist.data && !hist.data.items.length ? <Muted>No assertions for this field.</Muted> : null}
+        <Row>
+          {cursor ? <Button onClick={() => setCursor(undefined)}>First page</Button> : null}
+          {hist.data?.nextCursor ? (
+            <Button onClick={() => setCursor(hist.data?.nextCursor ?? undefined)}>
+              Next page of history
+            </Button>
+          ) : null}
+        </Row>
+      </Stack>
+    </Dialog>
   );
 }
 

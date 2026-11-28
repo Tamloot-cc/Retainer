@@ -4,13 +4,13 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import {
   BookmarkPlus,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Combine,
+  Play,
   Plus,
   Save,
   Table2,
-  Trash2,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
@@ -29,6 +29,7 @@ import {
   type GridSelection,
   Input,
   Inset,
+  Menu,
   Muted,
   Notice,
   ObjectIcon,
@@ -49,9 +50,15 @@ import {
   ParticipantsCell,
   withEventValues,
 } from '../events/event-list.js';
+import {
+  type RecordAction,
+  RecordActionItems,
+  useActionHost,
+  useLoadedRecord,
+  useRecordActions,
+  useRecordMenu,
+} from '../records/actions.js';
 import { CreateRecordDialog } from '../records/create-record.js';
-import { MergeDialog } from '../records/merge.js';
-import { BulkDeleteDialog } from '../records/record-actions.js';
 import { InlineEditor, RecordSheet } from '../records/record-view.js';
 import { isWritable } from '../records/write-model.js';
 import { QueryError, recordTitle, useView } from '../state.js';
@@ -133,7 +140,6 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const [density, setDensity] = useState(() => loadRowDensity(() => localStorage, workspace, name));
   const [error, setError] = useState(''),
     [createTrigger, setCreateTrigger] = useState<HTMLButtonElement | null>(null),
-    [bulk, setBulk] = useState<'merge' | 'delete' | null>(null),
     [viewDialog, setViewDialog] = useState<'new' | 'edit' | 'delete' | null>(null);
   const writable = canMutate(session);
   // Events are created only by logging them, and cannot be merged.
@@ -393,6 +399,54 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   }, [writable, selectedIds, shownIds, selectRows]);
 
   const openRow = useCallback((id: string) => void setSearch({ record: id }), [setSearch]);
+  // Deleted or erased from a menu or the bar: unselect them, and close the sheet on one.
+  const onGone = useCallback(
+    (ids: string[]) => {
+      selectRows(selectedIds.filter((id) => !ids.includes(id)));
+      if (search.record && ids.includes(search.record)) void setSearch({ record: undefined });
+    },
+    [selectRows, selectedIds, search.record, setSearch],
+  );
+  // The table's page, or what a grouped table's sections, a board's columns
+  // or a calendar's month loaded. Those keep events raw: add their values.
+  const byId = useMemo(() => new Map(records?.map((r) => [r.id, r])), [records]);
+  const loaded = useLoadedRecord(object.nameSingular);
+  const lookup = useCallback(
+    (id: string) => {
+      const record = byId.get(id) ?? loaded(id);
+      return record && isEvent ? withEventValues(record) : record;
+    },
+    [byId, loaded, isEvent],
+  );
+  const fieldFor = useCallback(
+    (column: string) => columns.find((f) => f.name === column),
+    [columns],
+  );
+  // The right-click menu and the bar for selected rows share one host and
+  // read the same actions (spec §2).
+  const actions = useActionHost({ onGone, openRecord: openRow });
+  const menu = useRecordMenu({
+    object,
+    lookup,
+    // Only an ungrouped table selects rows; only tables have cells (`data-column`).
+    selection:
+      selection && kind === 'table' && !grouped
+        ? { ids: selectedIds, select: selectRows }
+        : undefined,
+    fieldFor,
+    host: actions.host,
+  });
+  const barTarget = useMemo(
+    () => ({
+      records: selectedIds.map(lookup).filter((r): r is NonNullable<typeof r> => !!r),
+      object,
+    }),
+    [selectedIds, lookup, object],
+  );
+  const barActions = useRecordActions(
+    selectedIds.length && kind === 'table' ? barTarget : null,
+    actions.host,
+  );
 
   const saveView = useSaveView(object);
   async function changeView(change: UpdateViewInput): Promise<boolean> {
@@ -553,18 +607,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }
         >
           <Muted>{selectedIds.length} selected</Muted>
-          {selectedIds.length === 2 && !isEvent ? (
-            <Button size="small" onClick={() => setBulk('merge')}>
-              <Combine size={14} />
-              Merge…
-            </Button>
-          ) : selectedIds.length === 2 ? (
-            <Muted small>Events can’t be merged</Muted>
-          ) : null}
-          <Button variant="destructive" size="small" onClick={() => setBulk('delete')}>
-            <Trash2 size={14} />
-            Delete…
-          </Button>
+          <SelectionActions actions={barActions} isEvent={isEvent} count={selectedIds.length} />
         </Toolbar>
       ) : (
         <Toolbar
@@ -744,76 +787,78 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           ) : null}
         </Inset>
       ) : null}
-      {resolving ? (
-        <Inset>
-          <Notice>Loading view…</Notice>
-        </Inset>
-      ) : brokenDraft ? null : active?.kind === 'board' && !view.error ? (
-        <BoardView
-          object={object}
-          view={active}
-          search={input.search}
-          filter={view.query.filter}
-          sort={view.query.sort}
-          order={prefs?.order}
-          writable={writable}
-          selected={search.record}
-          onOpen={openRow}
-          onChangeView={layoutChange}
-        />
-      ) : (active?.kind === 'calendar' || calendarLayout) && !view.error ? (
-        <CalendarView
-          object={object}
-          view={active ?? occurred}
-          search={input.search}
-          filter={view.query.filter}
-          sort={view.query.sort}
-          month={search.month}
-          writable={writable}
-          selected={search.record}
-          onOpen={openRow}
-          onMonth={(month) => void setSearch({ month })}
-          onChangeView={layoutChange}
-        />
-      ) : kind !== 'table' ? null : grouped && active && !view.error ? (
-        <GroupedTable
-          key={JSON.stringify([active.id, active.groupBy, active.granularity])}
-          object={object}
-          view={active}
-          input={input}
-          render={(pages) => (
-            <DataGrid
-              {...grid}
-              rows={pages.flatMap((page) =>
-                buildRows(
-                  isEvent ? page.records.map(withEventValues) : page.records,
-                  page.relationReferences,
-                ),
-              )}
-            />
-          )}
-        />
-      ) : query.isPending && !view.error && !grouped ? (
-        <Inset>
-          <Notice>Loading records…</Notice>
-        </Inset>
-      ) : rows.length ? (
-        <DataGrid {...grid} rows={rows} selection={selection} />
-      ) : query.data ? (
-        <Inset>
-          <Empty
-            quiet
-            title="No records found"
-            description={
-              effective.filter
-                ? 'No records match these filters.'
-                : isEvent
-                  ? `Ask your agent to log ${object.labelPlural.toLowerCase()}, and they will show up here.`
-                  : `Ask your agent to add records${canMutate(session) ? ', or create one with the New button' : ', and they will show up here'}.`
-            }
+      <div className="contents" {...menu.handlers}>
+        {resolving ? (
+          <Inset>
+            <Notice>Loading view…</Notice>
+          </Inset>
+        ) : brokenDraft ? null : active?.kind === 'board' && !view.error ? (
+          <BoardView
+            object={object}
+            view={active}
+            search={input.search}
+            filter={view.query.filter}
+            sort={view.query.sort}
+            order={prefs?.order}
+            writable={writable}
+            selected={search.record}
+            onOpen={openRow}
+            onChangeView={layoutChange}
           />
-        </Inset>
-      ) : null}
+        ) : (active?.kind === 'calendar' || calendarLayout) && !view.error ? (
+          <CalendarView
+            object={object}
+            view={active ?? occurred}
+            search={input.search}
+            filter={view.query.filter}
+            sort={view.query.sort}
+            month={search.month}
+            writable={writable}
+            selected={search.record}
+            onOpen={openRow}
+            onMonth={(month) => void setSearch({ month })}
+            onChangeView={layoutChange}
+          />
+        ) : kind !== 'table' ? null : grouped && active && !view.error ? (
+          <GroupedTable
+            key={JSON.stringify([active.id, active.groupBy, active.granularity])}
+            object={object}
+            view={active}
+            input={input}
+            render={(pages) => (
+              <DataGrid
+                {...grid}
+                rows={pages.flatMap((page) =>
+                  buildRows(
+                    isEvent ? page.records.map(withEventValues) : page.records,
+                    page.relationReferences,
+                  ),
+                )}
+              />
+            )}
+          />
+        ) : query.isPending && !view.error && !grouped ? (
+          <Inset>
+            <Notice>Loading records…</Notice>
+          </Inset>
+        ) : rows.length ? (
+          <DataGrid {...grid} rows={rows} selection={selection} />
+        ) : query.data ? (
+          <Inset>
+            <Empty
+              quiet
+              title="No records found"
+              description={
+                effective.filter
+                  ? 'No records match these filters.'
+                  : isEvent
+                    ? `Ask your agent to log ${object.labelPlural.toLowerCase()}, and they will show up here.`
+                    : `Ask your agent to add records${canMutate(session) ? ', or create one with the New button' : ', and they will show up here'}.`
+              }
+            />
+          </Inset>
+        ) : null}
+      </div>
       {query.data && kind === 'table' ? (
         <GridFooter
           end={
@@ -861,22 +906,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }}
         />
       ) : null}
-      {bulk === 'merge' && selectedIds.length === 2 && !isEvent ? (
-        <MergeDialog ids={selectedIds as [string, string]} onClose={() => setBulk(null)} />
-      ) : null}
-      {bulk === 'delete' && selectedIds.length ? (
-        <BulkDeleteDialog
-          ids={selectedIds}
-          noun={[object.labelSingular.toLowerCase(), object.labelPlural.toLowerCase()]}
-          onClose={() => setBulk(null)}
-          onDone={(failed, deleted) => {
-            setBulk(null);
-            selectRows(failed);
-            if (search.record && deleted.includes(search.record))
-              void setSearch({ record: undefined });
-          }}
-        />
-      ) : null}
+      {actions.element}
       {viewDialog === 'new' || (viewDialog === 'edit' && saved) ? (
         <ViewDialog
           object={object}
@@ -905,9 +935,57 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }}
         />
       ) : null}
+      {menu.element}
       {search.record ? (
         <RecordSheet id={search.record} onClose={() => void setSearch({ record: undefined })} />
       ) : null}
     </Page>
+  );
+}
+
+/**
+ * The bar's actions for the selected rows: a "Run routine" menu when there
+ * are routine buttons, then Change and Danger as buttons.
+ */
+function SelectionActions({
+  actions,
+  isEvent,
+  count,
+}: {
+  actions: RecordAction[];
+  isEvent: boolean;
+  count: number;
+}) {
+  const run = actions.filter((a) => a.group === 'run');
+  const rest = actions.filter((a) => a.group === 'change' || a.group === 'danger');
+  return (
+    <>
+      {run.length ? (
+        <Menu
+          label="Run"
+          trigger={
+            <Button size="small">
+              <Play size={14} />
+              Run
+              <ChevronDown size={14} />
+            </Button>
+          }
+        >
+          <RecordActionItems actions={run} />
+        </Menu>
+      ) : null}
+      {rest.map((a) => (
+        <Button
+          key={a.id}
+          size="small"
+          variant={a.destructive ? 'destructive' : undefined}
+          onClick={a.run}
+        >
+          <a.icon size={14} />
+          {a.label}
+        </Button>
+      ))}
+      {count === 2 && isEvent ? <Muted small>Events can’t be merged</Muted> : null}
+    </>
   );
 }

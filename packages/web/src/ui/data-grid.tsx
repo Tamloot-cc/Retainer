@@ -316,6 +316,7 @@ const GridBody = memo(function GridBody({
       {rows.map((r) => (
         <tr
           key={r.id}
+          data-row={r.id}
           onClick={(e) => openRow(e, r.id)}
           data-selected={r.id === selectedRow || selection?.selected.has(r.id) || undefined}
           className={onOpenRow ? 'group cursor-pointer' : 'group'}
@@ -338,6 +339,7 @@ const GridBody = memo(function GridBody({
               <Cell
                 key={column?.id ?? i}
                 scope={column?.pinned ? 'row' : undefined}
+                data-column={column?.id}
                 className={column?.pinned ? `${PINNED_CELL} text-left font-normal` : CELL}
                 style={column?.pinned ? { left: pinLeft } : undefined}
               >

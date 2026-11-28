@@ -159,6 +159,7 @@ export function BoardCard({
       aria-label={title}
       aria-current={selected || undefined}
       data-record-sheet-trigger={id}
+      data-row={id}
       data-pending={pending || undefined}
       data-dragging={drag.isDragging || undefined}
       onClick={(e) => {
