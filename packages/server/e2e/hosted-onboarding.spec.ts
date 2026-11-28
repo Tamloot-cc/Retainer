@@ -221,6 +221,25 @@ test('agent first: sign in and provision, cancel, then reuse the same workspace 
   expect(await a.owner`select id from workspaces`).toEqual(rows);
 });
 
+test('shows the setup prompt to copy by hand when the browser blocks the clipboard', async ({
+  page,
+  context,
+  accounts: a,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: () => Promise.reject(new DOMException('Denied', 'NotAllowedError')) },
+    });
+  });
+  await page.goto(`${a.url}/app/`);
+  await a.signIn(context, DANA);
+  await page.reload();
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await page.getByRole('button', { name: 'Copy setup prompt' }).click();
+  await expect(page.getByText('Select and copy the prompt below.')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Setup prompt' })).toHaveValue(/ID: /);
+});
+
 test('hosted sign-up can copy Starter when creating the workspace', async ({
   page,
   context,

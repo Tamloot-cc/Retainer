@@ -9,7 +9,7 @@ import {
 } from '../api/account.js';
 import { api } from '../api/client.js';
 import { describeOperation } from '../routes/schema/schema-model.js';
-import { Button, Input, Label, Muted, Notice, Stack } from '../ui/index.js';
+import { Button, copyText, Input, Label, Muted, Notice, Stack } from '../ui/index.js';
 import { type AccountState, managed } from './context.js';
 import { AccountFrame, InvitationRow } from './screens.js';
 import { WorkspaceTemplateField } from './workspace-template.js';
@@ -159,10 +159,9 @@ export function WorkspaceSetup({
   });
   async function copy() {
     setStatus('');
-    try {
-      await navigator.clipboard.writeText(prompt);
+    if (await copyText(prompt)) {
       setStatus('Copied. Paste the prompt into your agent.');
-    } catch {
+    } else {
       setShowPrompt(true);
       setStatus('Select and copy the prompt below.');
     }
