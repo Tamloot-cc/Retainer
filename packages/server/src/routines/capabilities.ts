@@ -26,6 +26,12 @@ export type RoutineConfig = {
   modelAvailable: boolean;
   /** Whether the workspace agent runs on this server, for `retainer.ai.agent` (agent spec §9.4). */
   agentAvailable?: boolean | undefined;
+  /**
+   * Tells the routine executor a run was just queued, so it starts within
+   * seconds rather than at its next scheduled pass. Hosted only: the
+   * self-hosted worker polls continuously and needs none. It never throws.
+   */
+  wake?: (() => Promise<void>) | undefined;
 };
 
 /** The workspace's objects as routine code sees them: fields by key (§4.4). */

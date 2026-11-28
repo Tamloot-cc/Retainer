@@ -40,7 +40,11 @@ afterEach(async () => {
 });
 
 async function setup(
-  options: { modelCallsPerDay?: number; driver?: (app: TestApp) => RoutineDriver } = {},
+  options: {
+    modelCallsPerDay?: number;
+    driver?: (app: TestApp) => RoutineDriver;
+    wake?: () => Promise<void>;
+  } = {},
 ) {
   const app = startTestApp(db, {
     runTokens: tokens,
@@ -50,6 +54,7 @@ async function setup(
       modelOrigin: 'http://model.test/',
       modelName: 'claude-opus-5-5',
       modelCallsPerDay: options.modelCallsPerDay ?? 1000,
+      wake: options.wake,
     },
   });
   const { workspace, keys } = await app.setupWorkspace(
@@ -818,6 +823,59 @@ describe('routines', () => {
     expect(run).toMatchObject({ status: 'succeeded', output: { result: 1 } });
     const record = await s.app.request(`/v1/records/${acme}`, { key: s.keys.admin });
     expect(record.body.fields.source).toBe('web');
+  });
+
+  it('wakes the executor once each queued run has committed, and only then', async () => {
+    // What each wake saw: the runs another connection can already read.
+    const seen: string[][] = [];
+    const s = await setup({
+      wake: async () => {
+        const rows = await db.owner<{ id: string }[]>`
+          select id from routine_runs where status='queued' order by created_at`;
+        seen.push(rows.map((row) => row.id));
+      },
+    });
+    const { routineId, versionId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main() {
+  return 'ok';
+}
+`,
+    });
+    // activate's validate queued a check: that woke it once already.
+    const before = seen.length;
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Wake');
+    const pressed = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.admin,
+      body: { recordIds: [acme] },
+    });
+    expect(pressed.status).toBe(202);
+    expect(seen).toHaveLength(before + 1);
+    expect(seen.at(-1)).toContain(pressed.body.runs[0]);
+    const tested = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
+      key: s.keys.admin,
+      body: { recordId: acme },
+    });
+    expect(seen).toHaveLength(before + 2);
+    expect(seen.at(-1)).toContain(tested.body.runId);
+    // A refused press queues nothing and wakes nothing.
+    const refused = await s.app.request(`/v1/routines/${routineId}/run`, {
+      key: s.keys.agent,
+      body: { recordIds: [acme] },
+    });
+    expect(refused.status).toBe(403);
+    expect(seen).toHaveLength(before + 2);
+    // A chat card's dry run wakes it as well.
+    const previewed = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: TIER_ROUTINE(s.key('tier'), s.key('name')),
+    });
+    expect(previewed.body.runs).toHaveLength(1);
+    expect(seen).toHaveLength(before + 3);
+    expect(seen.at(-1)).toContain(previewed.body.runs[0]);
   });
 
   it('a preview with nothing to dry-run is done at once, with no ID to poll', async () => {

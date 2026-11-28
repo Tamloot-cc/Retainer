@@ -6,6 +6,7 @@ import { createApiSql, type Sql } from '../db/client.js';
 import { extensionServices } from '../extension-control/configuration.js';
 import { setLogLevel } from '../log.js';
 import { clientIpOf, requireEdge } from './edge.js';
+import { executorWake } from './executor-wake.js';
 import { withHttpWriter } from './writer-admission.js';
 
 /**
@@ -47,6 +48,10 @@ export function createApiHandler(
       modelOrigin: config.RETAINER_MODEL_ORIGIN,
       modelName: config.RETAINER_ROUTINE_MODEL,
       modelCallsPerDay: config.RETAINER_ROUTINE_MODEL_CALLS_PER_DAY,
+      // A queued run starts now, not at the executor's next minute pass.
+      wake: config.RETAINER_EXECUTOR_FUNCTION
+        ? executorWake(config.RETAINER_EXECUTOR_FUNCTION)
+        : undefined,
     },
   });
   return requireEdge(config.RETAINER_EDGE_SECRET, handle(app));
