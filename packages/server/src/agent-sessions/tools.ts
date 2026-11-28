@@ -20,11 +20,10 @@ export type RetainerToolResult = ToolAnswer;
  * the session code never depends on MCP.
  */
 export interface RetainerToolHost {
-  /** The named tools, in order; one in `optional` the server does not offer is left out. */
+  /** The named tools, in order. */
   list(
     caller: Caller,
     names: readonly string[],
-    optional?: readonly string[],
   ): Promise<{ name: string; description: string; inputSchema: Record<string, unknown> }[]>;
   call(caller: Caller, name: string, input: unknown): Promise<RetainerToolResult>;
 }
@@ -51,11 +50,11 @@ export async function pinnedTools(
   caller: Caller,
   host: RetainerToolHost,
   catalog: RuntimeCatalog | undefined,
+  routines = false,
 ): Promise<{ tools: PinnedTool[]; extensionTools: Record<string, ExtensionToolRef> }> {
   const retainer = await host.list(
     caller,
-    [...RETAINER_TOOL_NAMES, ...RETAINER_ROUTINE_TOOL_NAMES],
-    RETAINER_ROUTINE_TOOL_NAMES,
+    routines ? [...RETAINER_TOOL_NAMES, ...RETAINER_ROUTINE_TOOL_NAMES] : RETAINER_TOOL_NAMES,
   );
   const tools: PinnedTool[] = retainer.map((tool) => ({
     kind: 'retainer',
@@ -87,7 +86,7 @@ export async function pinnedTools(
 
 /** Whether a session's pinned tools include the routine group (routines-in-chat spec §3.2). */
 export const pinsRoutines = (tools: readonly { name: string }[]) =>
-  tools.some((tool) => tool.name === 'validate_routine');
+  tools.some((tool) => (RETAINER_ROUTINE_TOOL_NAMES as readonly string[]).includes(tool.name));
 
 /** Steps, tokens and calls a chat turn may use (agent spec §10.1). */
 export const CHAT_LIMITS = {

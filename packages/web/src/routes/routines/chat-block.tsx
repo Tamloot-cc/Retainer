@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
-import { Button, CodeBlock, Muted, Notice, Stack } from '../../ui/index.js';
+import { Button, CodeBlock, Muted, Notice, RelativeTime, Stack } from '../../ui/index.js';
 import { DraftCard } from '../agent/draft-card.js';
 import { DryRunList, Problems } from './dry-run.js';
 import { errorText, routinesKey } from './model.js';
@@ -103,6 +103,7 @@ export default function RoutineChatBlock({
   const ended = runs.map((run) => (run.finishedAt ? Date.parse(run.finishedAt) : Date.now()));
   const age = ended.length ? Date.now() - Math.min(...ended) : 0;
   const cleared = age > KEPT_DAYS * DAY;
+  const oldest = ended.length ? new Date(Math.min(...ended)).toISOString() : undefined;
   return (
     <DraftCard
       notice={
@@ -181,10 +182,9 @@ export default function RoutineChatBlock({
             {count ? <Muted small>{count}</Muted> : null}
             {data.preview?.available && !cleared ? (
               <>
-                {age > DAY ? (
+                {age > DAY && oldest ? (
                   <Muted small>
-                    It ran {Math.floor(age / DAY) === 1 ? 'a day' : `${Math.floor(age / DAY)} days`}{' '}
-                    ago.
+                    It ran <RelativeTime at={oldest} />.
                   </Muted>
                 ) : null}
                 <DryRunList runs={data.preview.runs} done={data.preview.done} />

@@ -95,7 +95,7 @@ export const FINISHED_RUN_STATUSES: readonly RoutineRunStatus[] = ROUTINE_RUN_ST
   (status) => !['queued', 'held', 'running', 'waiting'].includes(status),
 );
 
-/** The coded reasons a builder reports for a gap (§5.2). */
+/** The coded reasons the agent that builds a routine reports for a gap (§5.2). */
 export const ROUTINE_GAP_CODES = [
   'no_source',
   'no_tool',
@@ -965,10 +965,9 @@ export type RoutineDraft = {
   manifest: RoutineManifest;
   code: string;
   facts: string[];
-  /** Propose would pass: no static problems and a passed type-check for the current types. */
+  /** Propose would pass: no problems and a passed type-check for the current types. */
   ok: boolean;
-  problems: (Omit<RoutineProblem, 'part'> & { part: RoutineProblem['part'] })[];
-  checked: boolean;
+  problems: RoutineProblem[];
   /** The trigger's count now, by kind; null when the manifest has problems. */
   count: { kind: 'record' | 'schedule' | 'schedule_once' | 'manual'; value: number | null } | null;
   /** The dry run asked for: null when none was, unavailable once its runs are gone. */

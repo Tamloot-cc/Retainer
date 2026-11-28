@@ -46,6 +46,7 @@ export async function matchingSince(
   schema: CompiledSchema,
   manifest: RoutineManifest,
   days: number,
+  sample = 5,
 ) {
   const when = manifest.when;
   if (when.kind !== 'record') return { matched: 0, records: [] as string[] };
@@ -64,6 +65,7 @@ export async function matchingSince(
   const [count] = await tx<
     { n: number }[]
   >`select count(*)::int as n from record_changes where ${where}`;
+  if (sample <= 0) return { matched: count?.n ?? 0, records: [] as string[] };
   // The five live records with the most recent matches: a record merged
   // since its change counts as its survivor (§6.1), and a deleted one or
   // repeated changes to one record take no extra slot.
@@ -72,7 +74,7 @@ export async function matchingSince(
     select s.id from m join records r on r.id=m.record_id
     join records s on s.id=coalesce(r.merged_into_id,r.id)
     where s.deleted_at is null and s.merged_into_id is null
-    group by s.id order by max(m.position) desc limit 5`;
+    group by s.id order by max(m.position) desc limit ${sample}`;
   return { matched: count?.n ?? 0, records: live.map((row) => row.id) };
 }
 
@@ -93,6 +95,7 @@ export async function scheduleTargets(
   const [count] = await tx<
     { count: number }[]
   >`select count(*)::int as count from records r where ${where}`;
+  if (limit <= 0) return { matched: count?.count ?? 0, records: [] as string[] };
   const rows = await tx<{ id: string }[]>`
     select r.id from records r where ${where} order by r.updated_at desc,r.id limit ${limit}`;
   return { matched: count?.count ?? 0, records: rows.map((row) => row.id) };

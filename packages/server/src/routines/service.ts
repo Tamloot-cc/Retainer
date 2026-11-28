@@ -84,25 +84,20 @@ export function checkAnswer(job: {
   output: Record<string, unknown> | null;
   sourceId?: string | null;
 }) {
-  const sourceId = job.sourceId ?? null;
+  const base = { jobId: job.id, status: job.status, sourceId: job.sourceId ?? null };
   if (job.status === 'succeeded' && job.output)
     return {
       valid: job.output.valid === true,
       problems: (job.output.problems as unknown[]) ?? [],
-      jobId: job.id,
-      status: job.status,
-      sourceId,
+      ...base,
     };
-  if (['queued', 'running'].includes(job.status))
-    return { valid: null, problems: [], jobId: job.id, status: job.status, sourceId };
+  if (['queued', 'running'].includes(job.status)) return { valid: null, problems: [], ...base };
   return {
     valid: false,
     problems: [
       { part: 'code', code: job.code ?? 'check_failed', message: 'the type-check could not run' },
     ],
-    jobId: job.id,
-    status: job.status,
-    sourceId,
+    ...base,
   };
 }
 
@@ -304,35 +299,20 @@ export class Routines {
             message: routine ? 'this routine is archived' : 'this routine no longer exists',
           });
       }
-      const checked =
+      const ok =
         !problems.length && !!(await this.checkPassed(tx, source.id, caps.typesFingerprint));
-      let facts: string[] = [];
-      try {
-        facts = routineFacts(
-          (problems.length ? source.manifest : manifest) as RoutineManifest,
-          factsNames(caps),
-        );
-      } catch {
-        facts = [];
-      }
+      // A manifest with problems has no normalized form: show it as stored.
+      const shown = (problems.length ? source.manifest : manifest) as RoutineManifest;
       const count = problems.some((p) => p.part === 'manifest')
         ? null
         : await draftCount(tx, caller.workspaceId, schema, manifest);
-      let preview:
-        | { available: false }
-        | { available: true; done: boolean; runs: unknown[] }
-        | null = null;
+      let preview: { available: false } | ({ available: true } & PreviewRuns) | null = null;
       if (options.previewId) {
-        const runs = await tx<RunRow[]>`
-          select * from routine_runs where preview_id=${options.previewId} order by created_at,id`;
-        if (runs.some((run) => run.source_id !== source.id))
+        const found = await previewRuns(tx, options.previewId);
+        if (found.rows.some((run) => run.source_id !== source.id))
           throw new AppError(409, 'preview_mismatch', 'this dry run is of another routine draft');
-        preview = runs.length
-          ? {
-              available: true,
-              done: runs.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
-              runs: await Promise.all(runs.map((run) => presentRun(tx, run, true))),
-            }
+        preview = found.rows.length
+          ? { available: true, done: found.done, runs: found.runs }
           : { available: false };
       }
       const versions = await tx<
@@ -354,12 +334,11 @@ export class Routines {
         from routine_versions where source_id=${source.id} order by created_at,id`;
       return {
         sourceId: source.id,
-        manifest: problems.length ? source.manifest : manifest,
+        manifest: shown,
         code: source.code,
-        facts,
-        ok: !problems.length && checked,
+        facts: safeFacts(shown, factsNames(caps)),
+        ok,
         problems,
-        checked,
         count,
         preview,
         proposals: versions.map((v) => ({
@@ -383,14 +362,9 @@ export class Routines {
   async getPreview(caller: Caller, previewId: string) {
     readScope(caller);
     return this.tx(caller, async (tx) => {
-      const runs = await tx<RunRow[]>`
-        select * from routine_runs where preview_id=${previewId} order by created_at,id`;
-      if (!runs.length) throw notFound('routine preview');
-      return {
-        previewId,
-        done: runs.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
-        runs: await Promise.all(runs.map((run) => presentRun(tx, run, true))),
-      };
+      const { rows, done, runs } = await previewRuns(tx, previewId);
+      if (!rows.length) throw notFound('routine preview');
+      return { previewId, done, runs };
     });
   }
 
@@ -406,7 +380,7 @@ export class Routines {
 
   /**
    * `propose_routine` (§5.1): saves the description, manifest, code, summary
-   * and the builder's report for a person to review. The code must have
+   * and the report of the agent that built it, for a person to review. The code must have
    * passed a type-check against the workspace's current types.
    */
   async propose(caller: Caller, input: ProposeInput) {
@@ -1005,7 +979,7 @@ async function draftCount(
 ): Promise<{ kind: 'record' | 'schedule' | 'schedule_once' | 'manual'; value: number | null }> {
   const when = manifest.when;
   if (when.kind === 'record')
-    return { kind: 'record', value: (await matchingSince(tx, schema, manifest, 30)).matched };
+    return { kind: 'record', value: (await matchingSince(tx, schema, manifest, 30, 0)).matched };
   if (when.kind === 'schedule')
     return when.object
       ? {
@@ -1102,13 +1076,30 @@ export type RunRow = {
   created_at: Date;
 };
 
-function presentVersion(version: VersionRow, names: FactsNames) {
-  let facts: string[] = [];
+/** Retainer's facts for a manifest, or none when they cannot be worded. */
+function safeFacts(manifest: RoutineManifest, names: FactsNames): string[] {
   try {
-    facts = routineFacts(version.manifest, names);
+    return routineFacts(manifest, names);
   } catch {
-    facts = [];
+    return [];
   }
+}
+
+type PreviewRuns = { done: boolean; runs: Awaited<ReturnType<typeof presentRun>>[] };
+
+/** A preview's dry runs in order, whether they are all done, and as history shows them. */
+async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { rows: RunRow[] }> {
+  const rows = await tx<RunRow[]>`
+    select * from routine_runs where preview_id=${previewId} order by created_at,id`;
+  return {
+    rows,
+    done: rows.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
+    runs: await Promise.all(rows.map((run) => presentRun(tx, run, true))),
+  };
+}
+
+function presentVersion(version: VersionRow, names: FactsNames) {
+  const facts = safeFacts(version.manifest, names);
   return {
     id: version.id,
     number: version.number,

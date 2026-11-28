@@ -1,9 +1,4 @@
-import {
-  ROUTINE_GAP_CODES,
-  type RoutineDraft,
-  type RoutineGapCode,
-  type RoutineReport,
-} from '@retainer/shared';
+import { type RoutineDraft, type RoutineReport, routineReportSchema } from '@retainer/shared';
 
 /**
  * A `retainer-routine` fence (routines-in-chat spec §4.2): only what the
@@ -32,27 +27,12 @@ const text = (value: unknown, key: keyof typeof LIMITS) => {
 
 function report(value: unknown): RoutineReport {
   if (!value || typeof value !== 'object') throw new Error('The draft needs a report.');
-  const { verdict, gaps = [] } = value as { verdict?: unknown; gaps?: unknown };
-  if (verdict === 'not_possible')
+  if ((value as { verdict?: unknown }).verdict === 'not_possible')
     throw new Error('A routine that is not possible has no draft to propose.');
-  if (verdict !== 'full' && verdict !== 'partial')
-    throw new Error('The report’s verdict must be full or partial.');
-  if (!Array.isArray(gaps) || gaps.length > 20) throw new Error('The report’s gaps are not valid.');
-  return {
-    verdict,
-    gaps: gaps.map((gap) => {
-      const { part, reason, fix } = (gap ?? {}) as Record<string, unknown>;
-      if (
-        typeof part !== 'string' ||
-        typeof fix !== 'string' ||
-        !part.trim() ||
-        !fix.trim() ||
-        !ROUTINE_GAP_CODES.includes(reason as RoutineGapCode)
-      )
-        throw new Error('The report’s gaps are not valid.');
-      return { part: part.trim(), reason: reason as RoutineGapCode, fix: fix.trim() };
-    }),
-  };
+  // The same schema Propose checks, so a card never offers what Propose refuses.
+  const parsed = routineReportSchema.safeParse(value);
+  if (!parsed.success) throw new Error('The report’s verdict or gaps are not valid.');
+  return parsed.data;
 }
 
 /** Parses a fence, refusing unknown keys, missing keys and a not-possible verdict. */
