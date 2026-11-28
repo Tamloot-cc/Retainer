@@ -501,7 +501,7 @@ Removed, in the PR that ships this, after the eval (§9):
 - The describe box on the Routines page and on a routine's page
   (`routines/describe.tsx`). The list page gets a **New routine** link
   that opens a plain chat (`chat-builds.md` §2); a routine's page gets
-  **Edit with the agent**. Since 2026-11-28 (not built yet), **New
+  **Edit with the agent**. Since 2026-11-28, **New
   routine** links to `/chat?new=routine`, which creates no chat until the
   person sends. It says how building a routine works and offers "Suggest a
   few routines that would save time in this workspace." The routines

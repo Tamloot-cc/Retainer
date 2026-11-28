@@ -413,7 +413,7 @@ draft card (`draft-card.tsx`):
 
 ### 6.4 New view from the chat
 
-2026-11-28, not built yet. The views menu gains **New view with the
+2026-11-28. The views menu gains **New view with the
 agent**, beside the manual **New view…**. It opens the chat's starter for
 the page's object (`/chat?new=view&object=<nameSingular>`), which creates
 no chat until the person sends. The starter says how building a view
