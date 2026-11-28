@@ -1,44 +1,63 @@
 import type { ObjectView, PresentedRecord } from '@retainer/shared';
 import { createContext, useCallback, useContext } from 'react';
 import { ApiName, Code, CopyButton, Property, PropertyList, Row, Section } from '../ui/index.js';
+import { asViewLevel, VIEW_LEVELS, type ViewLevel } from '../ui/view-level.js';
 
 /**
- * Developer view (D8): API names, classes, IDs and write paths beside what
- * people read. Remembered per browser, for every actor. It changes what is
+ * The View control (D8, agent view spec §3): Standard, Developer or Agent.
+ * Developer shows API names, classes, IDs and write paths beside what people
+ * read; Agent adds what Retainer tells agents. Each level only adds to the one
+ * before. Remembered per browser, for every actor. It changes what is
  * displayed, never what is sent.
  */
-export const DEVELOPER_VIEW_KEY = 'retainer:developer-view:v1';
+export const VIEW_LEVEL_KEY = 'retainer:view-level:v1';
+export { VIEW_LEVELS, type ViewLevel };
 
-/** Whether developer view was left on in this browser; off when storage is refused. */
-export function readDeveloperView(storage: () => Pick<Storage, 'getItem'>): boolean {
+/** The level left on in this browser; Standard when storage is refused or holds something else. */
+export function readViewLevel(storage: () => Pick<Storage, 'getItem'>): ViewLevel {
   try {
-    return storage().getItem(DEVELOPER_VIEW_KEY) === '1';
+    const stored = storage().getItem(VIEW_LEVEL_KEY);
+    return asViewLevel(stored) ?? 'off';
   } catch {
-    return false;
+    return 'off';
   }
 }
 
-/** Remembers the switch; false when the browser refuses storage (it still works for the visit). */
-export function writeDeveloperView(storage: () => Pick<Storage, 'setItem'>, on: boolean): boolean {
+/** Remembers the level; false when the browser refuses storage (it still works for the visit). */
+export function writeViewLevel(storage: () => Pick<Storage, 'setItem'>, level: ViewLevel): boolean {
   try {
-    storage().setItem(DEVELOPER_VIEW_KEY, on ? '1' : '0');
+    storage().setItem(VIEW_LEVEL_KEY, level);
     return true;
   } catch {
     return false;
   }
 }
 
-export const DeveloperContext = createContext<{ on: boolean; set: (on: boolean) => void }>({
-  on: false,
-  set: () => {},
-});
-/** Whether developer view is on. */
-export const useDeveloper = () => useContext(DeveloperContext).on;
+export const DeveloperContext = createContext<{
+  level: ViewLevel;
+  set: (level: ViewLevel) => void;
+}>({ level: 'off', set: () => {} });
+/** Whether developer view is on: true at Developer and Agent. */
+export const useDeveloper = () => useContext(DeveloperContext).level !== 'off';
+/** Whether agent view is on: true at Agent only. */
+export const useAgentView = () => useContext(DeveloperContext).level === 'agent';
 /** `name` while developer view is on, for an `apiName` prop; otherwise nothing. */
 export function useApiName() {
   const on = useDeveloper();
   // Stable while the switch holds, so memoized columns and options keep it as a dependency.
   return useCallback((name: string | undefined) => (on ? name : undefined), [on]);
+}
+/**
+ * A field or object description in agent view, for a `descriptionLine` prop
+ * (agent view spec §4); otherwise nothing. A blank description shows nothing.
+ */
+export function useAgentDescription() {
+  const on = useAgentView();
+  return useCallback(
+    (description: string | null | undefined) =>
+      on && description?.trim() ? description.trim() : undefined,
+    [on],
+  );
 }
 
 /** How a record of this class is written: the MCP tool and the REST routes. */

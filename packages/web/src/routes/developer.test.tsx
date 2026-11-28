@@ -1,16 +1,19 @@
 import type { ObjectView, PresentedRecord, SchemaDescription, Session } from '@retainer/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../api/client.js';
 import {
-  DEVELOPER_VIEW_KEY,
   DeveloperContext,
-  readDeveloperView,
-  writeDeveloperView,
+  readViewLevel,
+  useAgentView,
+  useDeveloper,
+  VIEW_LEVEL_KEY,
+  type ViewLevel,
   writePath,
+  writeViewLevel,
 } from './developer.js';
 import { RecordView } from './records/record-view.js';
 
@@ -20,24 +23,53 @@ vi.mock('@tanstack/react-router', async (original) => ({
 }));
 afterEach(() => vi.restoreAllMocks());
 
-describe('the developer view switch', () => {
-  it('is remembered per browser, and off when storage is refused', () => {
+/** Prints what the two hooks say at the level it is given. */
+function Probe() {
+  return (
+    <p>
+      {String(useDeveloper())} {String(useAgentView())}
+    </p>
+  );
+}
+
+describe('the View control', () => {
+  it('remembers its level per browser, and is Standard when storage is refused', () => {
     const store = new Map<string, string>();
     const storage = () => ({
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
     });
-    expect(readDeveloperView(storage)).toBe(false);
-    expect(writeDeveloperView(storage, true)).toBe(true);
-    expect(store.get(DEVELOPER_VIEW_KEY)).toBe('1');
-    expect(readDeveloperView(storage)).toBe(true);
-    writeDeveloperView(storage, false);
-    expect(readDeveloperView(storage)).toBe(false);
+    expect(readViewLevel(storage)).toBe('off');
+    for (const level of ['developer', 'agent', 'off'] as const) {
+      expect(writeViewLevel(storage, level)).toBe(true);
+      expect(store.get(VIEW_LEVEL_KEY)).toBe(level);
+      expect(readViewLevel(storage)).toBe(level);
+    }
+    // The old switch's key is no longer read, and an unknown value is Standard.
+    store.set('retainer:developer-view:v1', '1');
+    store.set(VIEW_LEVEL_KEY, 'everything');
+    expect(readViewLevel(storage)).toBe('off');
     const refused = () => {
       throw new Error('SecurityError');
     };
-    expect(readDeveloperView(refused)).toBe(false);
-    expect(writeDeveloperView(refused, true)).toBe(false);
+    expect(readViewLevel(refused)).toBe('off');
+    expect(writeViewLevel(refused, 'agent')).toBe(false);
+  });
+
+  it('nests the levels: Developer is on at Agent too', () => {
+    const at = (level: ViewLevel) => {
+      const { container, unmount } = render(
+        <DeveloperContext.Provider value={{ level, set: vi.fn() }}>
+          <Probe />
+        </DeveloperContext.Provider>,
+      );
+      const text = container.textContent;
+      unmount();
+      return text;
+    };
+    expect(at('off')).toBe('false false');
+    expect(at('developer')).toBe('true false');
+    expect(at('agent')).toBe('true true');
   });
 
   it('names how each class is written', () => {
@@ -61,6 +93,7 @@ describe('a record in developer view', () => {
       {
         name: 'domain',
         label: 'Domain',
+        description: 'The company’s main website domain, without https.',
         type: 'text',
         settings: {},
         readOnly: false,
@@ -77,7 +110,8 @@ describe('a record in developer view', () => {
     fields: { domain: 'acme.test' },
   } as unknown as PresentedRecord;
 
-  function show(on: boolean, tab?: string) {
+  function show(on: boolean | ViewLevel, tab?: string) {
+    const level: ViewLevel = on === true ? 'developer' : on === false ? 'off' : on;
     vi.spyOn(api, 'facts').mockResolvedValue({ facts: [], nextCursor: null } as never);
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -91,7 +125,7 @@ describe('a record in developer view', () => {
             schema: { objects: [company] } as unknown as SchemaDescription,
           }}
         >
-          <DeveloperContext.Provider value={{ on, set: vi.fn() }}>
+          <DeveloperContext.Provider value={{ level, set: vi.fn() }}>
             <RecordView record={acme} requestedId="c1" nav={{ tab, set: vi.fn() }} />
           </DeveloperContext.Provider>
         </WorkspaceContext.Provider>
@@ -122,5 +156,15 @@ describe('a record in developer view', () => {
     Object.assign(navigator, { clipboard: { writeText: copy } });
     await userEvent.click(screen.getByRole('button', { name: 'Copy ID' }));
     expect(copy).toHaveBeenCalledWith('c1');
+  });
+
+  it('shows field descriptions under labels only in agent view', () => {
+    const description = 'The company’s main website domain, without https.';
+    show(true);
+    expect(screen.queryByText(description)).toBeNull();
+    cleanup();
+    show('agent');
+    expect(screen.getByText(description)).toBeTruthy();
+    expect(screen.getByText('domain')).toBeTruthy();
   });
 });

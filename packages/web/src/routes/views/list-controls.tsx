@@ -29,7 +29,7 @@ import {
   Segmented,
   SelectMenu,
 } from '../../ui/index.js';
-import { useApiName } from '../developer.js';
+import { useAgentDescription, useApiName } from '../developer.js';
 import { listFilterOperators } from '../events/event-list.js';
 import {
   type FilterClause,
@@ -64,10 +64,11 @@ const fieldOption = (f: FieldView, apiName?: string) => ({
 /** A field's name with its type's icon, and its API name in developer view. */
 function FieldLabel({ field }: { field: FieldView }) {
   const apiName = useApiName()(field.name);
+  const description = useAgentDescription()(field.description);
   return (
     <IconLabel icon={fields[field.type].icon}>
       {field.label}
-      {apiName ? <ApiName>{apiName}</ApiName> : null}
+      {apiName ? <ApiName title={description}>{apiName}</ApiName> : null}
     </IconLabel>
   );
 }

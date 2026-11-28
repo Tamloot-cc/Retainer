@@ -400,9 +400,10 @@ One route for every object. Source: `POST /v1/objects/:object/query`.
   take their icons from one family (squared speech marks), so the two
   groups are told apart at a glance. At the bottom, a **Workspace** group
   holds the pages that set the workspace up: Routines (when available),
-  Extensions, Schema and, in accounts mode, Settings. Then the signed-in
-  actor, whose account menu holds Your account, the **Developer view**
-  switch (5.8) and Sign out.
+  Extensions, Schema, **Agent briefing** at the Agent level of the View
+  control (5.8) and, in accounts mode, Settings. Then the signed-in
+  actor, whose account menu holds Your account, the **View** control
+  (Standard, Developer, Agent; 5.8) and Sign out.
   `main.tsx` passes each object's `class` to the shell.
 - It collapses to an icon rail with its toggle or ⌘\, remembered in
   `localStorage`; the rail keeps a divider between the groups. Below
@@ -579,6 +580,9 @@ Three areas:
     connects it, with the record that owns the field. Developer view also
     shows the field API name. Load more
     appends the next page to the same groups.
+  - _Agent context_ (`?tab=context`, entity records, Agent view only):
+    `GET /v1/records/:id/context`, the pack `get_context` returns, in the
+    order the agent receives it (5.8).
   - _Claims_ (events): `GET /v1/events/:id/claims?own=false`. Values on
     records and facts that cite the event, not the values it logged itself.
 
@@ -700,12 +704,16 @@ changes are waiting:
 A workspace with no template applied shows the template list
 (`GET /v1/templates`) and an Apply button for `schema:write` keys.
 
-### 5.8 Developer view
+### 5.8 Developer view and Agent view
 
-A **Developer view** switch in the account menu, remembered per browser in
-`localStorage` (`retainer:developer-view:v1`; refused storage leaves it off
-and the switch still works for the visit), available to every actor. It
-changes what is displayed, never what is sent. When on:
+A **View** control in the account menu with three levels, **Standard**,
+**Developer** and **Agent**, each adding to the one before
+([agent-view.md](docs/specs/agent-view.md)). Remembered per browser in
+`localStorage` (`retainer:view-level:v1`, holding `off`, `developer` or
+`agent`; refused storage leaves it at Standard and the control still works
+for the visit), available to every actor. It changes what is displayed,
+never what is sent. `useDeveloper()` is true at Developer and Agent,
+`useAgentView()` at Agent only. At Developer (and Agent):
 
 - Object and field labels show their API names beside them: list column
   headers and the list's title, the filter and sort menus, the record's
@@ -722,6 +730,20 @@ changes what is displayed, never what is sent. When on:
 - A **JSON** tab on record and event pages shows the REST response as
   returned (`?tab=json`; without developer view the address falls back to
   the first tab).
+
+At Agent, everything above plus what Retainer tells agents:
+
+- Field descriptions under the field's label on records, events and the
+  create form; in the API name's tooltip in list column headers and the
+  filter and sort menus; the object's description under its list title.
+- An **Agent context** tab after JSON on entity records and their side
+  sheet (`?tab=context`): the `get_context` pack with its size, what was
+  left out, a 2,000 / 8,000 / 16,000 budget picker and a raw JSON toggle.
+- **What agents are told** (`/app/briefing`, Agent briefing in the
+  sidebar after Schema; the address works at any level): the connection
+  instructions, workspace and personal memory as read at the start, the
+  schema with descriptions in front, objects and fields with no
+  description, the tools and the guides. Read only.
 
 ### 5.9 Extensions — `/app/extensions`
 
@@ -1014,6 +1036,7 @@ this:
 | `groupBy` on the aggregate route                          | The same calculations per option of a single-select field, plus the overall result                                              | 5.3b      |
 | Saved views: `/v1/objects/:object/views`, `/v1/views/:id` | List, create, read, update and delete views (`ARCHITECTURE.md` 1.4)                                                             | 5.3b      |
 | `POST /v1/events/query`                                   | Events of every visible event type, newest first, filtered by `type`, `channel`, `occurredAt` and `linked`, cursor-paginated    | 5.3c      |
+| `GET /v1/agent-briefing`                                  | The MCP server instructions, its tools as `tools/list` returns them for the caller, and the guides `get_guide` serves            | 5.8       |
 | Participant and `about` labels on event queries           | `include=relationReferences` on per-type and cross-type event queries also names participants, candidates and `about` records   | 5.3, 5.3c |
 
 The v1 read contracts are:

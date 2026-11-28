@@ -1,15 +1,10 @@
-import { type AuthInfo, createMcpHandler } from '@modelcontextprotocol/server';
+import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { Context, Hono, MiddlewareHandler } from 'hono';
 import { authenticate } from '../auth/middleware.js';
 import { type OAuthSettings, pinnedOAuthSettings } from '../auth/oauth-token.js';
-import type { Caller } from '../caller.js';
 import type { Sql } from '../db/client.js';
-import type { ExtensionCatalog } from '../extensions/catalog.js';
-import type { FileStorage } from '../file-storage/contract.js';
 import type { AppEnv } from '../http/response.js';
-import { log } from '../log.js';
-import type { RoutineConfig } from '../routines/capabilities.js';
-import { createMcpServer } from './server.js';
+import { type InProcessMcpOptions, mcpHandler } from './in-process.js';
 
 /**
  * The address pinned to one workspace, as a route (accounts spec 4.7). Only a
@@ -30,28 +25,14 @@ export const PINNED_MCP_ROUTE =
 export function mcpRoute(
   app: Hono<AppEnv>,
   sql: Sql,
-  options: {
-    extensionCatalog?: ExtensionCatalog | undefined;
-    extensionActivation?: ReadonlySet<string> | undefined;
-    fileStorage?: FileStorage | undefined;
-    fileQuota?: number | undefined;
-    routines?: RoutineConfig | undefined;
-    publicOrigin?: string | undefined;
+  options: InProcessMcpOptions & {
     /** Accepts MCP OAuth access tokens too (accounts spec 4.7). */
     oauth?: OAuthSettings | undefined;
     rateLimit: MiddlewareHandler<AppEnv>;
   },
 ) {
   const { publicOrigin, oauth } = options;
-  const handler = createMcpHandler(
-    ({ authInfo }) => {
-      const caller = authInfo?.extra?.caller as Caller | undefined;
-      // Unreachable behind authenticate(); fail closed if that ever changes.
-      if (!caller) throw new Error('MCP request reached the server without a caller');
-      return createMcpServer(sql, caller, options.extensionCatalog, options);
-    },
-    { onerror: (error) => log.error(error) },
-  );
+  const handler = mcpHandler(sql, options);
   const serve = (c: Context<AppEnv>) => {
     const caller = c.get('caller');
     const authInfo: AuthInfo = {

@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { objectIcon, Shell, type ShellApp } from './shell.js';
+import type { ViewLevel } from './view-level.js';
 
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),
@@ -14,7 +15,13 @@ vi.mock('@tanstack/react-router', async (original) => ({
 
 function shell(
   collapsed: boolean,
-  options: { accounts?: boolean; routines?: boolean; apps?: ShellApp[] } = {},
+  options: {
+    accounts?: boolean;
+    routines?: boolean;
+    apps?: ShellApp[];
+    viewLevel?: ViewLevel;
+    onViewLevelChange?: (level: ViewLevel) => void;
+  } = {},
 ) {
   localStorage.setItem('retainer:sidebar:collapsed', collapsed ? '1' : '0');
   render(
@@ -37,8 +44,8 @@ function shell(
         { name: 'person', label: 'People', class: 'entity' },
         { name: 'note', label: 'Notes', class: 'event' },
       ]}
-      developer={false}
-      onDeveloperChange={vi.fn()}
+      viewLevel={options.viewLevel ?? 'off'}
+      onViewLevelChange={options.onViewLevelChange ?? vi.fn()}
       onSignOut={vi.fn()}
       onSearch={vi.fn()}
     >
@@ -46,6 +53,24 @@ function shell(
     </Shell>,
   );
 }
+
+describe('the View control', () => {
+  it('links the agent briefing after Schema at Agent level only', () => {
+    shell(false, { viewLevel: 'developer' });
+    expect(screen.queryByRole('link', { name: 'Agent briefing' })).toBeNull();
+    cleanup();
+    shell(false, { viewLevel: 'agent' });
+    const workspace = screen.getByRole('group', { name: 'Workspace' });
+    const names = within(workspace)
+      .getAllByRole('link')
+      .map((l) => l.textContent);
+    expect(names.slice(names.indexOf('Schema'), names.indexOf('Schema') + 2)).toEqual([
+      'Schema',
+      'Agent briefing',
+    ]);
+    expect(screen.getByText('User · Agent view')).toBeTruthy();
+  });
+});
 
 describe('the sidebar', () => {
   it('places Home above the record and event groups', () => {

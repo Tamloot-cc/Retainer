@@ -3,6 +3,7 @@ import type { ExtensionAppLink, SidebarIcon } from '@retainer/extension';
 import { Link } from '@tanstack/react-router';
 import {
   AppWindow,
+  BotMessageSquare,
   CalendarDays,
   ChartColumn,
   ChevronDown,
@@ -32,8 +33,9 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { BrandMark } from './brand.js';
 import { type CategoryColor, objectColor } from './colors.js';
 import { cn, Kbd, NavigationContext } from './core.js';
-import { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
+import { Menu, MenuAction, MenuChoice, MenuChoices, MenuHeading, MenuSeparator } from './menu.js';
 import { objectIcon } from './object-icons.js';
+import { asViewLevel, VIEW_LABELS, VIEW_LEVELS, type ViewLevel } from './view-level.js';
 
 const COLLAPSED_KEY = 'retainer:sidebar:collapsed';
 const WIDTH_KEY = 'retainer:sidebar:width';
@@ -82,9 +84,9 @@ type ShellProps = {
   agentAvailable?: boolean;
   /** Apps installed in the workspace that people open signed in, each on its own site. */
   apps?: ShellApp[];
-  /** Developer view, switched from the account menu. */
-  developer: boolean;
-  onDeveloperChange: (on: boolean) => void;
+  /** The View control in the account menu: Standard, Developer or Agent. */
+  viewLevel: ViewLevel;
+  onViewLevelChange: (level: ViewLevel) => void;
   onSignOut: () => void;
   onSearch: () => void;
   children: ReactNode;
@@ -269,8 +271,8 @@ function Sidebar({
   routinesAvailable,
   agentAvailable,
   apps,
-  developer,
-  onDeveloperChange,
+  viewLevel,
+  onViewLevelChange,
   onSignOut,
   onSearch,
   collapsed,
@@ -474,6 +476,15 @@ function Sidebar({
             collapsed={collapsed}
             onNavigate={onNavigate}
           />
+          {viewLevel === 'agent' ? (
+            <NavLink
+              to="/briefing"
+              icon={BotMessageSquare}
+              label="Agent briefing"
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+          ) : null}
           {accounts ? (
             <NavLink
               to="/settings"
@@ -516,7 +527,7 @@ function Sidebar({
                     <span className="block truncate text-sm font-medium">{user.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {user.detail}
-                      {developer ? ' · Developer view' : ''}
+                      {viewLevel === 'off' ? '' : ` · ${VIEW_LABELS[viewLevel]} view`}
                     </span>
                   </span>
                   <ChevronDown
@@ -538,9 +549,20 @@ function Sidebar({
               <MenuSeparator />
             </>
           ) : null}
-          <MenuCheck checked={developer} onChange={onDeveloperChange}>
-            Developer view
-          </MenuCheck>
+          <MenuHeading>View</MenuHeading>
+          <MenuChoices
+            value={viewLevel}
+            onChange={(level) => {
+              const next = asViewLevel(level);
+              if (next) onViewLevelChange(next);
+            }}
+          >
+            {VIEW_LEVELS.map((level) => (
+              <MenuChoice key={level} value={level}>
+                {VIEW_LABELS[level]}
+              </MenuChoice>
+            ))}
+          </MenuChoices>
           <MenuSeparator />
           <MenuAction onSelect={onSignOut}>
             <LogOut size={14} />
@@ -618,6 +640,7 @@ function NavLink({
     | '/review'
     | '/o/$object'
     | '/schema'
+    | '/briefing'
     | '/activity'
     | '/extensions'
     | '/routines'

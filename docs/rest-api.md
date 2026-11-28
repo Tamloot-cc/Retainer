@@ -157,6 +157,7 @@ The [generated API reference](api/index.mdx) has request and response schemas an
 | `GET /health`                                       | none             | Server version and database status (503 when the database is down)   |
 | `GET /v1/me`                                        | any              | The caller's workspace, actor and scopes                             |
 | `GET /v1/schema`                                    | `read`           | The workspace schema                                                 |
+| `GET /v1/agent-briefing`                            | `read`           | What agents are told: MCP instructions, tools and guides             |
 | `POST /v1/schema/changes`                           | `schema:write`   | Request a schema change (applied, or proposed for approval)          |
 | `GET /v1/schema/changes` · `/:id`                   | `read`           | Change history, or one change                                        |
 | `POST /v1/schema/changes/:id/approve` · `/reject`   | `admin`, user    | Decide a proposed change                                             |

@@ -21,6 +21,7 @@ import {
   Button,
   CopyableCell,
   DataGrid,
+  DescriptionLine,
   EditableCell,
   Empty,
   FilterChip,
@@ -37,7 +38,7 @@ import {
   Toolbar,
 } from '../../ui/index.js';
 import { useRememberCommand } from '../command-recents.js';
-import { useApiName } from '../developer.js';
+import { useAgentDescription, useApiName } from '../developer.js';
 import {
   DEFAULT_EVENT_SORT,
   eventListObject,
@@ -116,6 +117,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const { session, schema } = useWorkspace();
   const { search, setSearch } = useView();
   const apiName = useApiName();
+  const agentDescription = useAgentDescription();
   // An event type lists its built-in columns and links beside its fields (5.3).
   const object = useMemo(() => eventListObject(schemaObject, schema), [schemaObject, schema]);
   useRememberCommand('object', object.nameSingular);
@@ -417,6 +419,10 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
         )
       }
     >
+      {/* Agent view: what agents read about this object, under the list title. */}
+      <DescriptionLine className="shrink-0 border-b border-border px-3 py-2 md:px-5">
+        {agentDescription(schemaObject.description)}
+      </DescriptionLine>
       {selectedIds.length && kind === 'table' ? (
         <Toolbar
           end={

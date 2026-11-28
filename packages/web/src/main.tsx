@@ -40,7 +40,12 @@ import {
 import { UpdatingBanner } from './api/maintenance.js';
 import { SignIn } from './auth/sign-in.js';
 import { CommandPalette } from './routes/command.js';
-import { DeveloperContext, readDeveloperView, writeDeveloperView } from './routes/developer.js';
+import {
+  DeveloperContext,
+  readViewLevel,
+  type ViewLevel,
+  writeViewLevel,
+} from './routes/developer.js';
 import { appLinksKey } from './routes/extensions/model.js';
 import type { ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
@@ -61,16 +66,16 @@ function Layout() {
   const [creating, setCreating] = useState(false);
   const [command, setCommand] = useState(false),
     [report, setReport] = useState<ReactNode>(null),
-    [developer, setDeveloper] = useState(() => readDeveloperView(() => localStorage));
+    [viewLevel, setViewLevel] = useState(() => readViewLevel(() => localStorage));
   const developerView = useMemo(
     () => ({
-      on: developer,
-      set: (on: boolean) => {
-        setDeveloper(on);
-        writeDeveloperView(() => localStorage, on);
+      level: viewLevel,
+      set: (level: ViewLevel) => {
+        setViewLevel(level);
+        writeViewLevel(() => localStorage, level);
       },
     }),
-    [developer],
+    [viewLevel],
   );
   const client = useQueryClient();
   const schema = useQuery({
@@ -191,8 +196,8 @@ function Layout() {
               label: o.labelPlural,
               class: o.class,
             }))}
-            developer={developer}
-            onDeveloperChange={developerView.set}
+            viewLevel={viewLevel}
+            onViewLevelChange={developerView.set}
             onSignOut={signOut}
             onSearch={() => setCommand(true)}
           >
@@ -366,6 +371,11 @@ const routeTree = rootRoute.addChildren([
     getParentRoute: () => rootRoute,
     path: '/schema',
     component: lazyRouteComponent(() => import('./routes/schema/schema.js'), 'SchemaPage'),
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/briefing',
+    component: lazyRouteComponent(() => import('./routes/briefing/briefing.js'), 'BriefingPage'),
   }),
   createRoute({
     getParentRoute: () => rootRoute,

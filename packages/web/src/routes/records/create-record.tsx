@@ -10,6 +10,7 @@ import { cn, focusFirst } from '../../ui/core.js';
 import {
   ApiName,
   Button,
+  DescriptionLine,
   Dialog,
   Form,
   FormField,
@@ -18,7 +19,7 @@ import {
   RecordLink,
   Row,
 } from '../../ui/index.js';
-import { useApiName } from '../developer.js';
+import { useAgentDescription, useApiName } from '../developer.js';
 import { CreateProperty, hasPropertyPicker } from './create-property.js';
 import {
   creatableFields,
@@ -45,7 +46,8 @@ export function CreateRecordDialog({
 }) {
   const { session } = useWorkspace(),
     client = useQueryClient(),
-    apiName = useApiName();
+    apiName = useApiName(),
+    agentDescription = useAgentDescription();
   const list = useMemo(() => creatableFields(object), [object]);
   const [draft, setDraft] = useState(() => initialDraft(list)),
     [openProperty, setOpenProperty] = useState<string | null>(null),
@@ -130,6 +132,7 @@ export function CreateRecordDialog({
       field,
       value: draft[field.name] ?? null,
       apiName: apiName(field.name),
+      descriptionLine: agentDescription(field.description),
       error: errors[field.name] ? `${field.label} ${errors[field.name]}` : undefined,
       onChange: (value: unknown) => {
         setDraft((previous) => ({ ...previous, [field.name]: value }));
@@ -276,12 +279,14 @@ export function CreateRecordDialog({
 function DraftField({
   writing,
   apiName,
+  descriptionLine,
   error,
   ref,
   ...input
 }: InputProps & {
   writing?: 'title' | 'description';
   apiName?: string;
+  descriptionLine?: string | undefined;
   error?: string;
   ref?: Ref<HTMLDivElement>;
 }) {
@@ -316,6 +321,7 @@ function DraftField({
           )}
         />
         {apiName ? <ApiName>{apiName}</ApiName> : null}
+        <DescriptionLine className="mt-1">{descriptionLine}</DescriptionLine>
         {error ? (
           <p id={errorId} className="mt-1 text-xs text-destructive">
             {error}
@@ -329,6 +335,7 @@ function DraftField({
       ref={ref}
       label={field.label}
       apiName={apiName}
+      descriptionLine={descriptionLine}
       hint={field.isNullable ? undefined : 'Required'}
       error={error}
       errorId={errorId}

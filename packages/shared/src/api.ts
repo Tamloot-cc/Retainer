@@ -889,6 +889,16 @@ export type ProfileContextPack = {
   omitted: { facts: number };
   tokenEstimate: number;
 };
+/**
+ * `GET /v1/agent-briefing` (agent view spec §7): what Retainer tells every
+ * agent that connects. The instructions the MCP server announces, its tools as
+ * `tools/list` returns them for this caller, and the guides `get_guide` serves.
+ */
+export type AgentBriefing = {
+  instructions: string;
+  tools: { name: string; description: string; inputSchema: Record<string, unknown> }[];
+  guides: { name: string; description: string; markdown: string }[];
+};
 /** `POST /v1/records/:id/merge` input (4.2). */
 export type MergeInput = {
   /** The record merged into the one in the path; it is soft-deleted. */

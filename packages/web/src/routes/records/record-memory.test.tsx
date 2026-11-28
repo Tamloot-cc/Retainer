@@ -93,6 +93,14 @@ describe('which tabs a record has', () => {
     expect(labels(memoryTabs({ ...entity, developer: true })).at(-1)).toBe('JSON');
   });
 
+  it('adds Agent context after JSON in agent view, for entity records only', () => {
+    const agent = { ...entity, developer: true, agent: true };
+    expect(labels(memoryTabs(agent)).slice(-2)).toEqual(['JSON', 'Agent context']);
+    expect(memoryTabs(agent).at(-1)?.value).toBe('context');
+    expect(labels(memoryTabs({ ...agent, isEvent: true }))).not.toContain('Agent context');
+    expect(labels(memoryTabs({ ...entity, developer: true }))).not.toContain('Agent context');
+  });
+
   it('keeps Facts on an event only when facts are stored on it, so none become unreachable', () => {
     const event = { ...entity, isEvent: true };
     const counts = { comments: 0, facts: 2, linked: 0, claims: 0 };
@@ -168,7 +176,9 @@ describe('MemoryTabs', () => {
             schema,
           }}
         >
-          <DeveloperContext.Provider value={{ on: developer, set: vi.fn() }}>
+          <DeveloperContext.Provider
+            value={{ level: developer ? 'developer' : 'off', set: vi.fn() }}
+          >
             <MemoryTabs record={r} nav={{ tab, fact, set }} />
           </DeveloperContext.Provider>
         </WorkspaceContext.Provider>

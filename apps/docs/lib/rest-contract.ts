@@ -225,6 +225,23 @@ endpoint({
   description: 'Find object and field API names, value formats, and built-in memory tools.',
   response: { schema: ref('SchemaDescription') },
 });
+endpoint({
+  tag: 'Schema',
+  method: 'get',
+  path: '/v1/agent-briefing',
+  operationId: 'get-agent-briefing',
+  summary: 'Read what agents are told',
+  access: 'read',
+  description:
+    'Get the MCP server instructions, the tools tools/list returns for this caller, and the guides get_guide serves.',
+  response: {
+    schema: object({
+      instructions: text,
+      tools: array(object({ name: text, description: text, inputSchema: map() })),
+      guides: array(object({ name: text, description: text, markdown: text })),
+    }),
+  },
+});
 
 endpoint({
   tag: 'Records',

@@ -19,7 +19,7 @@ import {
 } from 'react';
 import { BrandMark } from './brand.js';
 import { Badge, cn, isPlainClick, NavigationContext, ROW_STATE } from './core.js';
-import { ApiName } from './layout.js';
+import { ApiName, DescriptionLine } from './layout.js';
 import { CYCLE, LogoMark } from './logo-mark.js';
 import { Tooltip } from './tooltip.js';
 
@@ -272,6 +272,7 @@ export function Splash({ label }: { label: string }) {
 export function FormField({
   label,
   apiName,
+  descriptionLine,
   hint,
   error,
   errorId,
@@ -282,6 +283,8 @@ export function FormField({
   label: string;
   /** Developer view: the API name, shown beside the label. */
   apiName?: string;
+  /** Agent view: the description, as a muted line under the label. */
+  descriptionLine?: string | undefined;
   hint?: string;
   error?: string;
   errorId?: string;
@@ -298,6 +301,7 @@ export function FormField({
         </span>
         {hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
       </div>
+      <DescriptionLine className="-mt-1">{descriptionLine}</DescriptionLine>
       {children}
       {error ? (
         <span id={errorId} className="text-xs font-normal text-destructive">
@@ -887,6 +891,7 @@ export {
   Code,
   CodeBlock,
   CopyButton,
+  DescriptionLine,
   EntityHeader,
   JsonBlock,
   NavItem,
@@ -906,7 +911,14 @@ export {
   MappingList,
 } from './mapping.js';
 export { Markdown } from './markdown.js';
-export { Menu, MenuAction, MenuCheck, MenuChoice, MenuChoices, MenuSeparator } from './menu.js';
+export {
+  Menu,
+  MenuAction,
+  MenuChoice,
+  MenuChoices,
+  MenuHeading,
+  MenuSeparator,
+} from './menu.js';
 export {
   IconLabel,
   OptionList,
