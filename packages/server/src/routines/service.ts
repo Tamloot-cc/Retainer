@@ -423,8 +423,7 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const rows = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
-          ${approverGone(tx)}
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
         from routines r order by r.created_at desc,r.id`;
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
       const versions = await this.versions(
@@ -454,8 +453,7 @@ export class Routines {
     return this.tx(caller, async (tx) => {
       const [row] = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
-          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
-          ${approverGone(tx)}
+          (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals
         from routines r where r.id=${id}`;
       if (!row) throw notFound('routine');
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
@@ -673,6 +671,7 @@ export class Routines {
         );
       // Whoever resumes must not become the approver of code they never saw:
       // an approver who left means approving again, however it paused (#167).
+      // The stored `approver_left` usually refuses above; this is the safety net.
       if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
         throw new AppError(
           409,
@@ -1029,8 +1028,6 @@ export type RoutineRow = {
   updated_at: Date;
   held?: number;
   proposals?: number;
-  /** The active version's approver is no longer an admin (routines spec §5.3). */
-  approver_gone?: boolean;
 };
 export type VersionRow = {
   id: string;
@@ -1130,18 +1127,6 @@ function presentVersion(version: VersionRow, names: FactsNames) {
   };
 }
 
-/** Pause reasons more telling than `approver_left`: what must change before it runs again. */
-const NEEDS_REPAIR = ['check_failed', 'tool_changed', 'schedule_too_large'];
-
-/**
- * Whether a stopped routine's approver is no longer an admin (#167), as the
- * `approver_gone` column; a running or archived routine never asks. The
- * query aliases `routines` as `r`.
- */
-const approverGone = (tx: Tx) => tx`case when r.status not in ('active','archived') then
-  (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
-    from routine_versions a where a.id=r.active_version_id) end as approver_gone`;
-
 function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: Capabilities) {
   const names = factsNames(caps);
   return {
@@ -1149,16 +1134,8 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     name: row.name,
     description: row.description,
     status: row.status,
-    // A routine paused for another reason whose approver has since left can
-    // only be approved again, never simply resumed (#167).
-    // A pause that says more (the code must change, or the tool did) keeps its reason.
-    pausedReason:
-      row.status !== 'active' &&
-      row.status !== 'archived' &&
-      row.approver_gone &&
-      !NEEDS_REPAIR.includes(row.paused_reason ?? '')
-        ? 'approver_left'
-        : row.paused_reason,
+    // Stored as `approver_left` once a stopped routine's approver loses admin (#167).
+    pausedReason: row.paused_reason,
     ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
     pausedAt: row.paused_at?.toISOString() ?? null,
     // A paused routine fires nothing; resuming sets its next time afresh.

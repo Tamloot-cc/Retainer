@@ -627,7 +627,17 @@ history are how a person catches that.
   can translate it again against the current workspace, and a person approves
   the repaired version. A rewrite never goes live without approval.
 - If the approver leaves the workspace or loses the admin role, the routine
-  pauses until another admin approves it.
+  pauses until another admin approves it. An active routine pauses with
+  `approver_left` at its next run. One that is already paused or needs
+  attention is stored as `approver_left` in the same transaction as the
+  change that removed admin: an organization or workspace role change, a
+  removal, a deleted account, a revoked or narrowed API key, or the workspace
+  moving to another organization. Database triggers record it, so every path
+  and cascade is covered and every reader (web app, MCP, CLI, runtime) sees
+  the same reason. A routine that stops after its approver left is stored as
+  `approver_left` too. A reason that says what must change before it runs
+  again (`check_failed`, `tool_changed`, `schedule_too_large`) outranks
+  `approver_left` and is kept; approving a repaired version clears either.
 - **Changing version.** A run is pinned to the version that was active when
   it was queued. When a new version is approved, runs already started finish
   on their own version, within the run's time limit. Runs not yet started,
@@ -1503,10 +1513,11 @@ they left open:
 - **Re-approval creates a version.** Approving an already approved version
   records a new version and preserves the prior approval. Resume never
   approves: when the active version's approver is no longer an admin,
-  however the routine paused, `resume` refuses with `approval_required`
-  and the routine reads as `approver_left` until an admin approves it on
-  the review screen (#167). Only the active version's runs
-  can change the Routine's health.
+  however the routine paused, `resume` refuses with `approval_required`.
+  The stored pause reason is `approver_left` (§5.3), unless a repair
+  reason outranks it, until an admin approves it on the review screen,
+  which clears it (#167). Only the active version's runs can change the
+  Routine's health.
 - **The approver is checked at every effect.** An approver who stops being
   an admin refuses the run's next effect as `routine_paused` and cancels a
   tool job it has not started, as a test run's initiator does; the next
