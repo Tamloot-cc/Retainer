@@ -5,6 +5,7 @@ import {
   draftState,
   matchingProposal,
   parseRoutineFence,
+  previewAge,
   proposeBody,
 } from './routine-draft.js';
 
@@ -135,5 +136,20 @@ describe('a reopened card', () => {
     );
     expect(countText({ kind: 'manual', value: null })).toBeNull();
     expect(countText(null)).toBeNull();
+  });
+});
+
+describe('a stored dry run', () => {
+  const now = Date.parse('2026-11-28T12:00:00Z');
+  const at = (days: number) => new Date(now - days * 86_400_000).toISOString();
+
+  it('is cleared only once its newest run is past retention', () => {
+    expect(previewAge([{ finishedAt: at(8) }, { finishedAt: at(6) }], now).cleared).toBe(false);
+    expect(previewAge([{ finishedAt: at(9) }, { finishedAt: at(8) }], now).cleared).toBe(true);
+    expect(previewAge([{ finishedAt: at(9) }, { finishedAt: null }], now)).toMatchObject({
+      cleared: false,
+      age: 0,
+    });
+    expect(previewAge([], now)).toMatchObject({ cleared: false, newest: undefined });
   });
 });

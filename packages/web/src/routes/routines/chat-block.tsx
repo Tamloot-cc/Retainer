@@ -11,6 +11,7 @@ import {
   countText,
   draftState,
   parseRoutineFence,
+  previewAge,
   proposalText,
   proposeBody,
 } from './routine-draft.js';
@@ -19,8 +20,6 @@ import { Report } from './version.js';
 /** Refusals that mean the draft changed state: the card reads it again (§5.2). */
 const STALE = new Set(['invalid_routine', 'not_validated', 'routine_archived']);
 const DAY = 86_400_000;
-/** Stored results are cleared 7 days after a run ends (routines spec §6.6). */
-const KEPT_DAYS = 7;
 
 /**
  * A routine draft in the chat (routines-in-chat spec §5): the agent's words
@@ -100,10 +99,8 @@ export default function RoutineChatBlock({
   const proposed = state?.kind === 'proposed' ? state.proposal : undefined;
   const count = data ? countText(data.count) : null;
   const runs = data?.preview?.available ? data.preview.runs : [];
-  const ended = runs.map((run) => (run.finishedAt ? Date.parse(run.finishedAt) : Date.now()));
-  const age = ended.length ? Date.now() - Math.min(...ended) : 0;
-  const cleared = age > KEPT_DAYS * DAY;
-  const oldest = ended.length ? new Date(Math.min(...ended)).toISOString() : undefined;
+  const { age, cleared, newest } = previewAge(runs);
+  const lastRan = newest === undefined ? undefined : new Date(newest).toISOString();
   return (
     <DraftCard
       notice={
@@ -182,9 +179,9 @@ export default function RoutineChatBlock({
             {count ? <Muted small>{count}</Muted> : null}
             {data.preview?.available && !cleared ? (
               <>
-                {age > DAY && oldest ? (
+                {age > DAY && lastRan ? (
                   <Muted small>
-                    It ran <RelativeTime at={oldest} />.
+                    It last ran <RelativeTime at={lastRan} />.
                   </Muted>
                 ) : null}
                 <DryRunList runs={data.preview.runs} done={data.preview.done} />

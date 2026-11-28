@@ -147,3 +147,19 @@ export function proposalText(state: RoutineDraft['proposals'][number]['state']) 
       return 'Proposed, waiting for an admin. Nothing runs until an admin approves it.';
   }
 }
+
+const DAY_MS = 86_400_000;
+/** Stored results are cleared 7 days after a run ends (routines spec §6.6). */
+export const KEPT_DAYS = 7;
+
+/**
+ * How old a stored dry run is. Retention clears each run 7 days after it
+ * finished, so the dry run is gone only once its newest run is; a run still
+ * going counts as now.
+ */
+export function previewAge(runs: readonly { finishedAt: string | null }[], now = Date.now()) {
+  const ended = runs.map((run) => (run.finishedAt ? Date.parse(run.finishedAt) : now));
+  const newest = ended.length ? Math.max(...ended) : undefined;
+  const age = newest === undefined ? 0 : now - newest;
+  return { age, newest, cleared: age > KEPT_DAYS * DAY_MS };
+}
