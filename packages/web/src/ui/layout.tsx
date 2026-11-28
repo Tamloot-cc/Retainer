@@ -201,6 +201,16 @@ export function DescriptionLine({
   ) : null;
 }
 
+/** Copies `text` to the clipboard; false when the browser refuses. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A small button that copies `value` to the clipboard and says so. */
 export function CopyButton({
   value,
@@ -217,12 +227,7 @@ export function CopyButton({
   const reset = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(reset.current), []);
   async function copy() {
-    let message = 'Copied';
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      message = 'Copy failed';
-    }
+    const message = (await copyText(value)) ? 'Copied' : 'Copy failed';
     clearTimeout(reset.current);
     setStatus(message);
     reset.current = setTimeout(() => setStatus(''), 1500);

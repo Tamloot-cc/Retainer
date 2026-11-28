@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { cn, PANEL, PLACEMENT } from './core.js';
 
@@ -128,6 +129,38 @@ const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditabl
 const LONG_PRESS = 600;
 
 /**
+ * Where a menu at a point is open, kept outside React state so opening and
+ * closing it re-renders only the menu (`usePointMenuOpening`), not the
+ * surface with every row on it.
+ */
+type Opening<T> = MenuOpening<T> & { origin: Element };
+export type PointMenuStore<T> = {
+  get: () => Opening<T> | null;
+  /** Opens the menu, or closes it with null. */
+  set: (opening: Opening<T> | null) => void;
+  subscribe: (listener: () => void) => () => void;
+};
+function pointMenuStore<T>(): PointMenuStore<T> {
+  let opening: Opening<T> | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => opening,
+    set: (next) => {
+      opening = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+/** The opening in `store`, re-rendering the caller when it opens or closes. */
+export function usePointMenuOpening<T>(store: PointMenuStore<T>) {
+  return useSyncExternalStore(store.subscribe, store.get, store.get);
+}
+
+/**
  * Opens a menu at the pointer for what `find` reads off the element
  * right-clicked: spread `handlers` on the surface. Where `find` gives
  * nothing, and in inputs, the browser's own menu opens. On touch a long
@@ -138,24 +171,27 @@ export function usePointMenu<T>(
   /** Called as the menu opens, e.g. to select what it acts on. */
   onOpen?: (value: T) => void,
 ) {
-  const [opening, setOpening] = useState<(MenuOpening<T> & { origin: Element }) | null>(null);
+  const [store] = useState(() => pointMenuStore<T>());
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
   const findRef = useRef({ find, onOpen });
   findRef.current = { find, onOpen };
-  const open = useCallback((target: EventTarget | null, x: number, y: number) => {
-    if (!(target instanceof Element) || target.closest(EDITABLE)) return false;
-    const value = findRef.current.find(target);
-    if (value === undefined) return false;
-    findRef.current.onOpen?.(value);
-    // A menu opened from the keyboard has no pointer: open it at the element.
-    if (!x && !y) {
-      const box = target.getBoundingClientRect();
-      x = box.left + Math.min(box.width, 24);
-      y = box.bottom;
-    }
-    setOpening({ x, y, value, origin: target });
-    return true;
-  }, []);
+  const open = useCallback(
+    (target: EventTarget | null, x: number, y: number) => {
+      if (!(target instanceof Element) || target.closest(EDITABLE)) return false;
+      const value = findRef.current.find(target);
+      if (value === undefined) return false;
+      findRef.current.onOpen?.(value);
+      // A menu opened from the keyboard has no pointer: open it at the element.
+      if (!x && !y) {
+        const box = target.getBoundingClientRect();
+        x = box.left + Math.min(box.width, 24);
+        y = box.bottom;
+      }
+      store.set({ x, y, value, origin: target });
+      return true;
+    },
+    [store],
+  );
   const cancel = useCallback(() => {
     if (press.current) window.clearTimeout(press.current.timer);
   }, []);
@@ -193,8 +229,7 @@ export function usePointMenu<T>(
     }),
     [open, cancel],
   );
-  const close = useCallback(() => setOpening(null), []);
-  return { opening, handlers, close };
+  return { store, handlers };
 }
 
 /**

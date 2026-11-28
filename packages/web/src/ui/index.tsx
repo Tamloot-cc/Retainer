@@ -891,6 +891,7 @@ export {
   Code,
   CodeBlock,
   CopyButton,
+  copyText,
   DescriptionLine,
   EntityHeader,
   JsonBlock,
@@ -921,7 +922,9 @@ export {
   MenuSeparator,
   PointMenu,
   type PointMenuOpening,
+  type PointMenuStore,
   usePointMenu,
+  usePointMenuOpening,
 } from './menu.js';
 export {
   IconLabel,

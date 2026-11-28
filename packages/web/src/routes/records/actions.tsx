@@ -21,15 +21,21 @@ import { Fragment, type ReactNode, useCallback, useMemo, useState } from 'react'
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import {
   Button,
+  copyText,
   Menu,
   MenuAction,
   MenuSeparator,
   PointMenu,
-  type PointMenuOpening,
+  type PointMenuStore,
   usePointMenu,
+  usePointMenuOpening,
 } from '../../ui/index.js';
 import { isEventColumn } from '../events/event-list.js';
-import { ExtensionRunWatch, useExtensionButtons } from '../extensions/record-buttons.js';
+import {
+  ExtensionRunWatch,
+  startExtensionRun,
+  useExtensionButtons,
+} from '../extensions/record-buttons.js';
 import { useRoutineButtons, useRunRoutineButton } from '../routines/record-buttons.js';
 import { objectByName, recordTitle, useReport } from '../state.js';
 import { MergeDialog, MergePicker } from './merge.js';
@@ -237,6 +243,7 @@ export function recordActions(
 export function useRecordActions(target: ActionTarget | null, host: ActionHost): RecordAction[] {
   const { session } = useWorkspace();
   const router = useRouter();
+  const report = useReport();
   const objectName = target?.object?.nameSingular ?? target?.records[0]?.object ?? '';
   const routineButtons = useRoutineButtons(objectName, !!target);
   const extensionButtons = useExtensionButtons(objectName, !!target);
@@ -254,10 +261,13 @@ export function useRecordActions(target: ActionTarget | null, host: ActionHost):
         });
         return new URL(location.publicHref, window.location.origin).href;
       },
-      copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
+      copy: (text) =>
+        void copyText(text).then((copied) =>
+          report(copied ? 'Copied.' : 'Couldn’t copy: the browser blocked the clipboard.'),
+        ),
       openTab: (address) => window.open(address, '_blank', 'noopener'),
     });
-  }, [target, host, session, routineButtons, extensionButtons, router]);
+  }, [target, host, session, routineButtons, extensionButtons, router, report]);
 }
 
 /** Actions as menu items, a line between groups; an empty group leaves no line. */
@@ -311,16 +321,13 @@ export function useActionHost({
       openRecord,
       runRoutine: (button, recordIds) => runRoutine({ button, recordIds }),
       runExtension: (button, recordId) => {
-        api.runExtensionRecordButton(button, recordId).then(
-          ({ id }) => {
-            report(`Started “${button.label}” on this record.`);
+        void startExtensionRun(button, recordId, report).then((id) => {
+          if (id)
             setRuns((list) => [
               ...list,
               { key: `${button.installationId}:${id}`, button, runId: id },
             ]);
-          },
-          (error: Error) => report(`Couldn’t start “${button.label}”. ${error.message}`),
-        );
+        });
       },
     }),
     [openRecord, runRoutine, report],
@@ -382,16 +389,17 @@ export function useActionHost({
 
 /** The right-click menu for records, at the point `usePointMenu` opened it. */
 function RecordContextMenu({
-  opening,
-  target,
+  store,
+  targetFor,
   host,
-  onClose,
 }: {
-  opening: PointMenuOpening | null;
-  target: ActionTarget | null;
+  store: PointMenuStore<MenuSpot>;
+  targetFor: (spot: MenuSpot) => ActionTarget | null;
   host: ActionHost;
-  onClose: () => void;
 }) {
+  const opening = usePointMenuOpening(store);
+  const spot = opening?.value;
+  const target = useMemo(() => (spot ? targetFor(spot) : null), [spot, targetFor]);
   if (!opening || !target?.records.length) return null;
   const [first] = target.records;
   const label =
@@ -399,7 +407,7 @@ function RecordContextMenu({
       ? `Actions for ${recordTitle(first)}`
       : `Actions for ${count(target.records.length, target.object)}`;
   return (
-    <PointMenu opening={opening} label={label} onClose={onClose}>
+    <PointMenu opening={opening} label={label} onClose={() => store.set(null)}>
       <ContextMenuItems target={target} host={host} />
     </PointMenu>
   );
@@ -495,20 +503,20 @@ export function useRecordMenu({
   const menu = usePointMenu(findSpot, (spot) => {
     if (selection && !selection.ids.includes(spot.id)) selection.select([spot.id]);
   });
-  const spot = menu.opening?.value;
   const selected = selection?.ids;
-  const target = useMemo<ActionTarget | null>(() => {
-    if (!spot) return null;
-    const ids = selected?.includes(spot.id) ? selected : [spot.id];
-    const records = ids.map(lookup).filter((r): r is PresentedRecord => !!r);
-    const field = records.length === 1 && spot.column ? fieldFor?.(spot.column) : undefined;
-    return records.length ? { records, object, field } : null;
-  }, [spot, selected, lookup, fieldFor, object]);
+  const targetFor = useCallback(
+    (spot: MenuSpot): ActionTarget | null => {
+      const ids = selected?.includes(spot.id) ? selected : [spot.id];
+      const records = ids.map(lookup).filter((r): r is PresentedRecord => !!r);
+      const field = records.length === 1 && spot.column ? fieldFor?.(spot.column) : undefined;
+      return records.length ? { records, object, field } : null;
+    },
+    [selected, lookup, fieldFor, object],
+  );
   return {
     handlers: menu.handlers,
-    element: (
-      <RecordContextMenu opening={menu.opening} target={target} host={host} onClose={menu.close} />
-    ),
+    // The menu reads the opening itself, so opening it re-renders only the menu.
+    element: <RecordContextMenu store={menu.store} targetFor={targetFor} host={host} />,
   };
 }
 
