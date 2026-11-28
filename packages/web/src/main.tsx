@@ -39,6 +39,7 @@ import {
 } from './api/client.js';
 import { UpdatingBanner } from './api/maintenance.js';
 import { SignIn } from './auth/sign-in.js';
+import { validateChatsSearch } from './routes/agent/chats-search.js';
 import { CommandPalette } from './routes/command.js';
 import {
   DeveloperContext,
@@ -441,6 +442,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({
       getParentRoute: () => chatRoute,
       path: '/',
+      validateSearch: validateChatsSearch,
       component: lazyRouteComponent(() => import('./routes/agent/chat.js'), 'ChatsPage'),
     }),
     createRoute({

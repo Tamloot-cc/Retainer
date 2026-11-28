@@ -6,7 +6,7 @@ Each feature's own spec says how it does each step:
 and [routines.md](routines.md), built in the chat as
 [routines-in-chat.md](routines-in-chat.md) says (shipped; §5.1 here).
 Updated 2026-11-28: each feature page's **New** button opens a chat that
-explains the steps and offers one suggestion prompt (§5.2). Not built yet.
+explains the steps and offers one suggestion prompt (§5.2). Shipped.
 
 ## 1. The pattern
 

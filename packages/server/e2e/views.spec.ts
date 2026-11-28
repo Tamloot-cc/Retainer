@@ -253,3 +253,27 @@ test.describe('relation boards', () => {
     await expect(page.getByText(/Measure 51.*Sum.*51/)).toBeVisible();
   });
 });
+
+test.describe('the views starter', () => {
+  test.use({ agentFixture: true, workspaceTemplate: 'sales' });
+
+  test('New view with the agent opens the chat’s starter for the object', async ({
+    page,
+    retainer,
+  }) => {
+    retainer.anthropic?.enqueue({
+      blocks: [{ type: 'text', text: 'Two ideas: Stalled deals, … Which one should I draft?' }],
+      stopReason: 'end_turn',
+    });
+    await signIn(page, retainer.url, retainer.keys.user);
+    await page.goto(`${retainer.url}/app/o/deal`);
+    await page.getByRole('button', { name: /^View: / }).click();
+    await expect(page.getByRole('menuitem', { name: 'New view…' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'New view with the agent' }).click();
+    await expect(page).toHaveURL(/\/chat\?new=view&object=deal$/);
+    await expect(page.getByText(/Save it to keep it/)).toBeVisible();
+    await page.getByRole('button', { name: 'Suggest a few views of Deals I could keep.' }).click();
+    await expect(page).toHaveURL(/\/chat\/[0-9a-f-]+$/);
+    await expect(page.getByText(/Which one should I draft\?/)).toBeVisible();
+  });
+});

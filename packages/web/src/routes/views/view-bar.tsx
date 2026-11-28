@@ -11,11 +11,13 @@ import {
   type UpdateViewInput,
 } from '@retainer/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import {
   CalendarDays,
   ChevronDown,
   Lock,
   type LucideIcon,
+  MessageSquarePlus,
   Plus,
   Settings2,
   SlidersHorizontal,
@@ -41,6 +43,7 @@ import {
   MenuChoices,
   MenuItem,
   MenuLabel,
+  MenuLink,
   MenuList,
   MenuSeparator,
   Muted,
@@ -135,6 +138,7 @@ export function ViewSwitcher({
   writable,
   onSelect,
   onNew,
+  newWithAgent = false,
   onEdit,
   onEditAgent,
   onDelete,
@@ -145,6 +149,8 @@ export function ViewSwitcher({
   writable: boolean;
   onSelect: (id: string | undefined) => void;
   onNew: () => void;
+  /** Links to the chat's starter for a new view (chat-builds.md §5.2); false without the agent. */
+  newWithAgent?: boolean;
   onEdit: () => void;
   onEditAgent?: () => void;
   onDelete: () => void;
@@ -193,6 +199,14 @@ export function ViewSwitcher({
       {writable ? (
         <>
           <MenuSeparator />
+          {newWithAgent ? (
+            <MenuLink>
+              <Link to="/chat" search={{ new: 'view', object: object.nameSingular }}>
+                <MessageSquarePlus size={14} />
+                New view with the agent
+              </Link>
+            </MenuLink>
+          ) : null}
           <MenuAction onSelect={onNew}>
             <Plus size={14} />
             New view…

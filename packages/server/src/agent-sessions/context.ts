@@ -58,8 +58,8 @@ export function chatContext(input: {
     ...(input.client === 'web'
       ? [
           input.routines
-            ? '- This chat is in Retainer’s web app, which can show dashboards, views and routine drafts; read get_guide("dashboards"), get_guide("views") or get_guide("routines") before drafting one. For checked views, use a ```retainer-view fence; for checked routines, a ```retainer-routine fence.'
-            : '- This chat is in Retainer’s web app, which can show dashboards and views; read get_guide("dashboards") or get_guide("views") before drafting one. For checked views, use a ```retainer-view fence.',
+            ? '- This chat is in Retainer’s web app, which can show dashboards, views and routine drafts; read get_guide("dashboards"), get_guide("views") or get_guide("routines") before drafting one or suggesting ideas for one. For checked views, use a ```retainer-view fence; for checked routines, a ```retainer-routine fence.'
+            : '- This chat is in Retainer’s web app, which can show dashboards and views; read get_guide("dashboards") or get_guide("views") before drafting one or suggesting ideas for one. For checked views, use a ```retainer-view fence.',
         ]
       : []),
   ].join('\n');

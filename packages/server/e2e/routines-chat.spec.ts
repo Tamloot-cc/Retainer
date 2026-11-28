@@ -171,11 +171,25 @@ test.describe('routines built in chat', () => {
     await expect(page.getByRole('button', { name: 'Propose', exact: true })).toHaveCount(0);
   });
 
-  test('New routine on the Routines page opens a plain chat', async ({ page, retainer }) => {
+  test('New routine opens the chat’s starter, which creates a chat only on send', async ({
+    page,
+    retainer,
+  }) => {
     await signIn(page, retainer.url, retainer.keys.user);
     await page.getByRole('link', { name: 'Routines', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Describe the routine' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'New routine' }).click();
+    await page.getByRole('link', { name: 'New routine' }).click();
+    await expect(page).toHaveURL(/\/chat\?new=routine$/);
+    await expect(page.getByText(/an admin approves it before anything runs/)).toBeVisible();
+    await expect(page.getByText('No chats yet')).toBeVisible();
+    await page
+      .getByRole('button', {
+        name: 'Suggest a few routines that would save time in this workspace.',
+      })
+      .click();
     await expect(page).toHaveURL(/\/chat\/[0-9a-f-]+$/);
+    await expect(
+      page.getByText('Suggest a few routines that would save time in this workspace.'),
+    ).toBeVisible();
   });
 });

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { router } from '../extensions/test-router.js';
 import { ChatPage, ChatsPage } from './chat.js';
+import { firstMessages } from './first-message.js';
 
 vi.mock('@tanstack/react-router', async (original) =>
   (await import('../extensions/test-router.js')).mockRouter(original),
@@ -14,7 +15,7 @@ vi.mock('@tanstack/react-router', async (original) =>
 
 const STREAM_URL = 'https://agent.test/chats/chat-1/stream';
 
-function show(element: ReactNode) {
+function show(element: ReactNode, over: { session?: Partial<Session>; objects?: unknown[] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -26,8 +27,9 @@ function show(element: ReactNode) {
             scopes: ['read', 'write'],
             workspace: { id: 'workspace', name: 'Acme', slug: 'acme' },
             person: true,
+            ...over.session,
           } as Session,
-          schema: { objects: [] } as unknown as SchemaDescription,
+          schema: { objects: over.objects ?? [] } as unknown as SchemaDescription,
         }}
       >
         {element}
@@ -602,5 +604,63 @@ describe('ChatsPage', () => {
       expect(router.navigate).toHaveBeenCalledWith({ to: '/chat/$id', params: { id: 'chat-9' } }),
     );
     expect(create).toHaveBeenCalled();
+  });
+});
+
+describe('ChatsPage starters (chat-builds.md §5.2)', () => {
+  const companies = { nameSingular: 'company', namePlural: 'companies', labelPlural: 'Companies' };
+  const prompts = {
+    dashboard: 'Suggest a few dashboards I could build from this workspace’s data.',
+    view: 'Suggest a few views of Companies I could keep.',
+    routine: 'Suggest a few routines that would save time in this workspace.',
+  };
+
+  it.each([
+    ['dashboard', {}, /Pin it to keep it/],
+    ['view', { object: 'company' }, /Save it to keep it/],
+    ['routine', {}, /an admin approves it before anything runs/],
+  ] as const)('shows the %s steps and one prompt, creating no chat', async (kind, extra, about) => {
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    const create = vi.spyOn(api, 'createAgentChat');
+    router.search = { new: kind, ...extra };
+    show(<ChatsPage />, { session: { routinesAvailable: true }, objects: [companies] });
+    expect(await screen.findByText('No chats yet')).toBeTruthy();
+    expect(screen.getByText(about)).toBeTruthy();
+    const suggestions = within(screen.getByRole('list', { name: 'Suggestions' })).getAllByRole(
+      'button',
+    );
+    expect(suggestions.map((b) => b.textContent)).toEqual([prompts[kind]]);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('sends the prompt as the first message of a new chat', async () => {
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    const create = vi
+      .spyOn(api, 'createAgentChat')
+      .mockResolvedValue({ id: 'chat-7', title: null, createdAt: '2026-11-28T00:00:00Z' });
+    router.search = { new: 'view', object: 'company' };
+    show(<ChatsPage />, { objects: [companies] });
+    expect(
+      (await screen.findByRole('textbox', { name: 'Message' })).getAttribute('placeholder'),
+    ).toBe('Describe a view of Companies…');
+    await userEvent.click(screen.getByRole('button', { name: prompts.view }));
+    await waitFor(() =>
+      expect(router.navigate).toHaveBeenCalledWith({ to: '/chat/$id', params: { id: 'chat-7' } }),
+    );
+    expect(create).toHaveBeenCalledWith(undefined, 'web');
+    expect(firstMessages.get('chat-7')).toBe(prompts.view);
+    firstMessages.delete('chat-7');
+  });
+
+  it.each([
+    ['routines off', { new: 'routine' }, {}],
+    ['no write', { new: 'dashboard' }, { scopes: ['read'] }],
+    ['an unknown object', { new: 'view', object: 'deal' }, {}],
+  ] as const)('shows the plain index for %s', async (_, search, session) => {
+    vi.spyOn(api, 'agentChats').mockResolvedValue({ chats: [] });
+    router.search = search;
+    show(<ChatsPage />, { session: session as Partial<Session>, objects: [companies] });
+    expect(await screen.findByText('No chats yet')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'What should I follow up on?' })).toBeTruthy();
   });
 });

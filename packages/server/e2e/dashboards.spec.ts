@@ -259,4 +259,24 @@ test.describe('saved dashboards', () => {
     await lastSaved.click();
     await expect(page.getByRole('region', { name: 'Clients tracked' })).toBeVisible();
   });
+
+  test('New dashboard opens the chat’s starter and sends its suggestion prompt', async ({
+    page,
+    retainer,
+  }) => {
+    retainer.anthropic?.enqueue({
+      blocks: [{ type: 'text', text: 'Three ideas: Deals by stage, … Which one should I build?' }],
+      stopReason: 'end_turn',
+    });
+    await signIn(page, retainer.url, retainer.keys.user);
+    await page.getByRole('link', { name: 'Dashboards', exact: true }).click();
+    await page.getByRole('link', { name: 'New dashboard' }).click();
+    await expect(page).toHaveURL(/\/chat\?new=dashboard$/);
+    await expect(page.getByText(/Pin it to keep it/)).toBeVisible();
+    const prompt = 'Suggest a few dashboards I could build from this workspace’s data.';
+    await page.getByRole('button', { name: prompt }).click();
+    await expect(page).toHaveURL(/\/chat\/[0-9a-f-]+$/);
+    await expect(page.getByLabel('You')).toContainText(prompt);
+    await expect(page.getByText(/Which one should I build\?/)).toBeVisible();
+  });
 });

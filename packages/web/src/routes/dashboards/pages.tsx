@@ -2,7 +2,7 @@ import { RetainerApiError } from '@retainer/sdk';
 import { type SavedDashboard, sameActor, type UpdateDashboard } from '@retainer/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Ellipsis, LayoutDashboard } from 'lucide-react';
+import { Ellipsis, LayoutDashboard, MessageSquarePlus } from 'lucide-react';
 import { lazy, Suspense, useId, useState } from 'react';
 import { api, hasScope, useWorkspace } from '../../api/client.js';
 import { actorLabel } from '../../provenance/index.js';
@@ -18,6 +18,7 @@ import {
 } from '../../ui/index.js';
 import { Menu, MenuAction } from '../../ui/menu.js';
 import { type BlockHistory, extendMessageBlockHistory } from '../agent/chat-blocks.js';
+import { canStart } from '../agent/chats-search.js';
 import { firstMessages } from '../agent/first-message.js';
 import { agentKey, type ChatMessage } from '../agent/model.js';
 import { QueryError } from '../state.js';
@@ -33,8 +34,21 @@ export function DashboardsPage() {
     queryKey: [...dashboardKey(session.workspace.id), 'list'],
     queryFn: ({ signal }) => api.dashboards(undefined, signal),
   });
+  const canBuild = canStart('dashboard', session);
   return (
-    <Page title="Dashboards" icon={<LayoutDashboard size={16} />}>
+    <Page
+      title="Dashboards"
+      icon={<LayoutDashboard size={16} />}
+      actions={
+        canBuild ? (
+          <Button asChild>
+            <Link to="/chat" search={{ new: 'dashboard' }}>
+              <MessageSquarePlus size={14} /> New dashboard
+            </Link>
+          </Button>
+        ) : undefined
+      }
+    >
       {list.error ? (
         <QueryError error={list.error} retry={() => void list.refetch()} />
       ) : !list.data ? (
@@ -46,7 +60,14 @@ export function DashboardsPage() {
             description="Ask the agent for one, such as ‘deals by stage this quarter’, then pin it."
           />
           <Button asChild>
-            <Link to="/chat">Open chat</Link>
+            {/* A reader can still ask about dashboards, in a plain chat. */}
+            {canBuild ? (
+              <Link to="/chat" search={{ new: 'dashboard' }}>
+                Open chat
+              </Link>
+            ) : (
+              <Link to="/chat">Open chat</Link>
+            )}
           </Button>
         </div>
       ) : (
