@@ -661,6 +661,29 @@ describe('what a run did, in words', () => {
   });
 });
 
+describe('a skipped run (#147)', () => {
+  it('says why it was skipped, and that it never started', async () => {
+    router.params = { id: 'routine-1', run: 'run-s' };
+    vi.spyOn(api, 'routineRun').mockResolvedValue(
+      run({
+        id: 'run-s',
+        status: 'skipped',
+        code: 'condition_false',
+        attempt: 0,
+        startedAt: null,
+        calls: [],
+      }),
+    );
+    mount(<RoutineRunPage />);
+    expect(
+      await screen.findByText('Its condition did not match the record when it started.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/already acted on this record/)).toBeNull();
+    expect(screen.getByText('It did not start')).toBeTruthy();
+    expect(screen.queryByText('Attempt')).toBeNull();
+  });
+});
+
 describe('what counts as a change (#151)', () => {
   const call = (over: Partial<RoutineRunCall>): RoutineRunCall => ({
     position: 1,

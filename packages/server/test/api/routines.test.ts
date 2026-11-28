@@ -820,6 +820,49 @@ describe('routines', () => {
     expect(record.body.fields.source).toBe('web');
   });
 
+  it('discovery skips queued runs a running run on the same record blocks (#131)', async () => {
+    const s = await setup();
+    const { routineId } = await activate(s, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Go' },
+        uses: { tools: [], model: false },
+      },
+      code: `export async function main() {
+  return 'ok';
+}
+`,
+    });
+    const busy = await createCompany(s.app, s.keys.admin, 'Acme Busy');
+    const merged = await createCompany(s.app, s.keys.admin, 'Acme Busy Duplicate');
+    const free = await createCompany(s.app, s.keys.admin, 'Acme Free');
+    const press = async (recordId: string) =>
+      (
+        await s.app.request(`/v1/routines/${routineId}/run`, {
+          key: s.keys.admin,
+          body: { recordIds: [recordId] },
+        })
+      ).body.runs[0] as string;
+    const running = await press(busy);
+    const claimed = await s.executor.claim(s.workspace, running);
+    if (!claimed) throw new Error('run not claimed');
+    const blocked = [await press(busy), await press(busy), await press(merged)];
+    const runnable = await press(free);
+    // A record merged into the busy one waits for the same run.
+    await db.owner`update records set merged_into_id=${busy} where id=${merged}`;
+    const due = async () =>
+      (
+        await db.owner<{ run_id: string }[]>`select run_id from retainer_routine_runs_due(1000)`
+      ).map((row) => row.run_id);
+    const first = await due();
+    expect(first).toContain(runnable);
+    for (const id of blocked) expect(first).not.toContain(id);
+    // Once the running run ends, the waiting runs are due again.
+    await db.owner`update routine_runs set status='succeeded',finished_at=now(),lease_owner=null,lease_until=null
+      where id=${running}`;
+    const after = await due();
+    for (const id of blocked) expect(after).toContain(id);
+  });
+
   it('a preview with nothing to dry-run is done at once, with no ID to poll', async () => {
     const s = await setup();
     const res = await s.app.request('/v1/routines/preview', {
@@ -1683,6 +1726,27 @@ describe('routines', () => {
     expect((await approve()).body.error.details.jobId).toBe(jobId);
     await s.executor.tick();
     expect((await approve()).status).toBe(200);
+  });
+
+  it('a write past the attempt deadline is refused, as tool and model calls are (#131)', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Late');
+    const { runId, effect } = await drive(s, routineId, versionId, acme);
+    const args = { object: 'company', id: acme, values: { [s.key('tier')]: 'gold' } };
+    // The lease is still held, but only its grace for recording the outcome is left.
+    await db.owner`update routine_runs set lease_until=clock_timestamp()+interval '10 seconds'
+      where id=${runId}`;
+    const late = await effect(1, 'record.update', args);
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('run_expired');
+    // The refusal is recorded at its position, and nothing was written.
+    const results =
+      await db.owner`select state,code from routine_run_results where run_id=${runId}`;
+    expect(results).toEqual([{ state: 'failed', code: 'run_expired' }]);
+    const written = await db.owner`select 1 from field_assertions
+      where record_id=${acme} and actor->>'id'=${routineId}`;
+    expect(written).toHaveLength(0);
   });
 
   it('a daily cap of 0 allows no model call', async () => {

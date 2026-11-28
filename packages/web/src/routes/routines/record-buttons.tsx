@@ -57,6 +57,8 @@ export function useRunRoutineButton() {
             </Link>
           </>
         ),
+        // The run link belongs to this record's page (#147).
+        { thisPage: true },
       );
       void client.invalidateQueries({ queryKey: routinesKey(session.workspace.id) });
     },

@@ -1,4 +1,4 @@
-import type { Actor } from '@retainer/shared';
+import { type Actor, ROUTINE_LIMITS } from '@retainer/shared';
 import type { Caller, RoutineCaller } from '../caller.js';
 import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
@@ -22,6 +22,9 @@ export async function stillAdmin(tx: Tx, workspace: string, who: string | null) 
   >`select retainer_routine_admin(${workspace}::uuid,${who}) as ok`;
   return row?.ok === true;
 }
+
+/** A run's lease outlasts its deadline by this much, to record the outcome. */
+export const RUN_GRACE_SECONDS = 15;
 
 /** Why an effect was refused, as the code the run ends with (routines spec §6.2). */
 export const runRefused = (code: string, message: string) => new AppError(409, code, message);
@@ -53,8 +56,11 @@ export async function admitRoutine(
       initiated_by: Actor | null;
       number: number | null;
       deleting: boolean;
+      admits: boolean;
     }[]
   >`select r.status,r.fence::text,coalesce(r.expires_at>clock_timestamp(),true) as live,r.mode,
+      coalesce(least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
+        -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond')>clock_timestamp(),true) as admits,
       rt.status as routine_status,coalesce(v.name,rt.name) as routine_name,
       r.initiator_user_id,v.approver_user_id,r.initiated_by,v.number,
       w.deletion_scheduled_at is not null as deleting
@@ -77,6 +83,10 @@ export async function admitRoutine(
   if (run.mode === 'test' && !(await stillAdmin(tx, workspace, run.initiator_user_id)))
     throw runRefused('routine_paused', 'the person who started this test is no longer an admin');
   const writes = run.mode === 'run' || run.mode === 'test';
+  // A write has the attempt's one cutoff, as tool and model calls do (#131):
+  // the grace after it is only for the executor to record the outcome.
+  if (write && writes && routine.effect && !run.admits)
+    throw runRefused('run_expired', 'the attempt passed its deadline');
   if (write && (!writes || !routine.effect))
     throw new AppError(
       403,

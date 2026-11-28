@@ -160,6 +160,36 @@ test.describe('routines built in chat', () => {
     expect(seen.proposed[0]).toMatchObject({ sourceId: SOURCE, routineId: ROUTINE });
   });
 
+  test('while its dry run goes, the card polls only the runs and reads the draft once', async ({
+    page,
+    retainer,
+  }) => {
+    const seen = await stubRoutes(page, () =>
+      draft({ preview: { available: true, done: false, runs: [{ ...run, status: 'running' }] } }),
+    );
+    let polls = 0;
+    await page.route(`**/v1/routines/previews/${PREVIEW}`, async (route) => {
+      polls++;
+      await route.fulfill({
+        json: {
+          previewId: PREVIEW,
+          done: polls > 1,
+          runs: [polls > 1 ? run : { ...run, status: 'running' }],
+        },
+      });
+    });
+    retainer.anthropic?.enqueue({
+      blocks: [{ type: 'text', text: draftText(fence) }],
+      stopReason: 'end_turn',
+    });
+    await ask(page, retainer.url, retainer.keys.user, 'Thank won deals.');
+    const dry = page.getByRole('region', { name: 'Dry run', exact: true });
+    await expect(dry.getByText('Done', { exact: true })).toBeVisible({ timeout: 10_000 });
+    expect(polls).toBeGreaterThanOrEqual(2);
+    expect(seen.drafts).toBe(1);
+    expect(seen.previews).toBe(0);
+  });
+
   test('a draft whose check no longer holds offers no Propose', async ({ page, retainer }) => {
     await stubRoutes(page, () => draft({ ok: false }));
     retainer.anthropic?.enqueue({

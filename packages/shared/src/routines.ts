@@ -71,7 +71,7 @@ export const ROUTINE_STATUSES = [
 export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
 
 /** How the code runs (§5.1), plus the two sandbox jobs that run no routine code. */
-export const ROUTINE_RUN_MODES = ['run', 'test', 'dry', 'check', 'build'] as const;
+export const ROUTINE_RUN_MODES = ['run', 'test', 'dry', 'check'] as const;
 export type RoutineRunMode = (typeof ROUTINE_RUN_MODES)[number];
 
 export const ROUTINE_RUN_STATUSES = [

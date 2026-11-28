@@ -462,7 +462,7 @@ export class Routines {
           caps,
         ),
         versions: versionRows.map((version) => presentVersion(version, names)),
-        runs: await Promise.all(runs.map((run) => presentRun(tx, run, false))),
+        runs: await presentRuns(tx, runs, false),
       };
     });
   }
@@ -1077,7 +1077,7 @@ function safeFacts(manifest: RoutineManifest, names: FactsNames): string[] {
   }
 }
 
-type PreviewRuns = { done: boolean; runs: Awaited<ReturnType<typeof presentRun>>[] };
+type PreviewRuns = { done: boolean; runs: ReturnType<typeof runView>[] };
 
 /** A preview's dry runs in order, whether they are all done, and as history shows them. */
 async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { rows: RunRow[] }> {
@@ -1086,7 +1086,7 @@ async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { r
   return {
     rows,
     done: rows.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
-    runs: await Promise.all(rows.map((run) => presentRun(tx, run, true))),
+    runs: await presentRuns(tx, rows, true),
   };
 }
 
@@ -1138,21 +1138,37 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
 }
 
 /** A run as history shows it: statuses, operations and outcomes; results only while kept. */
+type CallRow = {
+  run_id: string;
+  position: number;
+  operation: string;
+  state: string;
+  code: string | null;
+  differs: boolean;
+  record_id: string | null;
+  result: unknown;
+  tool_name: string | null;
+  tool_effect: 'read' | 'write' | 'send' | null;
+};
+
+/** Runs as history shows them, with every run's calls read in one query. */
+export async function presentRuns(tx: Tx, runs: RunRow[], withResults: boolean) {
+  if (!runs.length) return [];
+  const rows = await tx<CallRow[]>`
+    select run_id,position,operation,state,code,differs,record_id,result,tool_name,tool_effect
+    from routine_run_results where run_id=any(${runs.map((run) => run.id)}::uuid[])
+    order by run_id,position`;
+  const byRun = new Map<string, CallRow[]>();
+  for (const row of rows) byRun.set(row.run_id, [...(byRun.get(row.run_id) ?? []), row]);
+  return runs.map((run) => runView(run, byRun.get(run.id) ?? [], withResults));
+}
+
 export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
-  const calls = await tx<
-    {
-      position: number;
-      operation: string;
-      state: string;
-      code: string | null;
-      differs: boolean;
-      record_id: string | null;
-      result: unknown;
-      tool_name: string | null;
-      tool_effect: 'read' | 'write' | 'send' | null;
-    }[]
-  >`select position,operation,state,code,differs,record_id,result,tool_name,tool_effect from routine_run_results
-    where run_id=${run.id} order by position`;
+  const [view] = await presentRuns(tx, [run], withResults);
+  return view as ReturnType<typeof runView>;
+}
+
+function runView(run: RunRow, calls: CallRow[], withResults: boolean) {
   const usedAgent = calls.some((call) => call.operation === 'ai.agent');
   return {
     id: run.id,

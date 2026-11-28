@@ -113,12 +113,25 @@ export const runStatus = (status: RoutineRunStatus) =>
 export const runFinished = (status: RoutineRunStatus) =>
   !['queued', 'held', 'running', 'waiting'].includes(status);
 
+/** Why a run was skipped, by the code it ended with (#147). */
+const SKIPPED: Record<string, string> = {
+  condition_false: 'Its condition did not match the record when it started.',
+  record_used_up: 'It had already acted on this record, and it acts once per record.',
+  record_gone: 'Its record was deleted before it started.',
+};
+
+/** A run's status, explained in words when the word alone is not enough. */
+export function runStatusText(run: Pick<RoutineRunView, 'status' | 'code'>) {
+  if (run.status === 'skipped' && run.code && SKIPPED[run.code]) return SKIPPED[run.code];
+  return RUN_STATUS_TEXT[run.status];
+}
+
 /** What a run's status means, when the word alone is not enough. */
 export const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
   held: 'It waits for an admin to run or discard it.',
   waiting:
     'It handed the workspace agent a task and continues from the start when the answer arrives.',
-  skipped: 'Its condition did not match when it started, or it had already acted on this record.',
+  skipped: 'It did not run on this record.',
   expired: 'It ran past its time limit and did nothing more.',
   stopped: 'The routine was paused or archived while it ran, so it did nothing more.',
   diverged:

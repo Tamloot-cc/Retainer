@@ -1,8 +1,7 @@
 import type { RoutineDetail } from '@retainer/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { api } from '../../api/client.js';
-import { firstMessages } from '../agent/first-message.js';
+import { newChat } from '../agent/first-message.js';
 import { pausedText } from './model.js';
 
 /**
@@ -28,11 +27,7 @@ export function editRoutineMessage(
 export function useRoutineChat() {
   const navigate = useNavigate();
   return useMutation({
-    mutationFn: async (text?: string) => {
-      const chat = await api.createAgentChat(undefined, 'web');
-      if (text) firstMessages.set(chat.id, text);
-      return chat;
-    },
+    mutationFn: (text?: string) => newChat(text),
     onSuccess: (chat) => void navigate({ to: '/chat/$id', params: { id: chat.id } }),
   });
 }

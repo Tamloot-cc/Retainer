@@ -36,14 +36,11 @@ export type RoutineDriver = {
 /** Failed runs in a row before the routine pauses (§6.2). */
 const FAILURES_BEFORE_PAUSE = 3;
 
-/** Nothing queues `build` runs since the builder went (routines-in-chat spec §8). */
-type RunnableMode = Exclude<RoutineRunMode, 'build'>;
-
 export type ClaimedRun = {
   workspaceId: string;
   runId: string;
   routineId: string | null;
-  mode: RunnableMode;
+  mode: RoutineRunMode;
   fence: string;
   tools: string[];
   attempt: number;
@@ -163,11 +160,6 @@ export class RoutineExecutor {
       }
       if (run.attempt >= ROUTINE_LIMITS.attempts) {
         await this.end(tx, id, 'failed', 'retry_exhausted');
-        return null;
-      }
-      // A build queued before the builder was removed has nothing to run it.
-      if (run.mode === 'build') {
-        await this.end(tx, id, 'failed', 'builder_removed');
         return null;
       }
       const schema = await getSchema(tx, workspace);

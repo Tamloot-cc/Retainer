@@ -3445,14 +3445,14 @@ export const routineRuns = pgTable(
         sql`${t.status} in ('running', 'waiting') and ${t.mode} = 'run' and ${t.recordId} is not null`,
       ),
     index('routine_runs_waiting_idx').on(t.expiresAt).where(sql`${t.status} = 'waiting'`),
-    check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check', 'build')`),
+    check('routine_runs_mode', sql`${t.mode} in ('run', 'test', 'dry', 'check')`),
     check(
       'routine_runs_status',
       sql`${t.status} in ('queued', 'held', 'running', 'waiting', 'succeeded', 'failed', 'skipped', 'expired', 'stopped', 'diverged', 'budget_exhausted', 'erased', 'discarded')`,
     ),
     check(
       'routine_runs_trigger_kind',
-      sql`${t.triggerKind} in ('record', 'schedule', 'manual', 'test', 'preview', 'check', 'build')`,
+      sql`${t.triggerKind} in ('record', 'schedule', 'manual', 'test', 'preview', 'check')`,
     ),
     check(
       'routine_runs_pinned',

@@ -10,8 +10,19 @@ import {
   Outlet,
   RouterProvider,
   redirect,
+  useRouterState,
 } from '@tanstack/react-router';
-import { lazy, type ReactNode, StrictMode, Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  StrictMode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AccountContext,
@@ -47,7 +58,7 @@ import {
   writeViewLevel,
 } from './routes/developer.js';
 import { appLinksKey } from './routes/extensions/model.js';
-import type { ViewSearch } from './routes/state.js';
+import type { ReportFn, ViewSearch } from './routes/state.js';
 import { QueryError, ReportContext, sortObjects } from './routes/state.js';
 import { Button, Notice, Page, Shell, Splash } from './ui/index.js';
 import './style.css';
@@ -65,7 +76,7 @@ function Layout() {
   const accountState = useAccount();
   const [creating, setCreating] = useState(false);
   const [command, setCommand] = useState(false),
-    [report, setReport] = useState<ReactNode>(null),
+    [shown, setShown] = useState<{ node: ReactNode; path?: string } | null>(null),
     [viewLevel, setViewLevel] = useState(() => readViewLevel(() => localStorage));
   const developerView = useMemo(
     () => ({
@@ -76,6 +87,17 @@ function Layout() {
       },
     }),
     [viewLevel],
+  );
+  // A report that belongs to the page it was made on goes when the person
+  // leaves that page (#147); others stay above the next screen until dismissed.
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const here = useRef(pathname);
+  here.current = pathname;
+  const report = shown && (!shown.path || shown.path === pathname) ? shown.node : null;
+  const setReport = useCallback<ReportFn>(
+    (node, options) =>
+      setShown(node ? { node, ...(options?.thisPage ? { path: here.current } : {}) } : null),
+    [],
   );
   const client = useQueryClient();
   const schema = useQuery({
@@ -207,7 +229,7 @@ function Layout() {
                 changes.
               </Notice>
             ) : null}
-            {report ? <Notice onDismiss={() => setReport(null)}>{report}</Notice> : null}
+            {report ? <Notice onDismiss={() => setShown(null)}>{report}</Notice> : null}
             <Outlet />
           </Shell>
           <CommandPalette

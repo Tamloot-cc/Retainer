@@ -65,11 +65,16 @@ export default function RoutineChatBlock({
     },
     enabled: !!fence,
     retry: false,
-    // A dry run still going: read it again until it is done, never start one.
-    refetchInterval: (query) => {
-      const preview = query.state.data?.preview;
-      return preview?.available && !preview.done ? 2000 : false;
-    },
+  });
+  // A dry run still going: read only its runs again until it is done, never
+  // start one. The draft itself (facts, check, count) is read once.
+  const going = !!draft.data?.preview?.available && !draft.data.preview.done;
+  const polled = useQuery({
+    queryKey: [...key, 'runs'],
+    queryFn: ({ signal }) => api.routinePreview(fence?.preview ?? '', signal),
+    enabled: going && !!fence?.preview,
+    retry: false,
+    refetchInterval: (query) => (query.state.data?.done ? false : 2000),
   });
   const propose = useMutation({
     mutationFn: () => {
@@ -92,7 +97,13 @@ export default function RoutineChatBlock({
     expired ??
     (draft.error ? errorText(draft.error, 'see this draft') : undefined) ??
     (complete || streaming ? undefined : 'The routine draft is incomplete.');
-  const data = draft.data;
+  const data =
+    draft.data?.preview?.available && polled.data
+      ? {
+          ...draft.data,
+          preview: { available: true as const, done: polled.data.done, runs: polled.data.runs },
+        }
+      : draft.data;
   const state = fence && data ? draftState(fence, data) : undefined;
   const canPropose = canMutate(session);
   const admin = canMutate(session, 'admin');
