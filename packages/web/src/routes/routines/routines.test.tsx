@@ -2,6 +2,7 @@ import { RetainerApiError } from '@retainer/sdk';
 import type {
   RoutineCapabilities,
   RoutineDetail,
+  RoutineDraft,
   RoutineRunCall,
   RoutineRunView,
   RoutineVersionView,
@@ -17,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, WorkspaceContext } from '../../api/client.js';
 import { router } from '../extensions/test-router.js';
 import { ReportContext } from '../state.js';
+import RoutineChatBlock from './chat-block.js';
 import { RoutinePage, runNowText } from './detail.js';
 import { RoutinesPage } from './list.js';
 import { madeChanges } from './model.js';
@@ -133,6 +135,53 @@ function mount(element: ReactNode, admin = true, report = vi.fn(), agent = false
   );
   return report;
 }
+it('shares a pending routine draft read when the saved message replaces the streamed one', async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 10_000 } },
+  });
+  let resolveDraft: (draft: RoutineDraft) => void = () => {};
+  const response = new Promise<RoutineDraft>((resolve) => {
+    resolveDraft = resolve;
+  });
+  const fetchDraft = vi.spyOn(api, 'routineDraft').mockReturnValue(response);
+  const code = JSON.stringify({
+    source: RECORD,
+    preview: null,
+    name: 'Review a company',
+    description: 'Review the company on demand.',
+    summary: 'Checks the company.',
+    report: { verdict: 'full', gaps: [] },
+  });
+  const card = (messageId: string) => (
+    <QueryClientProvider client={client}>
+      <WorkspaceContext.Provider
+        value={{
+          session: { actor: user, scopes: ['admin'], workspace: { id: 'workspace' } } as Session,
+          schema: { objects: [] } as unknown as SchemaDescription,
+        }}
+      >
+        <RoutineChatBlock key={messageId} code={code} complete streaming={false} />
+      </WorkspaceContext.Provider>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(card('streamed'));
+  expect(fetchDraft).toHaveBeenCalledTimes(1);
+  rerender(card('saved'));
+  resolveDraft({
+    sourceId: RECORD,
+    manifest: version().manifest,
+    code: version().code,
+    facts: [],
+    ok: true,
+    problems: [],
+    count: null,
+    preview: null,
+    proposals: [],
+  });
+  expect(await screen.findByRole('button', { name: /^Propose$/ })).toBeTruthy();
+  expect(fetchDraft).toHaveBeenCalledTimes(1);
+});
+
 function capabilities(timezone = 'Europe/London') {
   return vi.spyOn(api, 'routineCapabilities').mockResolvedValue({
     timezone,

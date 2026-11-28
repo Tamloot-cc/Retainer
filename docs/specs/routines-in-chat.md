@@ -331,7 +331,7 @@ reused:
    A `partial` report lists each gap and what would fix it.
 4. **The count**, from the draft route, as of now and worded by trigger:
    - a record trigger: "N changes in the last 30 days matched the
-     trigger" (before the `if`, which is how the preview counts);
+     trigger" (before the `if`);
    - a schedule on an object: "N records match now", before the fan-out
      limit; a schedule without an object: "Runs once each time, without a
      record";
