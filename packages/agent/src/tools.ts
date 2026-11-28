@@ -30,6 +30,21 @@ export const RETAINER_TOOL_NAMES: readonly string[] = [
   ...RETAINER_READ_TOOL_NAMES,
   ...RETAINER_WRITE_TOOL_NAMES,
 ];
+/**
+ * `retainer.routines`, for chats only, on servers where routines are
+ * enabled (routines-in-chat spec §3.1): what a chat needs to draft, check
+ * and dry-run a routine. `propose_routine` is not one: in a chat the person
+ * proposes with the card's button. Tasks never pin these.
+ */
+export const RETAINER_ROUTINE_TOOL_NAMES = [
+  'get_routine_capabilities',
+  'validate_routine',
+  'get_routine_job',
+  'preview_routine',
+  'get_routine_preview',
+  'list_routines',
+  'get_routine',
+] as const;
 
 /** Searches in one request: a constant, so the tool definitions never change (§10.1). */
 export const WEB_MAX_USES = 10;

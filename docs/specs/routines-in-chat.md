@@ -1,6 +1,7 @@
 # Routines built in the chat: spec
 
-Status: **proposed**, 2026-11-28. Written after Views shipped in the chat
+Status: **built**, 2026-11-28 (§12 says where the build differs). Proposed
+the same day and decided as recommended (§11). Written after Views shipped in the chat
 (#218), as [chat-builds.md](chat-builds.md) §5.1 planned. It applies the
 shared pattern of that document to Routines: a person describes a routine
 to the workspace agent, sees a checked draft with a dry run, and proposes
@@ -12,7 +13,7 @@ and approval), [agent.md](agent.md) (the workspace agent) and the chat
 pieces Dashboards and Views made to share (chat blocks, the draft card,
 guides read on demand).
 
-If accepted this spec amends:
+This spec amends:
 
 - `routines.md` §5.1 (one builder contract, no built-in builder; the check
   and the preview answer a `sourceId`; a proposal may name one; no notice
@@ -640,15 +641,44 @@ Not in this spec:
   gaps of `partial` routines.
 - MCP clients showing the card (`chat-builds.md` §6).
 
-## 11. Open questions
+## 11. Decided questions
 
-1. **Half the cap for dry runs** (§7): the right share, or should dry
-   runs have a count of their own? Recommended: half, one rule.
-2. **Approve from the card for admins** (§5.3). Recommended: no; the
-   Routines page is where a routine is tested and approved.
-3. **Removing the builder in the same PR** (§8), given the eval passes.
-   Recommended: yes.
-4. **Sonnet for drafting** (§3.3). If the eval shows a gap the guide
-   cannot close, the choice is between a higher effort for chats that
-   read the routines guide and keeping the builder as a tool the chat
-   calls. Recommended: decide only if the eval fails.
+Decided on 2026-11-28, each as recommended.
+
+1. **Half the cap for dry runs** (§7): half, one rule.
+2. **Approve from the card for admins** (§5.3): no; the Routines page is
+   where a routine is tested and approved.
+3. **Removing the builder in the same PR** (§8): yes.
+4. **Sonnet for drafting** (§3.3): kept. The eval passed on Sonnet 5.5 at
+   medium effort once the guide was tightened (§12).
+
+## 12. As built
+
+- **The eval** (`packages/server/scripts/routine-eval.ts`) runs the chat
+  side only: the agent on Claude Sonnet 5.5 at medium effort with the chat's
+  tools and the routines guide, against a temporary database, with the real
+  routine runner type-checking and dry-running in process. It does not run
+  the removed builder beside it, so the "at least as good" comparison of §9
+  was not run; each case has fixed criteria instead. Its twelve cases: one
+  per trigger kind, a model call, once per deal, a `partial` verdict, a
+  `not_possible` request, an unclear one, an edit, a routine from a view, a
+  question and a one-off change. An installed tool and an agent task are not
+  in it: the eval workspace has neither. 12/12 passed on 2026-11-28, after
+  two guide changes it found: the draft's example shows a gap's keys (the
+  agent wrote `code` for `reason`, which the card refuses), and a
+  description that does not say when or what is asked about, never drafted
+  with a default trigger ("remind me about deals").
+- **The draft route** is `GET /v1/routines/drafts/:sourceId` with optional
+  `preview` and `routine`. Its `count` is `{ kind, value }` with kinds
+  `record`, `schedule`, `schedule_once` and `manual`; its proposals carry
+  `byYou`, which the card matches on with the words and the target.
+- **The card treats a dry run as no longer kept** once all its runs ended
+  more than 7 days ago, since retention clears their results then.
+- **A `build` run left from before** is ended as `failed` with
+  `builder_removed` when an executor claims it. The runner's internal
+  `/routines/runtime/capabilities` route, used only by the builder, is gone
+  too.
+- **The routine tools in the chat** go through the in-process MCP host,
+  which now gets the routine configuration (`api/app.ts`). A tool the host
+  does not offer is left out of a new chat's pinned list rather than
+  failing chat creation, for the routine tools only.

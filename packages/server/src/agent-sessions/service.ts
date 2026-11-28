@@ -65,6 +65,7 @@ import {
   CHAT_LIMITS,
   type ExtensionToolRef,
   pinnedTools,
+  pinsRoutines,
   type RetainerToolHost,
   type RetainerToolResult,
 } from './tools.js';
@@ -613,6 +614,7 @@ export class AgentSessions {
         eventTypes: names(schema.eventTypeIds),
         date,
         client: session.client,
+        routines: pinsRoutines(session.tools as { name: string }[]),
       }),
     ];
   }

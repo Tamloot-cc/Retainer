@@ -55,7 +55,7 @@ See `ARCHITECTURE.md` section 11 for the six test layers.
 - Retainer's core (writes, conflict resolution, search, consolidation) never
   calls a language model or embedding provider. Agents decide what to write;
   the server validates, stores and retrieves. Extensions and routines
-  (including the built-in routine builder) may call a model through the model
+  (including a routine's dry run) may call a model through the model
   proxy (`docs/specs/extensions-model-calls.md`, `docs/specs/routines.md`).
 - No embeddings or semantic search: search is Postgres full-text only.
 - Server folders import only from their own layer and those below it

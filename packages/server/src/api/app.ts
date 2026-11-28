@@ -156,13 +156,16 @@ export function createApp(deps: AppDeps) {
   });
 
   // Before /v1's authentication: these routes take their own credentials.
+  // The chat's routine tools need the routine configuration, which needs the
+  // agent; it is set below, before any request is served (routines-in-chat §3.1).
+  const agentToolOptions: InProcessMcpOptions = {
+    extensionCatalog: deps.extensionCatalog,
+    extensionActivation: deps.extensionActivation,
+    fileStorage: deps.fileStorage,
+    fileQuota: deps.fileQuota,
+  };
   const agentTools = deps.agent?.runtimeSecret
-    ? agentToolHost(deps.sql, {
-        extensionCatalog: deps.extensionCatalog,
-        extensionActivation: deps.extensionActivation,
-        fileStorage: deps.fileStorage,
-        fileQuota: deps.fileQuota,
-      })
+    ? agentToolHost(deps.sql, agentToolOptions)
     : undefined;
   const agent =
     deps.agent?.runtimeSecret && agentTools
@@ -261,6 +264,7 @@ export function createApp(deps: AppDeps) {
     agentAvailable: !!agent && (deps.agent?.tasks ?? true),
   };
   if (routinesAvailable && deps.runTokens) {
+    agentToolOptions.routines = routineConfig;
     routineRoutes(v1, new Routines(deps.sql, routineConfig), agent);
     routineRuntimeRoutes(
       v1,

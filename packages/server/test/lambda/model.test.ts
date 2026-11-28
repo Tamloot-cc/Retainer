@@ -143,7 +143,7 @@ describe('the hosted model function', () => {
     );
   });
 
-  it('queues a hosted build and signs its metered model call with only the routine model key', async () => {
+  it('queues a hosted dry run and signs its metered model call with only the routine model key', async () => {
     const origin = 'https://model.lambda-url.test';
     const config = loadConfig({
       DATABASE_URL: db.url,
@@ -162,8 +162,8 @@ describe('the hosted model function', () => {
       true,
     );
     const { workspace, keys } = await t.setupWorkspace(
-      { name: 'Hosted routine builder' },
-      { agent: { actor: { type: 'agent', id: 'builder-test' }, scopes: ['write'] } },
+      { name: 'Hosted routine dry run' },
+      { agent: { actor: { type: 'agent', id: 'builder-test' }, scopes: ['read', 'write'] } },
     );
     const request = (path: string, key: string, body: unknown) =>
       api(
@@ -173,17 +173,29 @@ describe('the hosted model function', () => {
         }),
         context,
       );
-    const build = await request('/v1/routines/build', keys.agent, {
-      description: 'Draft a routine',
+    const company = await request('/v1/objects/company/records', keys.agent, {
+      values: { name: 'Acme' },
     });
-    expect(build.statusCode).toBe(202);
-    const { jobId } = JSON.parse(bodyOf(build)) as { jobId: string };
+    expect(company.statusCode).toBe(201);
+    // A dry run of a routine that calls the model: its call is metered like a run's.
+    const preview = await request('/v1/routines/preview', keys.agent, {
+      manifest: {
+        when: { kind: 'manual', object: 'company', label: 'Ask' },
+        uses: { tools: [], model: true },
+      },
+      code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+    });
+    expect(preview.statusCode).toBe(200);
+    const [jobId] = (JSON.parse(bodyOf(preview)) as { runs: string[] }).runs as [string];
     await db.owner`
       update routine_runs set status='running', fence=1, lease_until=clock_timestamp()+interval '1 minute'
       where id=${jobId}`;
     const runToken = await executorTokens.issueRoutine(
       workspace.id,
-      { runId: jobId, routineId: null, fence: '1', mode: 'build', tools: [] },
+      { runId: jobId, routineId: null, fence: '1', mode: 'dry', tools: [] },
       new Date(Date.now() + 60_000),
     );
     const effect = await request('/v1/routines/runtime/effects', runToken, {

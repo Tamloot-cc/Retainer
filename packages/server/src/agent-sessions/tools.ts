@@ -1,5 +1,6 @@
 import {
   type PinnedTool,
+  RETAINER_ROUTINE_TOOL_NAMES,
   RETAINER_TOOL_NAMES,
   TOOL_NAME,
   type ToolAnswer,
@@ -19,9 +20,11 @@ export type RetainerToolResult = ToolAnswer;
  * the session code never depends on MCP.
  */
 export interface RetainerToolHost {
+  /** The named tools, in order; one in `optional` the server does not offer is left out. */
   list(
     caller: Caller,
     names: readonly string[],
+    optional?: readonly string[],
   ): Promise<{ name: string; description: string; inputSchema: Record<string, unknown> }[]>;
   call(caller: Caller, name: string, input: unknown): Promise<RetainerToolResult>;
 }
@@ -35,7 +38,8 @@ export const extensionToolName = (tool: string) => `${EXTENSION_PREFIX}${tool}`;
 
 /**
  * The tools a new session pins, in order (agent spec §8.3): Retainer's
- * read and write tools as MCP defines them, web search with its
+ * read and write tools as MCP defines them, its routine tools where the
+ * server has routines (routines-in-chat spec §3.1), web search with its
  * constant `max_uses`, then the workspace's extension tools declared `read`,
  * sorted by name. Every tool the caller could use is pinned, write tools
  * included even for a chat that starts read-only: access is checked when a
@@ -48,7 +52,11 @@ export async function pinnedTools(
   host: RetainerToolHost,
   catalog: RuntimeCatalog | undefined,
 ): Promise<{ tools: PinnedTool[]; extensionTools: Record<string, ExtensionToolRef> }> {
-  const retainer = await host.list(caller, RETAINER_TOOL_NAMES);
+  const retainer = await host.list(
+    caller,
+    [...RETAINER_TOOL_NAMES, ...RETAINER_ROUTINE_TOOL_NAMES],
+    RETAINER_ROUTINE_TOOL_NAMES,
+  );
   const tools: PinnedTool[] = retainer.map((tool) => ({
     kind: 'retainer',
     name: tool.name,
@@ -76,6 +84,10 @@ export async function pinnedTools(
   }
   return { tools, extensionTools };
 }
+
+/** Whether a session's pinned tools include the routine group (routines-in-chat spec §3.2). */
+export const pinsRoutines = (tools: readonly { name: string }[]) =>
+  tools.some((tool) => tool.name === 'validate_routine');
 
 /** Steps, tokens and calls a chat turn may use (agent spec §10.1). */
 export const CHAT_LIMITS = {

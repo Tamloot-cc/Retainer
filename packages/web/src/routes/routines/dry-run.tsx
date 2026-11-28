@@ -85,12 +85,7 @@ export function DryRunDialog({
           ) : !preview.data ? (
             <Loading>Waiting for the dry run…</Loading>
           ) : (
-            <Stack>
-              {preview.data.runs.map((run) => (
-                <DryRun key={run.id} run={run} />
-              ))}
-              {preview.data.done ? null : <Loading>Still running…</Loading>}
-            </Stack>
+            <DryRunList runs={preview.data.runs} done={preview.data.done} />
           )}
           <Row>
             <Button onClick={onClose}>Close</Button>
@@ -111,7 +106,7 @@ function Matched({ count }: { count: number }) {
   );
 }
 
-function Problems({ problems }: { problems: RoutineProblem[] }) {
+export function Problems({ problems }: { problems: RoutineProblem[] }) {
   return (
     <ul aria-label="Problems" className="flex list-disc flex-col gap-1 pl-5 text-sm">
       {problems.map((problem) => (
@@ -121,6 +116,18 @@ function Problems({ problems }: { problems: RoutineProblem[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A preview's stored runs, as the dialog and a chat's draft card show them. */
+export function DryRunList({ runs, done }: { runs: RoutineRunView[]; done: boolean }) {
+  return (
+    <Stack>
+      {runs.map((run) => (
+        <DryRun key={run.id} run={run} />
+      ))}
+      {done ? null : <Loading>Still running…</Loading>}
+    </Stack>
   );
 }
 

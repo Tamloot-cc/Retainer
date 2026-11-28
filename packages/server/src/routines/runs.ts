@@ -12,7 +12,7 @@ export const ONCE = new Date(0);
 
 export type QueueRun = {
   mode: RoutineRunMode;
-  triggerKind: 'record' | 'schedule' | 'manual' | 'test' | 'preview' | 'check' | 'build';
+  triggerKind: 'record' | 'schedule' | 'manual' | 'test' | 'preview' | 'check';
   routineId?: string | null;
   versionId?: string | null;
   sourceId?: string | null;

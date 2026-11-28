@@ -2261,7 +2261,7 @@ per-record conflicts.
 
 Not planned: embeddings and semantic search, and any language model in
 Retainer's core (server-side extraction, generated summaries). Extensions and
-routines (including the built-in routine builder) may call a model through the
+routines (including a routine's dry run) may call a model through the
 model proxy (docs/specs/routines.md §4.5), and a workspace agent that
 extensions hand tasks to is planned (docs/specs/extensions-model-calls.md §11).
 Search is Postgres full-text only. A BM25 backend may come later as an

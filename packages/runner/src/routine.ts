@@ -13,7 +13,6 @@ import {
   type RoutineProblem,
   type RoutineRunContext,
 } from '@retainer/shared';
-import { buildRoutine } from './routine-builder.js';
 import { SANDBOX_PRELUDE } from './routine-sandbox.js';
 
 /**
@@ -701,8 +700,7 @@ export async function executeRoutine(
   let dir: string | undefined;
   try {
     const context = await api.call<RoutineRunContext>('GET', 'run');
-    if (context.run.mode === 'build') outcome = await buildRoutine(api, context, signal);
-    else if (!context.code) outcome = { outcome: 'failed', code: 'no_code' };
+    if (!context.code) outcome = { outcome: 'failed', code: 'no_code' };
     else {
       const checking = context.run.mode === 'check' || context.check;
       const checked = await typeCheck(

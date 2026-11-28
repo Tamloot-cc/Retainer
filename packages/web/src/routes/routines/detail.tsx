@@ -10,9 +10,7 @@ import {
   Button,
   Dialog,
   Empty,
-  FormField,
   IdentityTag,
-  Input,
   Loading,
   Menu,
   MenuAction,
@@ -26,7 +24,7 @@ import {
   Stack,
 } from '../../ui/index.js';
 import { QueryError } from '../state.js';
-import { DescribeRoutine } from './describe.js';
+import { editRoutineMessage, useRoutineChat } from './agent-chat.js';
 import { DryRunDialog } from './dry-run.js';
 import {
   errorText,
@@ -87,6 +85,7 @@ function Routine({ routine }: { routine: RoutineDetail }) {
   const [dryRun, setDryRun] = useState<RoutineVersionView | null>(null);
   const [approving, setApproving] = useState<RoutineVersionView | null>(null);
   const [confirmRunNow, setConfirmRunNow] = useState(false);
+  const editChat = useRoutineChat();
   const deepLinkVersion = new URLSearchParams(window.location.search).get('version');
   const linkedVersion = routine.versions.find(
     (version) =>
@@ -338,15 +337,29 @@ function Routine({ routine }: { routine: RoutineDetail }) {
         </Panel>
       ) : null}
       {canWrite && !archived ? (
-        <Panel title={active ? 'Change what it does' : 'Describe it again'}>
+        <Panel title="Change what it does">
           <Stack>
             <Muted>
-              Edit the description and the builder writes a new version.
+              {session.agentAvailable === true
+                ? 'The agent drafts a new version in the chat and dry-runs it.'
+                : 'An agent connected over MCP can draft a new version.'}
               {active
                 ? ' The approved version keeps running until an admin approves the new one.'
                 : ''}
             </Muted>
-            <DescribeRoutine routineId={routine.id} initial={routine.description} />
+            {session.agentAvailable === true ? (
+              <Row>
+                <Button
+                  disabled={editChat.isPending}
+                  onClick={() => editChat.mutate(editRoutineMessage(routine))}
+                >
+                  Edit with the agent
+                </Button>
+              </Row>
+            ) : null}
+            {editChat.error ? (
+              <Notice error>{errorText(editChat.error, 'start a chat')}</Notice>
+            ) : null}
           </Stack>
         </Panel>
       ) : null}

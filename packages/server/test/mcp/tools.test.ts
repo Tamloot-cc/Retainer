@@ -26,6 +26,16 @@ let salesUserKey: string;
 let salesAdminKey: string;
 const clients: McpTestClient[] = [];
 
+const ROUTINE_TOOLS = [
+  'get_routine_capabilities',
+  'validate_routine',
+  'get_routine_job',
+  'preview_routine',
+  'get_routine_preview',
+  'propose_routine',
+  'list_routines',
+  'get_routine',
+];
 const TOOLS = [
   'aggregate_records',
   'apply_template',
@@ -367,9 +377,17 @@ describe('the discover_schema guide', () => {
         ...GUIDE_NAMES,
         ...cardinalities,
         'this_quarter',
+        // The routine tools, on servers with routines, and the codes the guide names.
+        ...ROUTINE_TOOLS,
+        'dry_run_budget',
+        'not_possible',
       ]);
       const named = new Set(res.body.match(/\b[a-z]+(?:_[a-z]+)+\b/g));
-      const entry = { dashboards: 'check_dashboard', views: 'check_view', routines: 'list_views' };
+      const entry = {
+        dashboards: 'check_dashboard',
+        views: 'check_view',
+        routines: 'validate_routine',
+      };
       expect(named).toContain(name in entry ? entry[name as keyof typeof entry] : 'log_event');
       expect([...named].filter((word) => !known.has(word))).toEqual([]);
     },

@@ -2,10 +2,9 @@
 
 Status: **decided**, 2026-11-27. A short shared design, not a build spec.
 Each feature's own spec says how it does each step:
-[dashboards.md](dashboards.md) (shipped), [views.md](views.md) (decided)
-and [routines.md](routines.md) (shipped with its own builder; the move into
-the chat is §5.1 here, and its spec is
-[routines-in-chat.md](routines-in-chat.md), proposed).
+[dashboards.md](dashboards.md) (shipped), [views.md](views.md) (shipped)
+and [routines.md](routines.md), built in the chat as
+[routines-in-chat.md](routines-in-chat.md) says (shipped; §5.1 here).
 
 ## 1. The pattern
 
@@ -137,15 +136,13 @@ change when the chat builds routines:
   returns `previewId: null`). So the card must be able to show and propose
   a checked draft with "no recent matches", without a dry run to point at.
 - **The Routines page's text box is replaced by a link to the chat**, a
-  plain chat as §2 says, once the chat version passes the routine eval.
-  Until then the text box and the built-in builder, a job in the sandbox
-  that calls the model through the proxy, stay as they are. After it, the
-  chat's agent is the built-in builder.
+  plain chat as §2 says. The built-in builder, a job in the sandbox that
+  called the model through the proxy, is gone; the chat's agent builds.
 
 How the `retainer-routine` fence and the card work in detail is in
-[routines-in-chat.md](routines-in-chat.md) (proposed). That includes
-whether dry runs started from a chat need their own share of the daily
-model cap, so that a long chat cannot use up what live routines need.
+[routines-in-chat.md](routines-in-chat.md), including the daily model cap:
+dry runs stop at half of it, so a long chat cannot use up what live
+routines need.
 
 ## 6. Later
 

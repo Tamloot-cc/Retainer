@@ -70,8 +70,9 @@ Who does what:
   without a person's approval: an unapproved routine can only be dry-run,
   which changes nothing (§5.1).
 - **The builder agent** writes the manifest and the code and reports what it
-  could not cover. It is either Retainer's built-in builder or the person's
-  own agent connected over MCP.
+  could not cover. It is the workspace agent in the web app's chat
+  ([routines-in-chat.md](routines-in-chat.md)) or the person's own agent
+  connected over MCP.
 - **Retainer** tells the builder what is possible, checks every routine,
   stores it, decides when it fires and starts its runs. All of that is fixed
   logic. Retainer's core still never calls a model and never runs the code
@@ -460,7 +461,8 @@ const { complaint } = await retainer.ai.generate({
 | One run                                    | 120 s by default, 300 s at most | The extension run limits (`extensions.md` §9.1)                                        |
 | Calls of one SDK operation in a run        | 200                             | Stops a runaway loop                                                                   |
 | Model calls in a run                       | 50                              | Bounds cost per run                                                                    |
-| Model calls per workspace per day          | 1,000                           | Bounds spend. Dry runs and the builder's calls count. Reserved before each call (§6.3) |
+| Model calls per workspace per day          | 1,000                           | Bounds spend. Dry runs count. Reserved before each call (§6.3)                         |
+| Model calls dry runs may use in a day      | Half the daily cap              | Drafting never uses up what live routines need (`routines-in-chat.md` §7)              |
 | Output of one model call                   | 4,096 tokens                    | Makes a count of calls a real bound on spend                                           |
 | Runs one routine may queue in an hour      | 200                             | Stops a runaway or a bulk import. Further runs are held, and it pauses                 |
 | Records one `schedule` tick may fan out to | 200                             | Bounds a scheduled sweep. Above it the tick waits for an admin                         |
@@ -479,7 +481,15 @@ A self-hosted operator can change the daily model cap
 
 ### 5.1 Two builders, one contract
 
-- **The built-in builder.** The web app has a text box. Submitting it queues a
+Amended by [routines-in-chat.md](routines-in-chat.md) (2026-11-28): the
+built-in builder below is replaced by the workspace agent in the web app's
+chat, which drafts with the same calls; `validate_routine` and
+`preview_routine` answer a `sourceId` that `preview_routine` and
+`propose_routine` take instead of the manifest and code; in the chat the
+person proposes with a button; dry runs stop at half the daily model cap
+(`dry_run_budget`). The text of the builder is kept here as history.
+
+- **The built-in builder** (removed). The web app had a text box. Submitting it queued a
   job in the sandbox that reads the workspace's capabilities, calls the model
   through the proxy and saves a proposal. This is the pattern `configure`
   already uses to suggest a field mapping during an extension install: code
@@ -1354,7 +1364,8 @@ they left open:
   calls the API. In Compose the launcher gives a routine run a network with
   only the API container on it and no egress proxy. The routine's own model
   calls reach the self-hosted proxy on the API origin.
-- **The builder** is a `build` run of the same runner: it reads the
+- **The builder** (removed by `routines-in-chat.md`; the database keeps
+  `build` as an allowed mode) was a `build` run of the same runner: it read the
   capabilities, asks the model for name, summary, report, manifest and
   code, checks the draft (the manifest at the server, then a full
   type-check), retries up to three times with the problems, and proposes.
@@ -1366,8 +1377,9 @@ they left open:
   routine_not_active` until then. An admin who wants one over-limit schedule
   tick resumes, runs the held runs, and pauses again (§6.5 meant this to be
   one step).
-- **The Routines page** (`packages/web/src/routes/routines`) has the
-  describe box, the review (facts, summary, report, code), approve, reject,
+- **The Routines page** (`packages/web/src/routes/routines`) has
+  **New routine**, which opens a chat (`routines-in-chat.md`; the describe
+  box is gone), the review (facts, summary, report, code), approve, reject,
   test, pause, resume, archive, held runs, runs with their calls, record
   buttons, and the workspace time zone under workspace settings. A
   proposal has a dry run, which shows each run's calls and why one failed,

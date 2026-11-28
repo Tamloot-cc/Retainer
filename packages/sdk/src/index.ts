@@ -72,6 +72,7 @@ import type {
   RoutineCapabilities,
   RoutineCheckResult,
   RoutineDetail,
+  RoutineDraft,
   RoutinePreview,
   RoutineProblem,
   RoutineReport,
@@ -1366,10 +1367,11 @@ export class RetainerClient {
   validateRoutine(input: { manifest: unknown; code: string }, wait = 15) {
     return this.post<RoutineCheckResult>(`/v1/routines/validate?wait=${wait}`, input);
   }
-  previewRoutine(input: { manifest: unknown; code: string }) {
+  previewRoutine(input: { manifest: unknown; code: string } | { sourceId: string }) {
     return this.post<{
       valid: boolean;
       problems: RoutineProblem[];
+      sourceId?: string;
       /** Null when nothing matched recently: there is nothing to dry-run or poll. */
       previewId?: string | null;
       matched?: number;
@@ -1390,22 +1392,27 @@ export class RetainerClient {
       signal,
     );
   }
-  /** Asks the built-in builder for a routine from a description; poll the job. */
-  buildRoutine(description: string, routineId?: string) {
-    return this.post<{ jobId: string }>('/v1/routines/build', {
-      description,
-      ...(routineId ? { routineId } : {}),
-    });
+  /** What a chat's routine draft card shows (routines-in-chat spec §4.1). It only reads. */
+  routineDraft(
+    sourceId: string,
+    options: { preview?: string | null; routine?: string } = {},
+    signal?: AbortSignal,
+  ) {
+    return this.get<RoutineDraft>(
+      `/v1/routines/drafts/${encodeURIComponent(sourceId)}`,
+      { preview: options.preview ?? undefined, routine: options.routine },
+      signal,
+    );
   }
-  proposeRoutine(input: {
-    manifest: unknown;
-    code: string;
-    name: string;
-    description: string;
-    summary: string;
-    report: RoutineReport;
-    routineId?: string;
-  }) {
+  proposeRoutine(
+    input: ({ manifest: unknown; code: string } | { sourceId: string }) & {
+      name: string;
+      description: string;
+      summary: string;
+      report: RoutineReport;
+      routineId?: string;
+    },
+  ) {
     return this.post<{ routineId: string; versionId: string; number: number }>(
       '/v1/routines',
       input,

@@ -81,7 +81,7 @@ const routineBinding = z.strictObject({
   runId: z.uuid(),
   routineId: z.uuid().nullable(),
   fence: z.string().regex(/^[1-9][0-9]{0,18}$/),
-  mode: z.enum(['run', 'test', 'dry', 'check', 'build']),
+  mode: z.enum(['run', 'test', 'dry', 'check']),
   tools: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,99}$/)).max(20),
 });
 export type RoutineBinding = z.infer<typeof routineBinding>;

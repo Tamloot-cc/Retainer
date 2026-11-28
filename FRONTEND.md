@@ -858,6 +858,21 @@ A person's chats with the workspace agent ([agent spec](docs/specs/agent.md)
   task that ended before it saved anything says so, and a call refused before
   it got a task says why.
 
+- **A routine draft** (`retainer-routine` fence, `routes/routines/chat-block.tsx`;
+  [routines-in-chat.md](docs/specs/routines-in-chat.md) §5): the name and
+  description, Retainer's facts, the agent's summary and report, the
+  trigger's count and the stored dry run, all read from
+  `GET /v1/routines/drafts/:sourceId`, and the code folded away. Opening it
+  never starts a check or a dry run. **Propose** (or **Propose new
+  version**) proposes as the person; a reopened card that finds its own
+  proposal says "Proposed", "Approved" or "Rejected" and links to it. A
+  draft whose check no longer holds, or whose routine is archived, shows why
+  and no Propose.
+- **Routines** has **New routine**, a plain chat, and a routine's page has
+  **Edit with the agent**, a chat whose first message carries the routine
+  and why it paused. On a server without the agent the page says an agent
+  connected over MCP builds routines.
+
 ### 5.11 Dashboards — `/app/dashboards`
 
 Available alongside Chat. The agent can stream an `openui-lang` block as a

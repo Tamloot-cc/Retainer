@@ -5,7 +5,7 @@ import { gapText, VERDICTS } from './model.js';
 /**
  * One version as an admin reviews it, each part labelled by who wrote it
  * (routines spec §5.2, item 4): Retainer's facts first, since they are
- * generated from the routine itself; then the builder's words and report;
+ * generated from the routine itself; then the agent's words and report;
  * then the code, folded away.
  */
 export function VersionDetails({ version }: { version: RoutineVersionView }) {
@@ -22,13 +22,13 @@ export function VersionDetails({ version }: { version: RoutineVersionView }) {
           <Muted>Retainer could not describe this version.</Muted>
         )}
         <Muted small>
-          Retainer writes these sentences from the routine itself, not from the builder's words, so
+          Retainer writes these sentences from the routine itself, not from the agent's words, so
           you can rely on them.
         </Muted>
       </Section>
-      <Section title="The builder's summary">
+      <Section title="The agent's summary">
         <p className="text-sm">{version.summary}</p>
-        <Muted small>Written by the builder. Retainer does not check it.</Muted>
+        <Muted small>Written by the agent that built it. Retainer does not check it.</Muted>
       </Section>
       <Section title="How much of your description it covers">
         <Report report={version.report} />

@@ -13,12 +13,15 @@ export function agentToolHost(sql: Sql, options: InProcessMcpOptions = {}): Reta
   const rpc = inProcessMcp(sql, options);
 
   return {
-    async list(caller, names) {
+    async list(caller, names, optional = []) {
       const tools = await listTools(rpc, caller);
-      return names.map((name) => {
+      return names.flatMap((name) => {
         const tool = tools.find((entry) => entry.name === name);
-        if (!tool) throw new Error(`MCP tool ${name} is missing`);
-        return { name, description: tool.description ?? '', inputSchema: tool.inputSchema };
+        if (!tool) {
+          if (optional.includes(name)) return [];
+          throw new Error(`MCP tool ${name} is missing`);
+        }
+        return [{ name, description: tool.description ?? '', inputSchema: tool.inputSchema }];
       });
     },
     async call(caller, name, input): Promise<RetainerToolResult> {

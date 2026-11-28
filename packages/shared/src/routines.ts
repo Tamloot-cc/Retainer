@@ -331,8 +331,6 @@ export type RoutineRunContext = {
   check: boolean;
   /** The triggering record, keyed by field keys, as it is when the run starts. */
   record?: RoutineRecord;
-  /** Build mode: the person's description and the routine it is for. */
-  build?: { description: string; routineId: string | null };
   model?: { origin: string };
 };
 
@@ -402,6 +400,8 @@ export const ROUTINE_STOP_CODES = {
   run_expired: 'expired',
   run_diverged: 'diverged',
   budget_exhausted: 'budget_exhausted',
+  // A dry run's model call past half the day's cap (routines-in-chat spec §7).
+  dry_run_budget: 'budget_exhausted',
   run_erased: 'erased',
 } as const satisfies Record<string, RoutineRunStatus>;
 
@@ -931,6 +931,8 @@ export type RoutineRunView = {
   finishedAt: string | null;
   expiresAt: string | null;
   initiatedBy: Actor | null;
+  /** The checked manifest and code it ran, for a check or a dry run. */
+  sourceId?: string | null;
   modelCalls: number;
   output: Record<string, unknown> | null;
   calls: RoutineRunCall[];
@@ -950,6 +952,40 @@ export type RoutineCheckResult = {
   problems: RoutineProblem[];
   jobId?: string;
   status?: string;
+  /** The checked manifest and code, for a preview or a proposal (routines-in-chat spec §4.1). */
+  sourceId?: string | null;
+};
+
+/**
+ * What a chat's routine draft card reads (routines-in-chat spec §4.1): only
+ * what Retainer may state. The agent's words come from the fence.
+ */
+export type RoutineDraft = {
+  sourceId: string;
+  manifest: RoutineManifest;
+  code: string;
+  facts: string[];
+  /** Propose would pass: no static problems and a passed type-check for the current types. */
+  ok: boolean;
+  problems: (Omit<RoutineProblem, 'part'> & { part: RoutineProblem['part'] })[];
+  checked: boolean;
+  /** The trigger's count now, by kind; null when the manifest has problems. */
+  count: { kind: 'record' | 'schedule' | 'schedule_once' | 'manual'; value: number | null } | null;
+  /** The dry run asked for: null when none was, unavailable once its runs are gone. */
+  preview: { available: false } | { available: true; done: boolean; runs: RoutineRunView[] } | null;
+  proposals: {
+    routineId: string;
+    versionId: string;
+    number: number;
+    name: string | null;
+    description: string | null;
+    summary: string;
+    report: RoutineReport;
+    state: RoutineVersionView['state'];
+    builtBy: Actor;
+    byYou: boolean;
+    createdAt: string;
+  }[];
 };
 
 export type RoutinePreview = {
