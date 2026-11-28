@@ -9,12 +9,37 @@ collapsible keyframes are adapted from shadcn/ui's `tailwind.css`, MIT. The chat
 Elements patterns (Chat, Message, Reasoning, Tool, Chain of Thought, Sources,
 Suggestion, Prompt Input).
 `src/routes/dashboards/chart-container.tsx` adapts shadcn/ui's ChartContainer (MIT).
+`src/ui/section-nav.tsx`: the scroll tracking (`activeSections` and the
+heading-above measure) is ported from [Fumadocs](https://github.com/fuma-nama/fumadocs)'
+`fumadocs-core/toc`, MIT.
 Other UI components are original wrappers around installed Radix primitives and cmdk.
 No Twenty or Comp AI source files were copied or translated.
 
 ## shadcn/ui — MIT License
 
 Copyright (c) 2023 shadcn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Fumadocs — MIT License
+
+Copyright (c) 2023 Fuma
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

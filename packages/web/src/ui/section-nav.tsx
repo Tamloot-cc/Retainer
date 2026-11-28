@@ -1,3 +1,6 @@
+// The scroll tracking here (`activeSections`, `headingAbove`) is ported from
+// Fumadocs' table of contents, fumadocs-core/toc (https://github.com/fuma-nama/fumadocs).
+// Copyright (c) 2023 Fuma, MIT License; see packages/web/THIRD_PARTY.md.
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cn } from './core.js';
 
