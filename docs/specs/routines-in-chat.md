@@ -29,11 +29,14 @@ If accepted this spec amends:
 - `docs/rest-api.md` (`sourceId` on validate, preview and propose; the
   draft route; `POST /v1/routines/build` removed).
 
-Reviewed by Codex on 2026-11-28; its findings are worked in (the draft
-route binds a preview to its source and runs the full static check, a
-draft lasts 7 days, how a card knows it was proposed, the wording of the
-counts, the notice, and what removing the builder leaves in the
-database).
+Reviewed twice by Codex on 2026-11-28; the findings are worked in. The
+first round: the draft route binds a preview to its source and runs the
+full static check, a draft lasts 7 days, how a card knows it was
+proposed, the wording of the counts, the notice, and what removing the
+builder leaves in the database. The second: what a dry run's agent task
+may do, dry-run results in the chat's trace, a stricter proposal match,
+`sourceId` on every path, a preview that is gone or still running, a
+code of its own for the dry-run cutoff, and an archived target.
 
 What does not change: a routine is a manifest and TypeScript code, only an
 admin approves, nothing runs before approval, a routine writes as an
@@ -135,7 +138,19 @@ routines are enabled:
 - The group is for chats only. A task started by a routine
   (`retainer.ai.agent`) cannot list it: a routine does not build routines.
 - A chat's tools are fixed when it is created (`agent.md` §8.3), so chats
-  opened before this ships do not get the group.
+  opened before this ships do not get the group. The first-message line
+  (§3.2) names the routines guide only when the chat's pinned tools
+  include the group.
+- **Wiring.** The chat's tools run through the in-process MCP host
+  (`mcp/agent-tools.ts`), which has no routines configuration today. It
+  gets the same one REST and MCP get, so the group exists exactly where
+  routines are enabled.
+- **What the trace keeps.** A tool result is saved in the chat's trace
+  like any other read (`agent.md` §5.3), so a dry run's results that the
+  agent polled stay in the chat after routine retention has cleared them
+  from the run (7 days). That is the rule for everything the agent reads:
+  the chat is the person's own, and it goes when the chat is deleted or
+  by `forget` (`agent.md` §5.4). No second, trimmed poll for the chat.
 - No chat tool approves, tests, pauses or archives. Those stay with an
   admin on the Routines page.
 
@@ -161,12 +176,17 @@ what the chat adds:
 - **Say no early.** If the verdict is `not_possible`, answer in words with
   each gap and what would fix it, and no draft. If `partial`, draft what is
   possible and list the gaps in the report.
+- **Set `oncePerRecord` in the manifest** when the description asks to
+  act once per record. The built-in builder had a gate that sent a draft
+  back without it (`onceProblems`); the type-check does not replace that,
+  so the guide says it plainly and the eval asserts it (§9).
 - **Check, then preview once.** `validate_routine` until it passes, then
   `preview_routine` once with the `sourceId`, then `get_routine_preview`
   until it is done. Read the dry run: a run that failed, or that tried
   nothing where it should have acted, is a reason to fix the code and
-  check again. Do not preview again unless the manifest or the code
-  changed.
+  check again. A dry run stopped by the dry-run budget
+  (`dry_run_budget`, §7) is not: finish the draft with what there is and
+  say so. Do not preview again unless the manifest or the code changed.
 - **Write the description for the record.** The description is saved with
   the routine as the lasting statement of intent (`routines.md` §5.3). In
   a chat it is the agent's faithful summary of everything the person
@@ -206,26 +226,34 @@ Today the ID stays inside the server. Three small changes make it the
 handle for a draft:
 
 - `validate_routine` and `preview_routine` answer **`sourceId`** whenever
-  the static check passes.
+  the static check passes, on every path: a check already passed, one
+  that settles within the call, and one polled with `get_routine_job`
+  (whose answer for a check gains it). Today the queued path drops it.
 - `preview_routine` and `POST /v1/routines` (propose) accept
   **`sourceId`** in place of `manifest` and `code`. So the agent sends the
   code once, and the card never sends it at all.
-- **`GET /v1/routines/drafts/:sourceId?preview=<id>`** (`read`) answers
+- **`GET /v1/routines/drafts/:sourceId?preview=<id>&routine=<id>`**
+  (`read`) answers
   everything the card shows that only Retainer may state:
   - the manifest, the code and Retainer's facts (the fixed code that
     words a version's facts);
   - **the check, as Propose would run it**: the static check of the
     manifest against the workspace now (objects, fields, tools and their
     connections, the model), then whether the source has a passed
-    type-check for the current types. It answers `ok` or the problems.
+    type-check for the current types. With `routine`, also that the
+    routine exists and is not archived. It answers `ok` or the problems.
     It reads; it queues no sandbox job;
   - the trigger's count now (§5.1);
   - the dry runs of `preview`, **only if they are runs of this source**.
-    A preview of another source, or of another workspace, is refused
+    A preview whose runs belong to another source is refused
     (`preview_mismatch`), so a fence cannot pair one routine's code with
-    another's successful dry run;
-  - the proposals made from this source: each one's routine, version,
-    name, description, summary, status and who proposed it.
+    another's successful dry run. A preview with no runs left (they are
+    deleted after 30 days, though a proposed source lives on) is not an
+    error: the rest is answered, with the preview marked unavailable. One
+    still running is answered as it stands, and the card polls the route;
+  - the proposals made from this source: each one's routine, version
+    number, name, description, summary, report, status and who proposed
+    it.
 
 No new table: `chat-builds.md` §5 keeps each feature's drafts in its own
 tables, and for a routine that is `routine_sources` and `routine_runs`.
@@ -301,7 +329,9 @@ reused:
 4. **The count**, from the draft route, as of now and worded by trigger:
    - a record trigger: "N changes in the last 30 days matched the
      trigger" (before the `if`, which is how the preview counts);
-   - a schedule: "One tick reaches N records now";
+   - a schedule on an object: "N records match now", before the fan-out
+     limit; a schedule without an object: "Runs once each time, without a
+     record";
    - a manual routine: no count. Its button runs when someone presses it.
 5. **The dry run**, the stored one:
    - Each dry-run record with what the code tried, in order: writes, tool
@@ -309,13 +339,18 @@ reused:
    - The two standing limits, in one line: records are read as they are
      today, and a model can answer differently next time.
    - When it ran, when that is more than a day ago.
-   - With `preview: null`: "No dry run: the preview found no record to
-     run on. An admin can test it on a record before approving." This is
-     apart from the count, which can be above zero (the matching records
-     may be deleted since). The draft can still be proposed.
+   - With `preview: null`, or a preview that is unavailable: "No stored
+     dry run. An admin can test it on a record before approving." The
+     card does not say why: the fence's `null` is the agent's word, and
+     the count beside it is Retainer's. The draft can still be proposed.
    - After 7 days: "The dry run's results are no longer kept."
-6. **The code**, collapsed, with a diff from the active version when the
-   draft names a routine.
+   - A run stopped as `dry_run_budget`: "Today's model budget for dry
+     runs was used up" (§7). Any other failure keeps its own words.
+   - The display is the stored-run list of `routines/dry-run.tsx`, not its
+     dialog, which starts a new preview.
+6. **The code**, collapsed. No diff from the active version in the card:
+   the review page does not have one yet (`routines.md` §11.4), and when
+   it does, that is where a version is compared.
 
 The card reads the stored preview. It never calls `preview_routine`
 (`chat-builds.md` §3): a dry run calls the model and counts against the
@@ -332,6 +367,7 @@ Propose runs (§4.1). The states, in the order the card tests them:
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | A proposal that matches this card (§5.3)   | "Proposed", with **Open**. No check is needed                                                   |
 | Not found (the source is deleted)          | "This draft has expired. Ask the agent to draft it again."                                      |
+| The named routine is archived or gone      | "This routine is archived." No Propose                                                          |
 | Static problems                            | The problems ("the tool `send_email` is no longer connected"), no Propose                       |
 | No passed type-check for the current types | "This draft needs a fresh check: it is over a week old, or the workspace changed." No Propose   |
 | `ok`                                       | The buttons                                                                                     |
@@ -342,8 +378,8 @@ itself: a check is a sandbox job, and the agent is what fixes a failure.
 
 Propose runs the same check on the server, as it does today. A draft that
 stopped passing between opening and pressing is refused (`422
-invalid_routine` with the problems, or `409 not_validated`), and the card
-moves to the matching state above.
+invalid_routine` with the problems, `409 not_validated` or `409
+routine_archived`), and the card moves to the matching state above.
 
 ### 5.3 Keep
 
@@ -359,16 +395,22 @@ moves to the matching state above.
 - **After proposing** the card shows "Proposed. Nothing runs until an
   admin approves it." and **Open**, the proposal on the Routines page.
 - **A reopened card knows it was proposed** when the draft route lists a
-  proposal from its source with the same target routine, name,
-  description and summary. The source alone is not enough: it is a hash
+  version from its source that the viewer proposed, with the same name,
+  description, summary and report, and the same target: for a draft
+  naming a routine, a version of that routine; for a new draft, a
+  routine's first version. The source alone is not enough: it is a hash
   of the manifest and the code, so a later draft that changed only the
   name shares it, and so can a draft for another routine.
+- **The matched version's status sets the words**: "Proposed, waiting for
+  an admin", "Approved" or "Rejected", each with **Open**. A rejected
+  draft is not proposed again from the same card; a changed draft is a
+  new card.
 - **Duplicates.** The button is disabled while a Propose is in flight.
   Two tabs pressing at once can still make two proposals; an admin
   rejects one. Accepted, rather than a uniqueness rule on proposals.
 - **Approval stays on the Routines page**, for an admin too. Approving is
-  where the test run, the confirmation, the diff and the count of
-  discarded runs live (`routines.md` §5.3), and a second copy of that in a
+  where the test run, the confirmation and the count of discarded runs
+  live (`routines.md` §5.3), and a second copy of that in a
   chat card would drift. For an admin the link reads **Review and
   approve**. The cost is one click.
 - A `partial` draft is proposed like any other; the review shows the
@@ -379,10 +421,20 @@ moves to the matching state above.
 `routines.md` §5.1 has the build screen say, before the person starts,
 that a dry run sends record content to the model provider. In the chat
 there is no such moment: the agent previews while it drafts. This spec
-drops that notice for the chat. The person is already talking to a model
-that reads their records, on the same provider and Retainer's own key,
-and a dry run sends nothing the chat's own reads do not. An MCP agent's
-dry run is unchanged.
+drops that notice for the chat.
+
+What a dry run can send out, stated exactly:
+
+- `ai.generate` calls send content of the sampled records to the
+  routine's model, through the model proxy.
+- An `ai.agent` task runs in a dry run too, in dry mode: its writes are
+  reported and it calls no extension tool, but it reads and, if the
+  manifest lists `web.search`, searches the web (`agent.md` §7.2, as
+  built in `routines/runtime.ts`).
+
+Neither goes beyond what the chat itself does: the chat agent is a model
+reading the person's records, with web search, on Retainer's own key. So
+the chat carries no extra notice. An MCP agent's dry run is unchanged.
 
 ## 6. Editing and repair
 
@@ -395,8 +447,8 @@ dry run is unchanged.
   works the same way: `list_routines`, `get_routine`, a draft naming the
   routine.
 - **The draft is a new proposal.** The active version runs on until an
-  admin approves the new one (`routines.md` §5.3). The card's code shows
-  the diff. The description is rewritten to state the whole intent after
+  admin approves the new one (`routines.md` §5.3). The description is
+  rewritten to state the whole intent after
   the change, not the change alone, since it is what the next edit starts
   from.
 - **Repair.** A routine that paused because the workspace changed is
@@ -421,12 +473,19 @@ Proposed, one rule and no second pool:
 
 - **A dry run's model call is refused once the workspace has used half the
   day's cap** (500 by default; half of
-  `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`). The check is one comparison in
-  the step that already reserves the call. Live runs and test runs keep
-  the whole cap.
-- That dry run ends as `budget_exhausted`, as a run at the full cap does.
-  The card shows "Today's model budget for dry runs is used up", and the
-  draft can still be proposed and tested by an admin.
+  `RETAINER_ROUTINE_MODEL_CALLS_PER_DAY`, rounded down, so a cap of 1
+  allows dry runs none). The check is one comparison in the step that
+  already reserves the call. Live runs and test runs keep the whole cap.
+- That dry run ends with a code of its own, **`dry_run_budget`**.
+  `budget_exhausted` already means two things (the run's own 50 calls and
+  the day's cap), and neither the agent nor the card could tell this
+  cutoff from them. The card says so (§5.1), the agent does not rewrite
+  the code over it (§3.2), and the draft can still be proposed and tested
+  by an admin.
+- **It covers `ai.generate` only.** An `ai.agent` task in a dry run
+  counts against the agent's limits (`agent.md` §10), as it does in a
+  live run: at most 10 tasks a run, and the workspace's daily agent
+  steps.
 - The rule covers every dry run, from the chat or from an MCP agent. They
   compete for the same thing.
 - The guide's "preview once" (§3.2) is what keeps ordinary chats far from
@@ -485,12 +544,14 @@ One PR:
    web chat line.
 2. **Web**: the `retainer-routine` block and card; **New routine** and
    **Edit with the agent**; the Routines page without the describe box.
-3. **Removal**: the build route, run mode and builder.
+3. **Removal**: the build routes and the builder; no more `build` runs
+   (the database keeps the value, §8).
 4. **Docs**: the amendments listed at the top.
 
 No schema migration: `routine_sources`, `routine_runs` and
 `routine_versions` already hold everything. So the hosted deploy has no
-maintenance window.
+maintenance window. The change touches routines, so `pnpm test:docker`
+runs before the push (`CLAUDE.md`).
 
 **The eval gates the removal.** `packages/server/scripts/routine-eval.ts`,
 beside `dashboard-eval.ts` and `view-eval.ts`, runs each case twice: with
@@ -503,8 +564,10 @@ branch. Cases:
   starts an agent task;
 - a `partial` case (a tool whose account is not connected) and a
   `not_possible` case (blocking a save);
-- a description that says "only once per deal" (`oncePerRecord` in the
-  manifest);
+- a description that says "only once per deal": the eval asserts
+  `oncePerRecord` in the manifest, not only that a draft came back;
+- one on a fixture where the routine should act: the eval reads the dry
+  run's attempted writes;
 - an unclear description (the chat asks; the builder guesses or refuses);
 - an edit of an existing routine, and a routine built from a view;
 - requests that are not routines: a question, a one-off change.
@@ -520,7 +583,9 @@ improved first; the PR does not merge with a worse builder.
   a missing key or a `not_possible` verdict is refused; the card's states
   (§5.2, and no preview, results no longer kept, read-only) from the
   draft route's answer; a proposal from the same source under another
-  name does not mark the card as proposed.
+  name, with another report, by another person or for another routine
+  does not mark the card as proposed; an approved and a rejected match
+  show their own words.
 - **Integration (Postgres)**:
   - `validate_routine` and `preview_routine` answer `sourceId`; preview
     and propose by `sourceId` behave as with the manifest and code; a
@@ -537,14 +602,22 @@ improved first; the PR does not merge with a worse builder.
     concurrently).
   - The agent tool group: each tool runs with the person's access; a chat
     for a read-only person can check and preview; `propose_routine` is
-    not a chat tool; a task cannot list the group.
+    not a chat tool; a task cannot list the group. With routines enabled
+    and disabled: chat creation pins the group or not, the first-message
+    line follows, and dispatch works.
+  - A check that outlasts the call: `get_routine_job` answers the
+    `sourceId`, and `preview_routine` takes it.
+  - The draft route with a deleted preview answers the source with the
+    preview unavailable; with an archived `routine`, the problem.
+  - A dry run cut off at half the cap ends as `dry_run_budget`; one at
+    its own 50 calls stays `budget_exhausted`.
   - `POST /v1/routines/build` is gone.
 - **End to end (Playwright)**, with a stubbed agent stream: a draft
   renders its facts, summary, report and dry run; a draft with
   `preview: null` shows the no-matches line and can be proposed; Propose
   creates a proposal as the person and the card links to it; reopening
-  the chat shows it as proposed; a draft naming a routine shows the diff
-  and proposes a new version; a draft whose check no longer holds shows
+  the chat shows it as proposed; a draft naming a routine proposes a
+  new version; a draft whose check no longer holds shows
   no Propose; **Edit with the agent** opens a chat with the routine;
   opening a card starts no dry run.
 
