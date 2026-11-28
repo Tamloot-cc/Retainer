@@ -6,22 +6,26 @@ draft card, guides read on demand and a check before answering
 ([dashboards.md](dashboards.md) §5, §8.1). The pattern it shares with
 dashboards and Routines is [chat-builds.md](chat-builds.md).
 
-If accepted this spec amends:
+This spec amends:
 
-- `ARCHITECTURE.md` §1.4 (new view settings, rules 2 to 4), §5 (relative
-  dates in filters) and §6.2 (new MCP tools and a guide).
+- `ARCHITECTURE.md` §1.4 (its intro and new view settings; rules 2 to 4,
+  and rule 6 for a board grouped by a relation), §5 (relative dates in
+  filters) and §6.2 (new MCP tools and a guide).
 - `agent.md` §6.6 (the web chat's first message names the views guide) and
   §8.1 (new read tools).
 - `FRONTEND.md` §5.3b (grouped tables, the settings summary, drafts).
-- `docs/rest-api.md` (new view keys, `view` on query and aggregate).
+- `docs/rest-api.md` (new view keys, the view check route,
+  `expectedUpdatedAt` on a view update, `view` on query and aggregate).
+- `routines.md` (relative dates in trigger filters; the guide note of §8).
+- `dashboards.md` §12 question 5, which §4.3 settles.
 
 The write rules, the actor types and the rule that Retainer's core never
 calls a model do not change. The agent drafts a view; the person saves it.
 
 ## 1. The idea on one page
 
-A person on Deals asks the agent: "show me open deals grouped by company,
-biggest first, closing this quarter". The agent answers with a sentence and
+A person asks the agent in the chat: "show me open deals grouped by
+company, biggest first, closing this quarter". The agent answers with a sentence and
 a draft view: its name, one line on what it is for, its settings in plain
 words, how many deals match, and the first few groups. **Open** shows the
 real table with the draft applied. **Save view** keeps it. "Only the ones
@@ -38,7 +42,7 @@ to "go through my hot leads" finds that view and runs it, rather than
 guessing what hot means. Each view carries a description of its purpose
 for that (§4).
 
-## 2. Decided and proposed
+## 2. Decided
 
 Decided with the product owner on 2026-11-27:
 
@@ -129,18 +133,31 @@ New keys beside it, all optional:
 | Key               | Holds                                                              |
 | ----------------- | ------------------------------------------------------------------ |
 | `granularity`     | With a date: `day`, `week`, `month` (default), `quarter` or `year` |
-| `groupOrder`      | `default`, `asc` or `desc`: by group label, A to Z or Z to A       |
-| `hideEmptyGroups` | `true` hides groups with no records                                |
+| `groupOrder`      | `default`, `asc` or `desc`                                         |
+| `hideEmptyGroups` | With a select: `true` hides options with no records                |
 
-`default` order is the grouping's own: option order for a select, largest
-first for a relation, oldest first for dates (dashboards.md §7.3).
+`default` order is the grouping's own: option order for a select, most
+records first for a relation, oldest first for dates (dashboards.md §7.3).
+`asc` and `desc` order a select or a relation by group label, A to Z or
+Z to A, and dates oldest or newest first. A relation is never ordered by
+its `groupAggregate`: "biggest first" in the summary would promise that,
+so the summary says "most records first".
+
+A date grouping in a view shows only periods that have records. The
+aggregate read fills empty periods with zero for charts; a table grouped
+by day would otherwise be mostly empty sections.
 `hiddenGroups` and `groupAggregate` keep their meaning and now apply to
 tables as well. `hiddenGroups` holds option values, related record IDs or
 period starts (`2026-10-01`), with `null` for "no value".
 
 Groups follow the aggregate read's limits: date and relation groupings
-show at most 50 groups, and past that the view says how many it shows.
-Which groups stay is the aggregate read's rule (dashboards.md §7.3).
+show at most 50 groups, and which stay is the aggregate read's rule
+(dashboards.md §7.3). A chart may drop the rest, but a view is a list
+people work through, so no record may go missing. Past 50, a last group
+holds every record the others do not: **Other** for a relation, **Earlier**
+for dates (the 50 latest periods stay). Its condition is the view's filter
+minus the shown groups, so it pages like any section. A card cannot be
+dropped on a board's Other column.
 
 A board grouped by a relation has a column per related record that has
 records in the view, plus "No {field}". Dragging a card to another column
@@ -164,14 +181,30 @@ runs:
   `last_` or `next_` followed by `week`, `month`, `quarter` or `year`.
 - **Rolling periods**: `{ last: n, unit }` or `{ next: n, unit }`, `n`
   from 1 to 1000, `unit` one of `day`, `week`, `month`. `last` ends now
-  and `next` starts now.
+  and `next` starts now. On a `date` field now is today, and today is
+  inside both.
 - **Time zone and weeks** as the aggregate read: the workspace's
   `settings.timeZone` (UTC when unset), weeks starting on Monday
   (dashboards.md §7.1).
 - `not` around it gives "outside the period", as for any condition.
 
-`within` is part of the query filter (`ARCHITECTURE.md` §5), not of views.
-Everything that takes a filter takes it: queries, aggregates, saved views,
+A period has two ends, so `within` cannot say "overdue" or "no update in
+30 days". For those, `lt`, `lte`, `gt` and `gte` on the same fields take a
+relative day in place of a date:
+
+```
+{ dueDate:   { lt: "today" } }
+{ updatedAt: { lt: { ago: 30, unit: "day" } } }
+{ closeDate: { gte: { ahead: 2, unit: "week" } } }
+```
+
+`today`, `yesterday` and `tomorrow`, or `{ ago: n, unit }` and
+`{ ahead: n, unit }` with the same `n` and `unit` as a rolling period. It
+resolves to a date in the workspace's time zone when the query runs, and
+then compares as that date written out would.
+
+Both are part of the query filter (`ARCHITECTURE.md` §5), not of views.
+Everything that takes a filter takes them: queries, aggregates, saved views,
 dashboard queries and routine triggers. A dashboard pinned as "deals this
 quarter" stays this quarter (dashboards.md §12 question 5).
 
@@ -200,6 +233,17 @@ relation or date field clears `groupBy`, `granularity`, `hiddenGroups` and
 A table left without its grouping shows its records ungrouped; it does not
 ask for a field as a board does.
 
+**A repair that widens a view leaves an issue.** Today the repair rewrites
+the stored filter, and the next read shows an ordinary view with no sign
+that a condition went. That mattered little while views were only looked
+at. Now an agent runs "Hot leads" and a routine copies its filter, so a
+view that silently grew is a real risk. When a schema change drops a
+filter condition, the view's `issues` list it ("the filter on Score was
+removed with the field") on every read until someone saves the view
+again. The view still runs: `query_records` and `aggregate_records` with
+`view` return those issues beside the result, and the guide tells the
+agent to say so before acting on the records.
+
 ## 5. The agent
 
 ### 5.1 The views guide
@@ -216,8 +260,10 @@ ask for a field as a board does.
   `query_records` or `aggregate_records` with the draft's filter, then
   `check_view` on the finished draft before answering (§5.3).
 - **Write a description** saying what the view is for.
-- **Use relative dates** for anything about now ("this quarter", "overdue"):
-  a view with fixed dates goes stale.
+- **Use relative dates** for anything about now: `within` for a period
+  ("this quarter"), a relative day for an open end ("overdue" is
+  `{ lt: "today" }`). A view with fixed dates goes stale.
+- **Say so when a view has issues** (§4.6) before acting on its records.
 - **Use stored option values** in filters, as the dashboards guide says.
 - **The draft format** (§5.2).
 
@@ -245,16 +291,24 @@ The agent answers with a `retainer-view` fence holding JSON:
 }
 ```
 
-It is exactly a `POST /v1/objects/:object/views` body plus `object`, by
-field names. To change a saved view, the draft names it and carries only
-the changed keys, `null` to clear one, exactly a `PATCH` body:
+It is a `POST /v1/objects/:object/views` body plus `object`, by field
+names, without `visibility` and `position`: who sees a view and where it
+sits are the person's to set, and the check refuses a draft that carries
+either. To change a saved view, the draft names it and carries only the
+changed keys, `null` to clear one, as a `PATCH` body does:
 
 ```retainer-view
-{ "view": "0b5e…", "groupBy": null, "kind": "board" }
+{ "view": "0b5e…", "groupBy": "owner", "hiddenGroups": null }
 ```
 
-A change to an earlier draft in the same chat is a whole new draft: drafts
-are short, so there is no merge step as dashboards have.
+- **A change to an earlier draft in the same chat is a whole new draft.**
+  Drafts are short, so there is no merge step as dashboards have. An edit
+  draft always carries every key that differs from the saved view, not
+  from the draft before it, so it reads the same whether or not the
+  person pressed Update in between.
+- **A draft that names a view and changes nothing** shows that view, with
+  Open and no save buttons. That is how the agent answers "open my hot
+  leads" rather than making a near copy.
 
 ### 5.3 Tools
 
@@ -266,15 +320,22 @@ these join `retainer.read`:
   when it last changed, and its `issues`. Private views come back only to
   their creator (§7).
 - **`view` on `query_records` and `aggregate_records`**: runs a saved
-  view. The view's filter and search apply, combined with `and` with any
-  `filter` given; its sort applies unless `sort` is given. With
-  `aggregate_records`, the view's grouping applies unless `groupBy` is
-  given. The object is the view's, so `object` is not needed.
+  view. The object is the view's, so `object` is not needed.
+  - The view's filter and search decide which records match. A `filter`
+    given is combined with `and`; a `search` given must match as well.
+  - Its sort applies unless `sort` is given.
+  - With `aggregate_records`, the view's grouping and `groupAggregate`
+    apply unless `groupBy` or `aggregates` is given.
+  - `columns`, `hiddenGroups` and the other display settings do not
+    change what comes back: a hidden group's records are still in the
+    view.
+  - The result carries the view's `issues` when it has any (§4.6).
 - **`check_view(draft)`**: takes a draft (§5.2) and returns
   `{ ok, problems: [{ path, message }], count, groups? }`: the save check
   of §4.6 run without saving, then the view's query with the caller's
   access, giving the matching count and, when grouped, each group's label
-  and count. It saves nothing.
+  and count. It saves nothing. The web app calls the same check as
+  `POST /v1/objects/:object/views/check` (§6.3).
 
 No tool saves, edits or deletes a view: the person does (§6.3). An agent
 on a REST key can still save views through the API, as today.
@@ -292,19 +353,23 @@ view. Clicking a row opens the side sheet, as in an ungrouped table.
 
 The groups and their counts come from one aggregate call; each section's
 rows from a query with the group's condition added to the view's filter
-(the same split a board uses, `FRONTEND.md` §5.3b).
+(the same split a board uses, `FRONTEND.md` §5.3b). A section loads its
+rows when it scrolls into view, so a table of 50 groups does not start 50
+queries at once.
 
 ### 6.2 The settings summary
 
 Under the toolbar, every view shows one line of its settings in plain
 words, built from the view, not written by the agent:
 
-> Grouped by Company, biggest first · Close date is this quarter · Stage is
-> Lead, Qualified or Proposal · Matching "renewal"
+> Grouped by Company · Sorted by Amount, largest first · Close date is this
+> quarter · Stage is Lead, Qualified or Proposal · Matching "renewal"
 
 - **Each part has a ×** that removes it from the screen as an unsaved
   change, like a filter chip today, so a person can always undo what the
-  agent set without the agent. **Save view** keeps the change.
+  agent set without the agent. **Save view** keeps the change. In a
+  filter, a part is one top-level condition: an `or` or `not` group is one
+  part and goes whole.
 - **Filters** that fit the chips stay chips. Anything else (an `or`, a
   `not`, `within`) shows as a sentence in the summary: "Stage is Lead or
   Owner is empty". The filter menu says "This view has a filter the menu
@@ -329,10 +394,22 @@ draft card (`draft-card.tsx`):
   `draft`, the rest of the draft's settings. The page shows **Save view**
   as for any change. Nothing is saved by opening.
 - **Save view** for a new draft, or **Update "Hot leads"** and **Save as
-  new** for a draft that names a view. The new view is `private` until
-  the person shares it, as a new dashboard is.
-- A draft whose `check_view` would fail shows its problems in place of the
-  preview, and no Save.
+  new** for a draft that names a view.
+  - A new view, from the card or from Open, is always saved `private`,
+    whatever the create route's default; the person shares it afterwards,
+    as with a new dashboard. Update leaves the view's visibility alone.
+  - For a draft that names a view, the card loads that view, shows the
+    draft applied to it, and sends Update with the view's `updatedAt` as
+    `expectedUpdatedAt`, as a dashboard does. If the view changed since,
+    the update is refused (`409`) and the card shows the draft on the
+    newer view before the person tries again. **Save as new** creates a
+    view from the full settings the card shows.
+- **The card checks the draft itself.** When it opens, it sends the draft
+  to `POST /v1/objects/:object/views/check`, with the viewer's access:
+  `check_view` as a route. A draft that passes gets its count and groups
+  from the answer and its first five records from an ordinary query. A
+  draft that fails shows its problems in place of the preview, and no
+  Save or Open.
 
 ### 6.4 The Edit dialog
 
@@ -347,11 +424,21 @@ A private view exists only for the actor that created it
 cannot see the private views of the person it works for, even while that
 person asks it to use one.
 
-Rule 4 gains one case: **a private view is also visible to an agent acting
-for its creator**, which for the workspace agent is the caller whose
-`person` is the view's creator. The agent may read and run it. It still
-cannot change it, and a view the agent's draft saves is created by the
-person who pressed Save, so the person stays its owner.
+Rule 4 gains one case: **a private view can also be read and run by an
+agent acting for its creator.**
+
+- **Who that is.** A caller whose `person` is the view's creator: the
+  workspace agent in that person's chat, and an app the person connected
+  over OAuth, such as Claude Code. In a chat started with an API key that
+  works for no person, the caller has no `person`; the agent's owner is
+  then the key, and it reads the private views that key's actor created.
+- **Reading only.** The case applies to listing, reading and running a
+  view. Updating, deleting and changing visibility keep today's rule: the
+  creator alone. Today one loader serves all of these
+  (`loadView` in `views/service.ts`), so the build gives reads their own
+  visibility check rather than widening the shared one.
+- A view the agent's draft saves is created by the person who pressed
+  Save, so the person stays its owner.
 
 ## 8. Views and Routines
 
@@ -364,51 +451,79 @@ routines guide says so, and the proposal shows the copied filter. `within`
 in a copied filter still moves with time, which is the intent: "deals
 closing this week" means this week on every run.
 
+A schedule trigger takes a filter and no search. A view with a saved
+`search` therefore cannot be copied whole: the filter alone would make the
+routine act on records the view does not show. The routines guide tells
+the agent not to copy such a view as it is. It tells the person, and
+builds the routine only on a filter the person agrees says the same.
+
+A view with `issues` (§4.6) is not copied either until the person has
+looked at it.
+
 A dashboard `Query` does not take `view` in v1 (§11).
 
 ## 9. Delivery
 
 One PR, as features land whole:
 
-1. **Query layer**: `within` in filters (`records/query.ts`, the shared
-   filter types), for every reader at once.
-2. **Views**: the new keys in `views/service.ts` and `db/schema.ts`
-   (`description`, `search`, `granularity`, `groupOrder`,
-   `hideEmptyGroups` in `config`; one migration for `description`), the
-   wider `groupBy`, their checks and repair, and the private-view rule
-   (§7).
+1. **Query layer**: `within` and relative days in filters
+   (`records/query.ts`, the shared filter types), for every reader at
+   once.
+2. **Views**: the new keys in `views/service.ts` (`description`, `search`,
+   `granularity`, `groupOrder` and `hideEmptyGroups`, all in `config`),
+   the wider `groupBy` with its Other group, their checks and repair, the
+   issue a widening repair leaves (§4.6), the check route,
+   `expectedUpdatedAt` on update, and the private-view rule (§7).
 3. **Agent and MCP**: `list_views`, `view` on the two reads, `check_view`,
    the `views` guide, the web chat line, the routines guide note.
 4. **Web**: grouped tables, relation columns on boards, the settings
    summary, the `retainer-view` block with Open, Save and Update, `draft`
    on the object page, the description box.
 
-The migration adds a column, so the hosted deploy carries the usual
-maintenance window (about ten minutes).
+No migration: every new key, `description` included, lives in `config`,
+which is JSON checked on each write. A column for the description would
+buy nothing, since views are listed per object and never searched by
+description in SQL, and it would cost a migration deploy (Dashboards'
+took about 28 minutes, ten of them with the API in maintenance).
 
 ### 9.1 Acceptance tests
 
-- **Unit**: each named and rolling period resolves to the right range in a
-  given time zone, across a year end and a daylight-saving change; the
-  settings summary words every filter shape, including nested `or` and
-  `not`; a draft parses and turns into a create or patch body; group order
-  and hidden groups apply.
-- **Integration (Postgres)**: `within` in queries, aggregates, saved views
-  and routine triggers; each new key is checked on save, refused on the
-  wrong kind, and repaired when its field, option or related record goes;
-  a table grouped by relation and by date pages each section; `view` on
-  both reads combines filters as stated; `check_view` saves nothing and
-  reports the caller's count; a private view is visible to the agent
-  acting for its creator and to no other agent or person; `list_views`
-  over MCP and as an agent tool.
+- **Unit**: each named and rolling period, and each relative day, resolves
+  to the right range in a given time zone, across a year end and a
+  daylight-saving change; the settings summary words every filter shape,
+  including nested `or` and `not`; a draft parses and turns into a create
+  or patch body, and one carrying `visibility` is refused; group order
+  (dates by time, not by label) and hidden groups apply.
+- **Integration (Postgres)**:
+  - `within` and relative days in queries, aggregates, saved views and
+    routine triggers.
+  - Each new key is checked on save, refused on the wrong kind, and
+    repaired when its field, option or related record goes.
+  - After a schema change drops a filter condition, the next read of the
+    view, and a `query_records` with `view`, both carry the issue; saving
+    the view clears it.
+  - A table grouped by relation and by date pages each section; with more
+    than 50 groups, every record is in a shown group or in Other.
+  - `view` on both reads combines filter and search as stated, and
+    returns a hidden group's records.
+  - `check_view` and the check route save nothing and report the caller's
+    count.
+  - A view update with a stale `expectedUpdatedAt` is refused.
+  - A private view: its creator's agent and connected app list, read and
+    run it; they cannot update or delete it; a key-mode agent reads its
+    own key's private views; no other agent or person sees it.
+  - `list_views` over MCP and as an agent tool.
 - **End to end (Playwright)**: with a stubbed agent stream, a draft renders
-  with its summary and preview; Open shows the draft on the object page
-  unsaved; Save view keeps it as private; Update changes the named view; a
-  × in the summary removes a setting and Save view stores that; a board
-  card dragged to another company column writes the relation.
+  with its summary and preview; a complete draft the check refuses shows
+  its problems and no Save; an ungrouped draft previews five records; Open
+  shows the draft on the object page unsaved; Save view keeps it as
+  private, from the card and from Open; Update changes the named view; a × in the summary removes a
+  setting and Save view stores that; a board card dragged to another
+  company column writes the relation.
 - **Model eval (manual)**: a `view-eval.ts` beside `dashboard-eval.ts`:
-  drafts for a grouped table, a relative date, an OR filter, an edit of an
-  existing view, a request a dashboard fits better, and a plain question.
+  drafts for a grouped table, a relative date, "overdue", an OR filter, an
+  edit of an existing view, a request a dashboard fits better, and a plain
+  question.
 
 ## 10. Limits
 
@@ -417,7 +532,7 @@ maintenance window (about ten minutes).
 | Description                 | 500 characters      |
 | Saved search                | 200 characters      |
 | Rolling period              | 1 to 1000 units     |
-| Groups in a table or board  | 50 (date, relation) |
+| Groups in a table or board  | 50, then Other      |
 | Rows per section, then more | 25                  |
 | Draft preview               | 5 records or groups |
 

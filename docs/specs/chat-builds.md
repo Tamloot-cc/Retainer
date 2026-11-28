@@ -2,7 +2,7 @@
 
 Status: **decided**, 2026-11-27. A short shared design, not a build spec.
 Each feature's own spec says how it does each step:
-[dashboards.md](dashboards.md) (shipped), [views.md](views.md) (proposed)
+[dashboards.md](dashboards.md) (shipped), [views.md](views.md) (decided)
 and [routines.md](routines.md) (shipped with its own builder; the move into
 the chat is §5.1 here).
 
@@ -51,7 +51,7 @@ With the product owner, 2026-11-27:
 | Step       | Dashboards                                 | Views                                                      | Routines (in the chat, §5.1)                                                |
 | ---------- | ------------------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Guide      | `get_guide("dashboards")`                  | `get_guide("views")`                                       | A new `get_guide("routines")`, with `get_routine_capabilities`              |
-| Draft      | An `openui-lang` fence: the program        | A `retainer-view` fence: the view's settings as JSON       | A `retainer-routine` fence naming the checked preview                       |
+| Draft      | An `openui-lang` fence: the program        | A `retainer-view` fence: the view's settings as JSON       | A `retainer-routine` fence naming the checked source and its preview        |
 | Check      | `check_dashboard`                          | `check_view`                                               | `validate_routine`, then `preview_routine`                                  |
 | Preview    | The dashboard, drawn in the card           | Summary, count, first rows or groups; **Open** on the page | Retainer's facts, recent matches, the dry run and the builder's report      |
 | Keep       | **Pin**, or **Update** and **Save as new** | **Save view**, or **Update** and **Save as new**           | **Propose**; an admin approves on the Routines page                         |
@@ -74,9 +74,13 @@ starts a dry run.
 3. **The guide is read on demand.** A web chat's first message carries one
    line naming every feature's guide. The base prompt stays the same for
    every chat, so its cache is shared.
-4. **The check runs before the answer.** The guide tells the agent to
-   check its draft and fix what is reported. A draft the check would refuse
-   shows its problems on the card and offers no keep button.
+4. **The check runs before the answer, and again on keeping.** The guide
+   tells the agent to check its draft and fix what is reported. The keep
+   route runs the same check, so a draft the check refuses is never kept,
+   and the card shows its problems. A view's card runs the check when it
+   opens and offers no keep button on a failed draft (views.md §6.3). A
+   dashboard's card learns of a failure when Pin is refused, and stays
+   that way: its tiles already show their own errors.
 5. **The preview uses the viewer's access** and real data. It never copies
    numbers or records into the draft.
 6. **Edit with the agent** opens a new chat whose first message carries
@@ -85,7 +89,9 @@ starts a dry run.
 7. **Renames never break a kept thing.** Dashboards and views store fields
    by key; a routine is type-checked again when the schema changes
    (`routines.md` §5.3). A removed field shows as an issue and offers
-   **Edit with the agent**.
+   **Edit with the agent**. The issue stays until a person saves the thing
+   again, so a view that lost a filter condition never reads as an
+   ordinary, wider view (views.md §4.6).
 
 ## 5. Shared code and what stays with each feature
 
@@ -118,18 +124,27 @@ change when the chat builds routines:
   check and preview a routine in the chat. Capabilities stay facts from
   `get_routine_capabilities`.
 - **The chat agent gets the routine tools.** `get_routine_capabilities`,
-  `validate_routine`, `preview_routine` and `get_routine_preview` join the
+  `validate_routine`, `get_routine_job` (a check can come back as a job
+  still running), `preview_routine` and `get_routine_preview` join the
   chat's tools. `propose_routine` does not: in the chat, the **Propose**
-  button proposes, as the person, from the preview the card shows (rule 1).
-  An MCP agent keeps calling `propose_routine`; its proposal still waits
-  for an admin.
-- **The Routines page's text box opens the chat.** The built-in builder,
-  a job in the sandbox that calls the model through the proxy, stays until
-  the chat version passes the routine eval. Then it is removed, and the
+  button proposes, as the person, what the card shows (rule 1). An MCP
+  agent keeps calling `propose_routine`; its proposal still waits for an
+  admin.
+- **The fence names the checked source, not only a preview.** A proposal
+  needs the routine's source and the builder's report, and a routine that
+  matched no recent record has no preview at all (`preview_routine`
+  returns `previewId: null`). So the card must be able to show and propose
+  a checked draft with "no recent matches", without a dry run to point at.
+- **The Routines page's text box is replaced by a link to the chat**, a
+  plain chat as §2 says, once the chat version passes the routine eval.
+  Until then the text box and the built-in builder, a job in the sandbox
+  that calls the model through the proxy, stay as they are. After it, the
   chat's agent is the built-in builder.
 
 How the `retainer-routine` fence and the card work in detail goes into
-`routines.md` when that work starts, after Views.
+`routines.md` when that work starts, after Views. That includes whether
+dry runs started from a chat need their own share of the daily model cap,
+so that a long chat cannot use up what live routines need.
 
 ## 6. Later
 
