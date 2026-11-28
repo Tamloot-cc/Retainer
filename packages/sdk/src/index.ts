@@ -90,6 +90,7 @@ import type {
   TimelinePage,
   UpdateViewInput,
   UpsertRecordsResponse,
+  ViewCheckResult,
   WorkspaceFeedInput,
   WorkspaceFeedPage,
   WriteResponse,
@@ -342,6 +343,13 @@ export class RetainerClient {
   }
   view(id: string, signal?: AbortSignal) {
     return this.get<SavedView>(`/v1/views/${encodeURIComponent(id)}`, {}, signal);
+  }
+  checkView(draft: unknown, object?: string, signal?: AbortSignal) {
+    return this.post<ViewCheckResult>(
+      object ? `/v1/objects/${encodeURIComponent(object)}/views/check` : '/v1/views/check',
+      draft,
+      signal,
+    );
   }
   createView(object: string, input: CreateViewInput) {
     return this.post<SavedView>(`/v1/objects/${encodeURIComponent(object)}/views`, input);

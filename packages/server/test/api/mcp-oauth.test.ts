@@ -3,8 +3,10 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { cappedScopes } from '@retainer/shared';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { agentCaller } from '../../src/agent-runtime/access.js';
 import { oauthActorId } from '../../src/auth/oauth-token.js';
 import { RUNTIME_ROLE } from '../../src/db/client.js';
+import { deleteView, listViews, readView, updateView } from '../../src/views/service.js';
 import {
   createOrganization,
   moveWorkspace,
@@ -115,6 +117,46 @@ describe('connecting Claude', () => {
       id: oauthActorId(CLAUDE_CLIENT_ID, t.dana.userId),
       name: 'Claude for Dana',
     });
+  });
+
+  it('lets the connected app and workspace agent read a private view, without granting writes', async () => {
+    const t = await setup();
+    const viewer = { cookie: t.dana.cookie, workspace: t.sales.id };
+    const response = await app.v1('/v1/objects/deal/views', {
+      ...viewer,
+      method: 'POST',
+      body: { name: 'My deals', kind: 'table', visibility: 'private' },
+    });
+    expect(response.status).toBe(201);
+    const { id } = (await response.json()) as { id: string };
+    const tokens = await connect(app.accounts, { cookie: t.dana.cookie, workspaceId: t.sales.id });
+    const bearer = tokens.access_token;
+    const args = { view: id };
+    expect(
+      JSON.parse((await callTool(bearer, 'list_views', { object: 'deal' })).text),
+    ).toMatchObject({ views: [{ id }] });
+    expect(JSON.parse((await callTool(bearer, 'aggregate_records', args)).text)).toMatchObject({
+      total: 0,
+    });
+    expect(JSON.parse((await callTool(bearer, 'query_records', args)).text)).toMatchObject({
+      records: [],
+    });
+    expect(JSON.parse((await callTool(bearer, 'check_view', { draft: args })).text)).toMatchObject({
+      ok: true,
+      count: 0,
+    });
+    const names = await (await mcpCall(app.api, bearer, 'tools/list')).text();
+    expect(names).not.toMatch(/"(create_view|update_view|delete_view)"/);
+    const sql = db.connect({ role: RUNTIME_ROLE });
+    const chat = await agentCaller(sql, t.sales.id, { kind: 'member', userId: t.dana.userId });
+    const other = await agentCaller(sql, t.sales.id, { kind: 'member', userId: t.owner.userId });
+    expect((await readView(sql, chat, id)).id).toBe(id);
+    await expect(updateView(sql, chat, id, { name: 'Blocked' })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(deleteView(sql, chat, id)).rejects.toMatchObject({ status: 404 });
+    expect((await listViews(sql, chat, 'deal')).views.map((view) => view.id)).toEqual([id]);
+    expect((await listViews(sql, other, 'deal')).views).toEqual([]);
   });
 
   it("gives each person their own actor, so two people's Claude are told apart", () => {

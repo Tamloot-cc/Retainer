@@ -143,8 +143,12 @@ export function FilterMenu({
   object,
   onApply,
   onError,
+  custom,
+  onEditAgent,
 }: {
   object: ObjectView;
+  custom?: boolean;
+  onEditAgent?: () => void;
   onApply: (clause: FilterClause) => void;
   onError: (message: string) => void;
 }) {
@@ -186,6 +190,18 @@ export function FilterMenu({
         </Button>
       }
     >
+      {custom && (
+        <PanelBody>
+          <p className="text-sm text-muted-foreground">
+            This view has a filter the menu can’t edit.
+          </p>
+          {onEditAgent && (
+            <Button size="small" onClick={onEditAgent}>
+              Edit with the agent
+            </Button>
+          )}
+        </PanelBody>
+      )}
       {selected ? (
         <>
           <PanelHeader

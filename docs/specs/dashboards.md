@@ -712,11 +712,11 @@ on the server, issues on read, editing a saved dashboard.
    tiles on request today.
 4. **Chart library.** Decided by the build: shadcn/ui charts on Recharts 3
    (§8.4).
-5. **Relative dates.** A pinned "deals this quarter" stores fixed dates and
-   goes stale; so does a saved view. The query filter needs relative ranges
-   ("this quarter", "last 30 days") resolved when the query runs, in the
-   workspace's time zone. It belongs in the shared query layer, so views and
-   dashboards get it together; the views spec takes it up.
+5. **Relative dates.** [Views §4.3](views.md#43-relative-dates) adds `within`
+   and relative-day comparisons to the shared query filter. For a pinned
+   dashboard such as "deals this quarter", use
+   `{ closeDate: { within: "this_quarter" } }` to resolve the period on each
+   query in the workspace's time zone.
 
 ## 13. Prior art
 

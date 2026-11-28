@@ -10,6 +10,8 @@ import type { ApiKeyScope } from './db/schema.js';
 export type Caller = {
   workspaceId: string;
   actor: Actor;
+  /** In key mode, the key actor whose private views this chat can read. */
+  viewReader?: Actor;
   /** A signed, installation-bound execution credential; never reaches personal memory. */
   run?: RunBinding;
   /** A standalone workspace grant; no hosted lease, installer impersonation or personal memory. */

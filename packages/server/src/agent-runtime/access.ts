@@ -118,6 +118,7 @@ export async function agentCaller(
       workspaceId,
       actor: agentActor(owner, key.acts_for_name ?? key.actor.name ?? key.actor.id),
       scopes: agentScopes(key.scopes),
+      ...(!key.acts_for_user ? { viewReader: key.actor } : {}),
       ...(key.acts_for_user
         ? {
             person: {

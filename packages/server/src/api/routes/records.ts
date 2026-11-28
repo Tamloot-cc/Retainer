@@ -11,12 +11,9 @@ import { deleteBindingsInput, idParam, limitParam, readBody } from '../../http/r
 import type { AppEnv } from '../../http/response.js';
 import { clearMyMemory } from '../../memory/service.js';
 import { linkedRecordPage } from '../../reads/linked.js';
-import { aggregateInputSchema } from '../../records/aggregate.js';
 import { mergeInputSchema } from '../../records/merge.js';
-import { queryInputSchema } from '../../records/query.js';
 import { findLiveRecord } from '../../records/read.js';
 import {
-  aggregate,
   bindingWriteStampSchema,
   bulkDeleteImpact,
   bulkDeleteImpactSchema,
@@ -25,7 +22,6 @@ import {
   deleteImpact,
   deleteRecord,
   dismissSuggestion,
-  findRecords,
   forget,
   mergeRecord,
   mergeSuggestion,
@@ -38,6 +34,13 @@ import {
   valuesSchema,
   withRead,
 } from '../../records/service.js';
+
+import {
+  aggregateWithView,
+  queryWithView,
+  viewAggregateSchema,
+  viewQuerySchema,
+} from '../../views/read.js';
 
 export const createRecordInput = z.strictObject({
   values: valuesSchema,
@@ -59,13 +62,13 @@ export function recordRoutes(app: Hono<AppEnv>, sql: Sql) {
   });
 
   app.post('/objects/:object/query', requireScope('read'), async (c) => {
-    const input = await readBody(c, queryInputSchema);
-    return c.json(await findRecords(sql, c.get('caller'), c.req.param('object'), input));
+    const input = await readBody(c, viewQuerySchema);
+    return c.json(await queryWithView(sql, c.get('caller'), c.req.param('object'), input));
   });
 
   app.post('/objects/:object/aggregate', requireScope('read'), async (c) => {
-    const input = await readBody(c, aggregateInputSchema);
-    return c.json(await aggregate(sql, c.get('caller'), c.req.param('object'), input));
+    const input = await readBody(c, viewAggregateSchema);
+    return c.json(await aggregateWithView(sql, c.get('caller'), c.req.param('object'), input));
   });
 
   app.post('/records/delete-impact', requireScope('read'), async (c) =>

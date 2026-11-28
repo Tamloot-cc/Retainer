@@ -30,6 +30,7 @@ const TOOLS = [
   'aggregate_records',
   'apply_template',
   'check_dashboard',
+  'check_view',
   'create_file_upload',
   'describe_schema',
   'download_file',
@@ -48,6 +49,7 @@ const TOOLS = [
   'list_extension_runs',
   'list_extensions',
   'list_templates',
+  'list_views',
   'list_workspaces',
   'log_event',
   'move_events',
@@ -364,9 +366,11 @@ describe('the discover_schema guide', () => {
         ...FIELD_TYPES,
         ...GUIDE_NAMES,
         ...cardinalities,
+        'this_quarter',
       ]);
       const named = new Set(res.body.match(/\b[a-z]+(?:_[a-z]+)+\b/g));
-      expect(named).toContain(name === 'dashboards' ? 'check_dashboard' : 'log_event');
+      const entry = { dashboards: 'check_dashboard', views: 'check_view', routines: 'list_views' };
+      expect(named).toContain(name in entry ? entry[name as keyof typeof entry] : 'log_event');
       expect([...named].filter((word) => !known.has(word))).toEqual([]);
     },
   );

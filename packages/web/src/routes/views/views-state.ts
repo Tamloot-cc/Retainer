@@ -2,6 +2,7 @@ import {
   canGroupBy,
   canPlaceBy,
   type FieldView,
+  isInverseRelation,
   type ObjectView,
   type SavedView,
   type SavedViewKind,
@@ -128,12 +129,17 @@ export const LAYOUT_FIELDS = {
   board: {
     setting: 'groupBy',
     label: 'Group by',
-    hint: 'Each option becomes a column',
-    fits: canGroupBy,
+    hint: 'Each group becomes a column',
+    fits: (field: FieldView) =>
+      canGroupBy(field) ||
+      (field.type === 'relation' &&
+        field.isFilterable &&
+        !isInverseRelation(field) &&
+        field.settings.relationCardinality === 'many_to_one'),
     choose: 'Choose the field whose options become columns',
-    none: (plural: string) => `${plural} have no single-select field to group by`,
+    none: (plural: string) => `${plural} have no select or single relation to group by`,
     removed: 'The field this board was grouped by was removed, or can no longer group it. ',
-    prompt: 'Choose a single-select field to group the board by.',
+    prompt: 'Choose a select or single relation to group the board by.',
   },
   calendar: {
     setting: 'dateField',

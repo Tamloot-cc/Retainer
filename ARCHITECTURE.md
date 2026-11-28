@@ -597,14 +597,16 @@ none do. Once a type has no live events, deleting it deletes nothing.
 
 ### 1.4 Views and dashboards
 
-A view is a saved way of looking at one object's records: a table, a board
-grouped by a select field, or a calendar on a date field. Views are display
+A view is a saved way of looking at one object's records: a table (optionally
+grouped), a board grouped by a select or single relation, or a calendar on
+a date field. The chat agent drafts and checks a view, and the person saves it.
+See [Views](docs/specs/views.md) and [Building in the chat](docs/specs/chat-builds.md). Views are display
 settings, not CRM data. They have no provenance, are not assertions and do
 not go through the schema engine; changing one never changes a record.
 
 | Table   | Holds                                                                                                                                         |
 | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `views` | Object, name, `kind` (`table`, `board`, `calendar`), `visibility` (`workspace`, `private`), `position` in the object's list, `config`, actors |
+| `views` | Object, name, description, `kind` (`table`, `board`, `calendar`), `visibility` (`workspace`, `private`), `position` in the object's list, `config`, actors |
 
 `config` is JSON validated on every write:
 
@@ -613,9 +615,13 @@ not go through the schema engine; changing one never changes a record.
 | `filter`         | A query filter (5), as `POST /v1/objects/:object/query` takes it                |
 | `sort`           | Up to three sort keys                                                           |
 | `columns`        | Visible fields in order, their widths and each column's footer calculation      |
-| `groupBy`        | Board: the `select` field whose options are the columns                         |
-| `hiddenGroups`   | Board: option values (or `null` for "no value") whose columns are hidden        |
-| `groupAggregate` | Board: one calculation shown in every column's header, e.g. the sum of `amount` |
+| `groupBy`        | Board or table: a filterable select or single relation. Tables also take filterable dates and built-in timestamps. |
+| `granularity`    | Date grouping period: day, week, month (default), quarter or year |
+| `groupOrder`     | Default, ascending or descending group order |
+| `hideEmptyGroups` | Omit select options with no matching records |
+| `search`        | Saved full-text keywords within the object |
+| `hiddenGroups`   | Option values, related record IDs, period starts, or `null` for the hidden empty group        |
+| `groupAggregate` | One calculation shown in every group's header, e.g. the sum of `amount` |
 | `dateField`      | Calendar: the `date` or `date_time` field records are placed by                 |
 
 Rules:
@@ -635,22 +641,26 @@ Rules:
    asks for a new one. Every record has a board column, because the engine
    refuses to remove an option records hold or make a field required while
    records lack it. Reads apply the same repair as a safety net, listing
-   anything they drop in the view's `issues`.
+   anything they drop in the view's `issues`. Repair notices persist until a
+   person saves the view again. Deleted relation targets leave the hidden group list.
 3. **Validated like queries.** `filter` and `sort` must compile against the
-   current schema, as a query would. `groupBy` must be a filterable `select`
-   field and `dateField` a filterable `date` or `date_time` field, because
-   each board column and calendar month is a filtered query.
+   current schema, as a query would. Grouping follows the aggregate read, with
+   dates limited to tables. `dateField` takes a filterable date, date-time or
+   an event’s `occurredAt`. The check route validates a draft and previews
+   live counts with the caller’s access.
 4. **Visibility.** A `workspace` view is visible to every key in the
    workspace and editable by any key with `write`. A `private` view is
    visible and editable only by the actor that created it; to anyone else it
-   does not exist (404). Only the creator can change a view's visibility.
+   does not exist (404). An agent acting for the creator can list, read and run
+   their private views. Only the creator can change a view's visibility.
 5. **Card order is not stored.** Cards in a board column and records on a
    calendar day follow the view's `sort`. Manual ordering would need a
    position that is not a fact about the record, so it is not a field value
    and is not in v1.
 6. **Moving a card is a record write.** Dropping a card on another column
    (or a calendar day) is a normal `PATCH /v1/records/:id` of the group (or
-   date) field by the person who moved it. It follows every write rule (2),
+   date) field by the person who moved it. A relation board sets the target
+   record ID. Overflow columns cannot accept drops. It follows every write rule (2),
    so it can come back `pending_review` or `superseded` rather than applied.
 
 Deleting a view removes its row; there is nothing to retract. Deleting an
@@ -1395,6 +1405,12 @@ packs distinguish stated facts from current field values and show who wrote
 each. They are assembled by rules (recency, precedence, the token budget),
 not summarized by a model; summarizing is the agent's job.
 
+Date and date-time filters (including built-in timestamps) support
+`within` for named or rolling periods and relative days with `lt`, `lte`,
+`gt` and `gte`. Both resolve at read time in the workspace's
+`settings.timeZone` (UTC by default), with weeks starting Monday. This also
+applies to dashboard queries and routine filters.
+
 Aggregates can group by built-in record timestamps or filterable date fields.
 Calendar periods use the workspace time zone, fill gaps, and return the latest
 periods in chronological order. Select and single-relation groups use the option
@@ -1527,6 +1543,7 @@ composes `search`, `query_records` and `get_context` with its own model.
 | `GET` · `POST /v1/dashboards`                     | List visible dashboards or pin a validated program                                                                                     |
 | `GET` · `PATCH` · `DELETE /v1/dashboards/:id`     | Read, update or delete a dashboard (1.4)                                                                                                |
 | `GET` · `POST /v1/objects/:object/views`          | The object's saved views (1.4), or save a new one                                                                                       |
+| `POST /v1/objects/:object/views/check` | Check a draft and count matching records |
 | `GET` · `PATCH` · `DELETE /v1/views/:id`          | One saved view                                                                                                                          |
 | `POST /v1/objects/:object/upsert`                 | Update or create a record found by `id` or `match`, with `ifMissing` (6.2)                                                              |
 | `POST /v1/records/upsert`                        | Create or update several records and return the result of each write (6.2)                                                              |
@@ -1596,10 +1613,17 @@ Tools are generic, not one per object. Custom objects would otherwise grow
 the tool list without limit and break clients' tool caching.
 
 `describe_schema`, `list_templates`, `apply_template`, `get_guide`,
-`query_records`, `aggregate_records`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`, `upsert_records`,
+`query_records`, `aggregate_records`, `list_views`, `check_view`, `get_record`, `list_comments`, `search`, `get_context`, `get_timeline`, `upsert_record`, `upsert_records`,
 `log_event`, `remember`, `propose_schema_change`, `move_events`. Events are listed with
 `query_records` on their type, or on `event` for every type at once, so no
 tool is needed per event type.
+
+Pass a saved view ID as `view` to `query_records` or `aggregate_records`
+to run its filter and search. Additional filter and search conditions also
+have to match. View display settings such as hidden groups do not exclude
+records from those reads. Results include outstanding view issues. Use
+`get_guide("views")` to learn the draft format and `check_view` before
+returning a draft to the person.
 
 Beside these core tools: `list_workspaces` lists the workspaces the
 connection's person can reach, with each one's pinned address; `list_changes` and `get_change` read the change

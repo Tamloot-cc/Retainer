@@ -29,7 +29,6 @@
           "additionalProperties": {}
         },
         "aggregates": {
-          "default": [],
           "maxItems": 50,
           "type": "array",
           "items": {
@@ -72,9 +71,882 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200
+        },
+        "view": {
+          "description": "A saved view ID from list_views",
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "viewGroups": {
+          "type": "object",
+          "properties": {
+            "hidden": {
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
+    },
+    "check-view": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["table", "board", "calendar"]
+            },
+            "search": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "granularity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["day", "week", "month", "quarter", "year"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupOrder": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["default", "asc", "desc"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hideEmptyGroups": {
+              "type": ["boolean", "null"]
+            },
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "default": "asc",
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                      }
+                    },
+                    "required": ["field"],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "columns": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "order": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "widths": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 40,
+                        "maximum": 2000
+                      }
+                    },
+                    "aggregates": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "countEmpty",
+                          "countNotEmpty",
+                          "percentEmpty",
+                          "percentNotEmpty",
+                          "countUnique",
+                          "sum",
+                          "avg",
+                          "min",
+                          "max"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["order"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupBy": {
+              "type": ["string", "null"]
+            },
+            "hiddenGroups": {
+              "anyOf": [
+                {
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "null"]
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupAggregate": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "countEmpty",
+                        "countNotEmpty",
+                        "percentEmpty",
+                        "percentNotEmpty",
+                        "countUnique",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    }
+                  },
+                  "required": ["field", "op"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dateField": {
+              "type": ["string", "null"]
+            },
+            "object": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["name", "kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["table", "board", "calendar"]
+            },
+            "search": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "granularity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["day", "week", "month", "quarter", "year"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupOrder": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["default", "asc", "desc"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hideEmptyGroups": {
+              "type": ["boolean", "null"]
+            },
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "default": "asc",
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                      }
+                    },
+                    "required": ["field"],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "columns": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "order": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "widths": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 40,
+                        "maximum": 2000
+                      }
+                    },
+                    "aggregates": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "countEmpty",
+                          "countNotEmpty",
+                          "percentEmpty",
+                          "percentNotEmpty",
+                          "countUnique",
+                          "sum",
+                          "avg",
+                          "min",
+                          "max"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["order"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupBy": {
+              "type": ["string", "null"]
+            },
+            "hiddenGroups": {
+              "anyOf": [
+                {
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "null"]
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupAggregate": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "countEmpty",
+                        "countNotEmpty",
+                        "percentEmpty",
+                        "percentNotEmpty",
+                        "countUnique",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    }
+                  },
+                  "required": ["field", "op"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dateField": {
+              "type": ["string", "null"]
+            },
+            "view": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": ["view"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "check-view-on-object": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["table", "board", "calendar"]
+            },
+            "search": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "granularity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["day", "week", "month", "quarter", "year"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupOrder": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["default", "asc", "desc"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hideEmptyGroups": {
+              "type": ["boolean", "null"]
+            },
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "default": "asc",
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                      }
+                    },
+                    "required": ["field"],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "columns": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "order": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "widths": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 40,
+                        "maximum": 2000
+                      }
+                    },
+                    "aggregates": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "countEmpty",
+                          "countNotEmpty",
+                          "percentEmpty",
+                          "percentNotEmpty",
+                          "countUnique",
+                          "sum",
+                          "avg",
+                          "min",
+                          "max"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["order"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupBy": {
+              "type": ["string", "null"]
+            },
+            "hiddenGroups": {
+              "anyOf": [
+                {
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "null"]
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupAggregate": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "countEmpty",
+                        "countNotEmpty",
+                        "percentEmpty",
+                        "percentNotEmpty",
+                        "countUnique",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    }
+                  },
+                  "required": ["field", "op"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dateField": {
+              "type": ["string", "null"]
+            },
+            "object": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["name", "kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["table", "board", "calendar"]
+            },
+            "search": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "granularity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["day", "week", "month", "quarter", "year"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupOrder": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["default", "asc", "desc"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hideEmptyGroups": {
+              "type": ["boolean", "null"]
+            },
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "default": "asc",
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                      }
+                    },
+                    "required": ["field"],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "columns": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "order": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "widths": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 40,
+                        "maximum": 2000
+                      }
+                    },
+                    "aggregates": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": [
+                          "countEmpty",
+                          "countNotEmpty",
+                          "percentEmpty",
+                          "percentNotEmpty",
+                          "countUnique",
+                          "sum",
+                          "avg",
+                          "min",
+                          "max"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["order"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupBy": {
+              "type": ["string", "null"]
+            },
+            "hiddenGroups": {
+              "anyOf": [
+                {
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "null"]
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "groupAggregate": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string",
+                      "enum": [
+                        "countEmpty",
+                        "countNotEmpty",
+                        "percentEmpty",
+                        "percentNotEmpty",
+                        "countUnique",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                      ]
+                    }
+                  },
+                  "required": ["field", "op"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dateField": {
+              "type": ["string", "null"]
+            },
+            "view": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": ["view"],
+          "additionalProperties": false
+        }
+      ]
     },
     "create-dashboard": {
       "type": "object",
@@ -208,6 +1080,17 @@
           "minLength": 1,
           "maxLength": 100
         },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "kind": {
           "type": "string",
           "enum": ["table", "board", "calendar"]
@@ -219,6 +1102,43 @@
         },
         "position": {
           "type": "number"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["day", "week", "month", "quarter", "year"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groupOrder": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["default", "asc", "desc"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hideEmptyGroups": {
+          "type": ["boolean", "null"]
         },
         "filter": {
           "anyOf": [
@@ -930,6 +1850,36 @@
             }
           },
           "required": ["record"],
+          "additionalProperties": false
+        },
+        "view": {
+          "description": "A saved view ID from list_views",
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "groupMatch": {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "granularity": {
+              "type": "string",
+              "enum": ["day", "week", "month", "quarter", "year"]
+            },
+            "values": {
+              "maxItems": 250,
+              "type": "array",
+              "items": {
+                "type": ["string", "null"]
+              }
+            },
+            "exclude": {
+              "type": "boolean"
+            }
+          },
+          "required": ["field", "values"],
           "additionalProperties": false
         }
       },
@@ -1700,6 +2650,22 @@
           "minLength": 1,
           "maxLength": 100
         },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expectedUpdatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
         "kind": {
           "type": "string",
           "enum": ["table", "board", "calendar"]
@@ -1710,6 +2676,43 @@
         },
         "position": {
           "type": "number"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["day", "week", "month", "quarter", "year"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groupOrder": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["default", "asc", "desc"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hideEmptyGroups": {
+          "type": ["boolean", "null"]
         },
         "filter": {
           "anyOf": [
@@ -2306,6 +3309,12 @@
           "type": "array",
           "items": {
             "$ref": "#/components/schemas/Record"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       },
@@ -5322,6 +6331,37 @@
         "name": {
           "type": "string"
         },
+        "description": {
+          "type": ["string", "null"]
+        },
+        "search": {
+          "type": ["string", "null"]
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["day", "week", "month", "quarter", "year"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groupOrder": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["default", "asc", "desc"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hideEmptyGroups": {
+          "type": ["boolean", "null"]
+        },
         "kind": {
           "type": "string",
           "enum": ["table", "board", "calendar"]
@@ -5502,6 +6542,389 @@
         "createdAt",
         "updatedAt",
         "issues"
+      ]
+    },
+    "ViewCheckResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "problems": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path", "message"]
+              }
+            }
+          },
+          "required": ["ok", "problems"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "problems": {
+              "type": "array",
+              "prefixItems": [],
+              "items": false,
+              "maxItems": 0
+            },
+            "count": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": ["string", "null"]
+                  },
+                  "overflow": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "match": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "values": {
+                        "type": "array",
+                        "items": {
+                          "type": ["string", "null"]
+                        }
+                      },
+                      "granularity": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "quarter", "year"]
+                      },
+                      "exclude": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["field", "values"]
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "as": {
+                          "type": "string"
+                        },
+                        "op": {
+                          "type": "string",
+                          "enum": [
+                            "countEmpty",
+                            "countNotEmpty",
+                            "percentEmpty",
+                            "percentNotEmpty",
+                            "countUnique",
+                            "sum",
+                            "avg",
+                            "min",
+                            "max"
+                          ]
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "amountMicros": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "currency": {
+                                  "type": "string",
+                                  "minLength": 3,
+                                  "maxLength": 3
+                                }
+                              },
+                              "required": ["amountMicros", "currency"]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "mixedCurrencies": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": ["field", "op", "value"]
+                    }
+                  }
+                },
+                "required": ["value", "label", "total", "values"]
+              }
+            },
+            "preview": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "object": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": ["string", "null"]
+                },
+                "search": {
+                  "type": ["string", "null"]
+                },
+                "granularity": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": ["day", "week", "month", "quarter", "year"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "groupOrder": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": ["default", "asc", "desc"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hideEmptyGroups": {
+                  "type": ["boolean", "null"]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["table", "board", "calendar"]
+                },
+                "visibility": {
+                  "type": "string",
+                  "enum": ["workspace", "private"]
+                },
+                "position": {
+                  "type": "number"
+                },
+                "filter": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sort": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": ["asc", "desc"]
+                          }
+                        },
+                        "required": ["field", "direction"]
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "columns": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "widths": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "aggregates": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "enum": [
+                              "countEmpty",
+                              "countNotEmpty",
+                              "percentEmpty",
+                              "percentNotEmpty",
+                              "countUnique",
+                              "sum",
+                              "avg",
+                              "min",
+                              "max"
+                            ]
+                          }
+                        }
+                      },
+                      "required": ["order"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "groupBy": {
+                  "type": ["string", "null"]
+                },
+                "groupAggregate": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "op": {
+                          "type": "string",
+                          "enum": [
+                            "countEmpty",
+                            "countNotEmpty",
+                            "percentEmpty",
+                            "percentNotEmpty",
+                            "countUnique",
+                            "sum",
+                            "avg",
+                            "min",
+                            "max"
+                          ]
+                        }
+                      },
+                      "required": ["field", "op"]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hiddenGroups": {
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "dateField": {
+                  "type": ["string", "null"]
+                },
+                "createdBy": {
+                  "$ref": "#/components/schemas/Actor"
+                },
+                "updatedBy": {
+                  "$ref": "#/components/schemas/Actor"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "issues": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "object",
+                "name",
+                "kind",
+                "visibility",
+                "position",
+                "filter",
+                "sort",
+                "columns",
+                "groupBy",
+                "groupAggregate",
+                "hiddenGroups",
+                "dateField",
+                "createdBy",
+                "updatedBy",
+                "createdAt",
+                "updatedAt",
+                "issues"
+              ]
+            }
+          },
+          "required": ["ok", "problems", "count", "preview"]
+        }
       ]
     },
     "Assertion": {
@@ -5805,6 +7228,12 @@
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "values": {
           "type": "array",
           "items": {
@@ -5878,6 +7307,32 @@
             "properties": {
               "value": {
                 "type": ["string", "null"]
+              },
+              "overflow": {
+                "type": "boolean",
+                "const": true
+              },
+              "match": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "granularity": {
+                    "type": "string",
+                    "enum": ["day", "week", "month", "quarter", "year"]
+                  },
+                  "exclude": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["field", "values"]
               },
               "label": {
                 "type": "string"

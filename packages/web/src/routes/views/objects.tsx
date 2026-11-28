@@ -1,6 +1,6 @@
-import type { ObjectView, QueryInput, UpdateViewInput } from '@retainer/shared';
-import { useQuery } from '@tanstack/react-query';
-import { useParams } from '@tanstack/react-router';
+import type { ObjectView, QueryInput, RecordPage, UpdateViewInput } from '@retainer/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import {
   BookmarkPlus,
   CalendarDays,
@@ -26,6 +26,7 @@ import {
   FilterChip,
   GridFooter,
   type GridSelection,
+  Input,
   Inset,
   Muted,
   Notice,
@@ -36,6 +37,7 @@ import {
   Segmented,
   Toolbar,
 } from '../../ui/index.js';
+import { firstMessages } from '../agent/first-message.js';
 import { useRememberCommand } from '../command-recents.js';
 import { useApiName } from '../developer.js';
 import {
@@ -54,6 +56,7 @@ import { isWritable } from '../records/write-model.js';
 import { QueryError, recordTitle, useView } from '../state.js';
 import { BoardView } from './board-view.js';
 import { CalendarView } from './calendar-view.js';
+import { GroupedTable } from './grouped-table.js';
 import { rememberView, useLastView } from './last-view.js';
 import { ColumnsMenu, FilterMenu, SortMenu } from './list-controls.js';
 import {
@@ -79,6 +82,7 @@ import {
   saveRowDensity,
   shownColumnPrefs,
 } from './list-state.js';
+import { describeFilter, SettingsSummary } from './settings-summary.js';
 import {
   DeleteViewDialog,
   useSaveView,
@@ -86,7 +90,9 @@ import {
   ViewOptions,
   ViewSwitcher,
 } from './view-bar.js';
+import { parseViewDraft, viewSettings } from './view-draft.js';
 import {
+  applyChange,
   changesToSave,
   effectiveSearch,
   filterParam,
@@ -115,6 +121,8 @@ export function ObjectPage() {
 function ObjectList({ name, schemaObject }: { name: string; schemaObject: ObjectView }) {
   const { session, schema } = useWorkspace();
   const { search, setSearch } = useView();
+  const client = useQueryClient();
+  const navigate = useNavigate();
   const apiName = useApiName();
   // An event type lists its built-in columns and links beside its fields (5.3).
   const object = useMemo(() => eventListObject(schemaObject, schema), [schemaObject, schema]);
@@ -141,18 +149,36 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     queryKey: viewsKey(workspace, objectName),
     queryFn: ({ signal }) => api.views(objectName, signal),
   });
+  const draft = useQuery({
+    queryKey: [workspace, 'view-open', objectName, search.draft],
+    queryFn: ({ signal }) => api.checkView(parseViewDraft(search.draft ?? ''), objectName, signal),
+    enabled: !!search.draft,
+    retry: false,
+  });
+  const draftView = draft.data?.ok ? draft.data.preview : undefined;
   const saved = search.view ? views.data?.views.find((v) => v.id === search.view) : undefined;
   const missingView = !!search.view && views.isSuccess && !saved;
   // An event list offers a calendar of when events happened without a saved view.
   const occurred = useMemo(() => occurredCalendar(object), [object]);
-  const calendarLayout = isEvent && !search.view && search.layout === 'calendar';
-  const kind = saved?.kind ?? (calendarLayout ? 'calendar' : 'table');
+  const [settings, setSettings] = useState<{ key: string; patch: UpdateViewInput }>({
+    key: '',
+    patch: {},
+  });
+  const settingsKey = search.draft ?? search.view ?? '';
+  const overrides = settings.key === settingsKey ? settings.patch : {};
+  const base = draftView ?? saved;
+  const active = base && applyChange(base, overrides);
+  const calendarLayout = isEvent && !active && search.layout === 'calendar';
+  const kind = active?.kind ?? (calendarLayout ? 'calendar' : 'table');
+  const grouped = kind === 'table' && !!active?.groupBy;
   const selectView = useCallback(
     (id: string | undefined, options: { replace?: boolean } = {}) => {
       rememberView(workspace, objectName, id);
+      setSettings({ key: '', patch: {} });
       void setSearch(
         {
           view: id,
+          draft: undefined,
           filter: undefined,
           sort: undefined,
           cursor: undefined,
@@ -173,11 +199,13 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     selectView,
   );
   // Until the view is known, nothing loads, so the wrong records never flash.
-  const resolving = opening || (!!search.view && views.isPending);
+  const resolving =
+    opening || (!!search.view && views.isPending) || (!!search.draft && draft.isPending);
+  const brokenDraft = !!search.draft && !resolving && !draftView;
 
   // The URL's filter and sort are unsaved changes on top of the view.
-  const effective = effectiveSearch(saved, search);
-  const changed = hasChanges(saved, search);
+  const effective = effectiveSearch(active, search);
+  const changed = !!draftView || Object.keys(overrides).length > 0 || hasChanges(base, search);
   const view = parseListSearch(effective);
   const { clauses, custom } = view;
   // Events are read newest first unless a sort is chosen; the header shows it.
@@ -188,6 +216,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     limit: PAGE_SIZE,
     cursor: search.cursor,
     include: ['relationReferences'],
+    search: active?.search?.trim() || undefined,
     ...view.query,
     ...(querySort ? { sort: querySort } : {}),
   };
@@ -197,14 +226,18 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       const page = await api.queryRecords(name, input, signal);
       return isEvent ? { ...page, records: page.records.map(withEventValues) } : page;
     },
-    enabled: !view.error && !resolving && kind === 'table',
+    enabled: !view.error && !resolving && !brokenDraft && kind === 'table' && !grouped,
   });
   // Built once per copy of the view, so the grid's memos hold across renders.
-  const viewPrefs = useMemo(() => saved && viewColumns(saved), [saved]);
-  const prefs = saved ? (unsaved[saved.id] ?? viewPrefs) : localPrefs;
+  const activeColumns = active?.columns;
+  const viewPrefs = useMemo(
+    () => base && viewColumns({ ...base, columns: activeColumns ?? null }),
+    [base, activeColumns],
+  );
+  const prefs = base ? (unsaved[base.id] ?? viewPrefs) : localPrefs;
 
   // Cursors only go forward; remember each page's predecessor for "Previous".
-  const viewKey = `${search.view ?? ''}|${effective.filter ?? ''}|${effective.sort ?? ''}`;
+  const viewKey = `${settingsKey}|${effective.filter ?? ''}|${effective.sort ?? ''}|${input.search ?? ''}`;
   const [trail, setTrail] = useState<{ key: string; pages: PageTrail }>({
     key: viewKey,
     pages: {},
@@ -213,10 +246,14 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
 
   const columns = useMemo(() => resolveColumns(object, prefs), [object, prefs]);
   const count = useQuery({
-    queryKey: [workspace, 'aggregate', name, 'count', view.query.filter],
+    queryKey: [workspace, 'aggregate', name, 'count', view.query.filter, input.search],
     queryFn: ({ signal }) =>
-      api.aggregate(name, { filter: view.query.filter, aggregates: [] }, signal),
-    enabled: !view.error && !resolving && kind === 'table',
+      api.aggregate(
+        name,
+        { filter: view.query.filter, search: input.search, aggregates: [] },
+        signal,
+      ),
+    enabled: !view.error && !resolving && !brokenDraft && kind === 'table' && !grouped,
     placeholderData: (previous) => previous,
   });
 
@@ -239,9 +276,9 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   );
   const references = query.data?.relationReferences;
   const records = query.data?.records;
-  const rows = useMemo(
-    () =>
-      (records ?? []).map((r) => {
+  const buildRows = useCallback(
+    (rows: RecordPage['records'], references: RecordPage['relationReferences']) =>
+      rows.map((r) => {
         const label = recordTitle(r);
         return {
           id: r.id,
@@ -319,7 +356,12 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           }),
         };
       }),
-    [records, columns, references, writable, object.class, density],
+    [columns, writable, object.class, density],
+  );
+
+  const rows = useMemo(
+    () => buildRows(records ?? [], references),
+    [buildRows, records, references],
   );
 
   // Selection belongs to one page of one view, and only to rows still shown.
@@ -362,7 +404,43 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     }
   }
 
+  function amend(patch: UpdateViewInput) {
+    if (patch.groupBy !== undefined && patch.groupBy !== active?.groupBy) {
+      patch = { hiddenGroups: null, granularity: null, hideEmptyGroups: null, ...patch };
+    }
+    if (patch.granularity !== undefined && patch.granularity !== active?.granularity)
+      patch = { hiddenGroups: null, ...patch };
+    const { sort, ...settingsPatch } = patch;
+    if (Object.keys(settingsPatch).length)
+      setSettings({ key: settingsKey, patch: { ...overrides, ...settingsPatch } });
+    void setSearch({
+      cursor: undefined,
+      ...(sort !== undefined
+        ? { sort: sortParam(sort?.length ? JSON.stringify(sort) : undefined, base) }
+        : {}),
+    });
+  }
+  const editWithAgent = useMutation({
+    mutationFn: async () => {
+      if (!saved) return;
+      const current = await api.view(saved.id);
+      const chat = await api.createAgentChat(undefined, 'web');
+      const context = { object: current.object, ...viewSettings(current) };
+      const fence = '```';
+      firstMessages.set(
+        chat.id,
+        [
+          `I'd like to change my view "${current.name}" (saved view ID ${current.id}). Use these settings as the starting point and ask me what to change.`,
+          ...current.issues.map((issue) => `- ${issue}`),
+          `${fence}retainer-view\n${JSON.stringify(context, null, 2)}\n${fence}`,
+        ].join('\n\n'),
+      );
+      await navigate({ to: '/chat/$id', params: { id: chat.id } });
+    },
+    onError: (error) => setError(error.message),
+  });
   function savePrefs(next: ColumnPrefs) {
+    if (draftView) return amend({ columns: next });
     if (saved) {
       // A view's columns are part of the view; a key that can't save keeps them for the visit.
       if (!writable) return setUnsaved((u) => ({ ...u, [saved.id]: next }));
@@ -378,15 +456,56 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
     savePrefs({ order, widths: {}, ...prefs, ...patch });
   const saveOrder = (next: string[]) => patchPrefs({ order: next });
   const setFilter = (next: FilterParts | undefined) =>
-    void setSearch({ filter: filterParam(next && encodeFilter(next), saved), cursor: undefined });
+    void setSearch({ filter: filterParam(next && encodeFilter(next), base), cursor: undefined });
   const setSort = (next: string | undefined) =>
-    void setSearch({ sort: sortParam(next, saved), cursor: undefined });
-  const resetChanges = () =>
+    void setSearch({ sort: sortParam(next, base), cursor: undefined });
+  const resetChanges = () => {
+    setSettings({ key: '', patch: {} });
+    if (draftView) return selectView(draftView.id || undefined);
     void setSearch({ filter: undefined, sort: undefined, cursor: undefined });
+  };
+  const keep = useMutation({
+    mutationFn: async () => {
+      if (!draftView || !active) return;
+      const { filter, sort } = changesToSave(active, search);
+      const next = { ...viewSettings(active), filter, sort };
+      if (draftView.id)
+        return api.updateView(draftView.id, { ...next, expectedUpdatedAt: draftView.updatedAt });
+      return api.createView(objectName, { ...next, visibility: 'private' });
+    },
+    onSuccess: async (kept) => {
+      if (!kept) return;
+      await client.invalidateQueries({ queryKey: viewsKey(workspace, objectName) });
+      selectView(kept.id);
+    },
+    onError: async (error) => {
+      setError(error.message);
+      if ('status' in error && error.status === 409) await draft.refetch();
+    },
+  });
   async function saveChanges() {
-    // Unsaved changes stay in the address until the view has them.
-    if (saved && (await changeView(changesToSave(saved, search)))) resetChanges();
+    if (draftView) return keep.mutate();
+    const patch =
+      overrides.search === undefined
+        ? overrides
+        : { ...overrides, search: overrides.search?.trim() || null };
+    if (saved && active && (await changeView({ ...patch, ...changesToSave(active, search) })))
+      resetChanges();
   }
+  const layoutChange = (change: UpdateViewInput) =>
+    draftView ? amend(change) : void changeView(change);
+  const grid = {
+    label: object.labelPlural,
+    expanded: density === 'expanded',
+    columns: gridColumns,
+    sort: sort ? { column: sort.field, direction: sort.direction } : undefined,
+    onSort: (column: string) => setSort(nextSort(view.sort, column)),
+    onResize: (column: string, width: number) =>
+      patchPrefs({ widths: { ...prefs?.widths, [column]: width } }),
+    onReorder: (column: string, target: string) => saveOrder(moveColumn(order, column, target)),
+    onOpenRow: openRow,
+    selectedRow: search.record,
+  };
   const nextCursor = query.data?.nextCursor;
   const previous = search.cursor ? pages[search.cursor] : undefined;
 
@@ -449,7 +568,11 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                     Reset
                   </Button>
                   {writable && !view.error ? (
-                    <Button size="small" onClick={() => void saveChanges()}>
+                    <Button
+                      size="small"
+                      disabled={keep.isPending}
+                      onClick={() => void saveChanges()}
+                    >
                       <Save size={14} />
                       Save view
                     </Button>
@@ -461,10 +584,10 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                   Save as view…
                 </Button>
               ) : null}
-              {saved && saved.kind !== 'table' && writable ? (
-                <ViewOptions object={object} view={saved} onChange={(c) => void changeView(c)} />
+              {active && active.kind !== 'table' && writable ? (
+                <ViewOptions object={object} view={active} onChange={layoutChange} />
               ) : null}
-              {isEvent && !saved ? (
+              {isEvent && !active ? (
                 <Segmented
                   label="Layout"
                   value={calendarLayout ? 'calendar' : 'table'}
@@ -516,11 +639,12 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           <ViewSwitcher
             object={object}
             views={views.data?.views ?? []}
-            current={saved}
+            current={active}
             writable={writable}
             onSelect={(id) => selectView(id)}
             onNew={() => setViewDialog('new')}
             onEdit={() => setViewDialog('edit')}
+            onEditAgent={saved ? () => editWithAgent.mutate() : undefined}
             onDelete={() => setViewDialog('delete')}
           />
           {clauses.map((c, i) => (
@@ -535,19 +659,19 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
               onRemove={() => setFilter({ clauses: clauses.filter((_, j) => j !== i), custom })}
             />
           ))}
-          {custom.map((part, i) => (
-            <FilterChip
-              key={JSON.stringify(part)}
-              field="Custom filter"
-              value={JSON.stringify(part)}
-              removeLabel={
-                custom.length > 1 ? `Remove custom filter ${i + 1}` : 'Remove custom filter'
-              }
-              onRemove={() => setFilter({ clauses, custom: custom.filter((_, j) => j !== i) })}
+          {active && (active.search != null || base?.search) && (
+            <Input
+              aria-label="Search this view"
+              placeholder="Search this view"
+              value={active.search ?? ''}
+              maxLength={200}
+              onChange={(event) => amend({ search: event.target.value || null })}
             />
-          ))}
+          )}
           <FilterMenu
             object={object}
+            custom={custom.length > 0}
+            onEditAgent={saved ? () => editWithAgent.mutate() : undefined}
             onApply={(clause) => {
               setError('');
               setFilter({ clauses: addClause(clauses, clause), custom });
@@ -561,7 +685,33 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           ) : null}
         </Toolbar>
       )}
-      {error || view.error || query.error || missingView || saved?.issues.length ? (
+      {(active || custom.length > 0) && (
+        <div className="px-4 py-1.5">
+          {active ? (
+            <SettingsSummary
+              view={{ ...active, sort: view.query.sort ?? null }}
+              object={object}
+              change={amend}
+              filters={custom.map((part, index) => ({
+                text: describeFilter(part, object),
+                remove: () => setFilter({ clauses, custom: custom.filter((_, i) => i !== index) }),
+              }))}
+            />
+          ) : (
+            custom.map((part, index) => (
+              <FilterChip
+                key={JSON.stringify(part)}
+                field={describeFilter(part, object)}
+                value=""
+                onRemove={() =>
+                  setFilter({ clauses, custom: custom.filter((_, i) => i !== index) })
+                }
+              />
+            ))
+          )}
+        </div>
+      )}
+      {error || view.error || query.error || missingView || active?.issues.length || brokenDraft ? (
         <Inset>
           {error || view.error ? (
             <Notice error onDismiss={error ? () => setError('') : undefined}>
@@ -574,7 +724,15 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
               {object.labelPlural.toLowerCase()}.
             </Notice>
           ) : null}
-          {saved?.issues.length ? <Notice>{saved.issues.join('. ')}.</Notice> : null}
+          {active?.issues.length ? <Notice>{active.issues.join(' ')}</Notice> : null}
+          {brokenDraft && (
+            <Notice error>
+              {draft.error?.message ??
+                (draft.data && !draft.data.ok
+                  ? draft.data.problems.map((problem) => problem.message).join(' ')
+                  : 'This draft is unavailable.')}
+            </Notice>
+          )}
           {query.error ? (
             <QueryError error={query.error} retry={() => void query.refetch()} />
           ) : null}
@@ -584,22 +742,24 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
         <Inset>
           <Notice>Loading view…</Notice>
         </Inset>
-      ) : saved?.kind === 'board' && !view.error ? (
+      ) : brokenDraft ? null : active?.kind === 'board' && !view.error ? (
         <BoardView
           object={object}
-          view={saved}
+          view={active}
+          search={input.search}
           filter={view.query.filter}
           sort={view.query.sort}
           order={prefs?.order}
           writable={writable}
           selected={search.record}
           onOpen={openRow}
-          onChangeView={(c) => void changeView(c)}
+          onChangeView={layoutChange}
         />
-      ) : (saved?.kind === 'calendar' || calendarLayout) && !view.error ? (
+      ) : (active?.kind === 'calendar' || calendarLayout) && !view.error ? (
         <CalendarView
           object={object}
-          view={saved ?? occurred}
+          view={active ?? occurred}
+          search={input.search}
           filter={view.query.filter}
           sort={view.query.sort}
           month={search.month}
@@ -607,28 +767,32 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
           selected={search.record}
           onOpen={openRow}
           onMonth={(month) => void setSearch({ month })}
-          onChangeView={(c) => void changeView(c)}
+          onChangeView={layoutChange}
         />
-      ) : kind !== 'table' ? null : query.isPending && !view.error ? (
+      ) : kind !== 'table' ? null : grouped && active && !view.error ? (
+        <GroupedTable
+          key={JSON.stringify([active.id, active.groupBy, active.granularity])}
+          object={object}
+          view={active}
+          input={input}
+          render={(pages) => (
+            <DataGrid
+              {...grid}
+              rows={pages.flatMap((page) =>
+                buildRows(
+                  isEvent ? page.records.map(withEventValues) : page.records,
+                  page.relationReferences,
+                ),
+              )}
+            />
+          )}
+        />
+      ) : query.isPending && !view.error && !grouped ? (
         <Inset>
           <Notice>Loading records…</Notice>
         </Inset>
       ) : rows.length ? (
-        <DataGrid
-          label={object.labelPlural}
-          expanded={density === 'expanded'}
-          columns={gridColumns}
-          sort={sort ? { column: sort.field, direction: sort.direction } : undefined}
-          onSort={(column) => setSort(nextSort(view.sort, column))}
-          onResize={(column, width) =>
-            patchPrefs({ widths: { ...prefs?.widths, [column]: width } })
-          }
-          onReorder={(column, target) => saveOrder(moveColumn(order, column, target))}
-          onOpenRow={openRow}
-          selectedRow={search.record}
-          rows={rows}
-          selection={selection}
-        />
+        <DataGrid {...grid} rows={rows} selection={selection} />
       ) : query.data ? (
         <Inset>
           <Empty

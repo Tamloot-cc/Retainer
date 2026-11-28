@@ -1,9 +1,11 @@
 import type { Hono } from 'hono';
+import { z } from 'zod';
 import { requireScope } from '../../auth/middleware.js';
 import type { Sql } from '../../db/client.js';
 import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import {
+  checkView,
   createView,
   createViewSchema,
   deleteView,
@@ -17,6 +19,15 @@ import {
 export function viewRoutes(app: Hono<AppEnv>, sql: Sql) {
   app.get('/objects/:object/views', requireScope('read'), async (c) =>
     c.json(await listViews(sql, c.get('caller'), c.req.param('object'))),
+  );
+
+  app.post('/views/check', requireScope('read'), async (c) =>
+    c.json(await checkView(sql, c.get('caller'), await readBody(c, z.unknown()))),
+  );
+  app.post('/objects/:object/views/check', requireScope('read'), async (c) =>
+    c.json(
+      await checkView(sql, c.get('caller'), await readBody(c, z.unknown()), c.req.param('object')),
+    ),
   );
 
   app.post('/objects/:object/views', requireScope('write'), async (c) => {

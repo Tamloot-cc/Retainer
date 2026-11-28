@@ -232,9 +232,12 @@ describe('views across schema changes', () => {
   });
 
   // The schema change rewrites the stored view in its own transaction, so a
-  // read after it has nothing left to drop: `issues` stays empty, and the
+  // read after it includes the repair notice, and the
   // view was last updated by whoever changed the schema.
-  const repaired = { issues: [], updatedBy: { type: 'user', id: 'root' } };
+  const repaired = {
+    issues: expect.arrayContaining([expect.any(String)]),
+    updatedBy: { type: 'user', id: 'root' },
+  };
 
   it('drops references to a removed field when the field is removed', async () => {
     await schemaChange([
@@ -282,11 +285,12 @@ describe('views across schema changes', () => {
     // The view still runs as a query.
     const query = await t.request('/v1/objects/deal/query', {
       key: keys.dana,
-      body: { filter: res.body.filter },
+      body: { view: view.body.id },
     });
     expect(query.status).toBe(200);
+    expect(query.body.issues).toEqual(res.body.issues);
     // It can still be renamed; choosing a new group field fixes it.
-    expect((await patch(view.body.id, { name: 'Renamed' })).status).toBe(200);
+    expect((await patch(view.body.id, { name: 'Renamed' })).body.issues).toEqual([]);
     expect((await patch(view.body.id, { groupBy: 'stage' })).body.groupBy).toBe('stage');
   });
 
@@ -458,4 +462,273 @@ describe('views across schema changes', () => {
       updatedAt: view.body.updatedAt,
     });
   });
+});
+
+describe('agent view drafts and saved reads', () => {
+  it('checks a live draft without creating a view and refuses sharing settings', async () => {
+    const existing = await list();
+    const deal = 'Draft preview renewal';
+    await t.request('/v1/objects/deal/records', {
+      key: keys.dana,
+      body: { values: { name: deal, stage: 'proposal' } },
+    });
+    const draft = {
+      object: 'deal',
+      name: 'Renewals',
+      description: 'Review proposals',
+      kind: 'table',
+      groupBy: 'stage',
+      search: deal,
+      hideEmptyGroups: true,
+    };
+    const check = (body: unknown) =>
+      t.request('/v1/objects/deal/views/check', { key: keys.reader, body });
+    expect((await check(draft)).body).toMatchObject({
+      ok: true,
+      count: 1,
+      groups: [{ value: 'proposal', total: 1 }],
+    });
+    expect((await check({ ...draft, visibility: 'workspace' })).body).toMatchObject({
+      ok: false,
+      problems: [{ path: 'draft' }],
+    });
+    expect((await check({ ...draft, granularity: 'month' })).body).toMatchObject({
+      ok: false,
+      problems: [{ path: 'granularity' }],
+    });
+    expect(await list()).toEqual(existing);
+  });
+
+  it('runs a saved view and applies additional filter and search without hiding groups', async () => {
+    for (const [name, stage] of [
+      ['North unique renewal priority', 'proposal'],
+      ['North unique renewal warm', 'proposal'],
+      ['North unique renewal priority lost', 'lost'],
+      ['South unique priority', 'proposal'],
+    ]) {
+      const made = await t.request('/v1/objects/deal/records', {
+        key: keys.dana,
+        body: { values: { name, stage } },
+      });
+      expect(made.status).toBe(201);
+    }
+    const kept = await create({
+      name: 'North renewals',
+      description: 'Sales review',
+      kind: 'table',
+      search: 'north unique renewal',
+      groupBy: 'stage',
+      hiddenGroups: ['proposal'],
+      groupAggregate: { field: 'name', op: 'countNotEmpty' },
+      filter: { stage: { neq: 'lost' } },
+      sort: [{ field: 'name', direction: 'desc' }],
+    });
+    expect(kept.status).toBe(201);
+    const id = kept.body.id;
+    const mcp = await t.mcpClient(keys.reader);
+    try {
+      expect((await mcp.call('list_views', { object: 'deal' })).body).toMatchObject({
+        views: expect.arrayContaining([
+          expect.objectContaining({ id, description: 'Sales review' }),
+        ]),
+      });
+      expect((await mcp.call('check_view', { draft: { view: id } })).body).toMatchObject({
+        ok: true,
+        count: 2,
+      });
+      expect((await mcp.call('query_records', { view: id })).body).toMatchObject({
+        records: [
+          { label: 'North unique renewal warm' },
+          { label: 'North unique renewal priority' },
+        ],
+      });
+      expect(
+        (
+          await mcp.call('aggregate_records', {
+            view: id,
+            search: 'priority',
+            filter: { stage: 'proposal' },
+          })
+        ).body,
+      ).toMatchObject({
+        total: 1,
+        groups: [{ value: 'proposal', values: [{ op: 'countNotEmpty', value: 1 }] }],
+      });
+    } finally {
+      await mcp.close();
+    }
+    const empty = await t.request('/v1/objects/deal/query', {
+      key: keys.reader,
+      body: { view: id, filter: { stage: 'lost' } },
+    });
+    expect(empty.body.records).toEqual([]);
+  });
+
+  it('accepts exactly one of two concurrent updates against the same revision', async () => {
+    const kept = await create({ name: 'Concurrent changes', kind: 'table' });
+    const id = kept.body.id;
+    const results = await Promise.all(
+      ['first', 'second'].map((description) =>
+        patch(id, { description, expectedUpdatedAt: kept.body.updatedAt }),
+      ),
+    );
+    expect(results.map(({ status }) => status).sort()).toEqual([200, 409]);
+    const current = await t.request(`/v1/views/${id}`, { key: keys.dana });
+    expect(current.body.description).toBe(
+      results.find(({ status }) => status === 200)?.body.description,
+    );
+  });
+
+  it('pages sparse dates without losing records past the group limit', async () => {
+    const fixture = await t.setupWorkspace(
+      { name: 'Grouped dates', template: 'sales' },
+      {
+        writer: { actor: { type: 'user', id: 'grouped-dates' }, scopes: ['write', 'read'] },
+      },
+    );
+    const key = fixture.keys.writer;
+    const dates = Array.from({ length: 52 }, (_, index) =>
+      new Date(Date.UTC(2020, index, 1)).toISOString().slice(0, 10),
+    );
+    const newest = dates.at(-1);
+    const rows = [...dates, ...Array.from({ length: 25 }, () => newest)];
+    const items = rows.map((closeDate, index) => ({
+      object: 'deal',
+      values: { name: `Group example ${index}`, closeDate },
+    }));
+    for (const batch of [items.slice(0, 50), items.slice(50)]) {
+      const seed = await t.request('/v1/records/upsert', { key, body: { items: batch } });
+      expect(seed.status, JSON.stringify(seed.body).slice(0, 400)).toBe(200);
+    }
+    const call = (action: 'query' | 'aggregate', body: unknown) =>
+      t.request(`/v1/objects/deal/${action}`, { key, body });
+    const grouped = await call('aggregate', {
+      groupBy: 'closeDate',
+      granularity: 'day',
+      viewGroups: {},
+    });
+    expect(grouped.status).toBe(200);
+    expect(grouped.body.groups).toHaveLength(51);
+    expect(grouped.body.groups.at(-1)).toMatchObject({ label: 'Earlier', total: 2 });
+    expect(
+      grouped.body.groups.reduce(
+        (total: number, group: { total: number }) => total + group.total,
+        0,
+      ),
+    ).toBe(rows.length);
+    const first = await call('query', { groupMatch: grouped.body.groups[0].match, limit: 25 });
+    expect(first.body.records).toHaveLength(25);
+    expect(
+      (
+        await call('query', {
+          groupMatch: grouped.body.groups[0].match,
+          cursor: first.body.nextCursor,
+          limit: 25,
+        })
+      ).body.records,
+    ).toHaveLength(1);
+    const earlier = await call('query', { groupMatch: grouped.body.groups.at(-1).match });
+    expect(
+      earlier.body.records
+        .map((record: { fields: { closeDate: string } }) => record.fields.closeDate)
+        .sort(),
+    ).toEqual(dates.slice(0, 2));
+  });
+});
+
+it('groups by a single relation, pages by group, and removes deleted targets from hidden groups', async () => {
+  const company = async (name: string) =>
+    (
+      await t.request('/v1/objects/company/records', {
+        key: keys.dana,
+        body: { values: { name } },
+      })
+    ).body.id as string;
+  const [one, two] = await Promise.all([company('Relation One'), company('Relation Two')]);
+  for (const [name, company] of [
+    ['Grouped relationship A', one],
+    ['Grouped relationship B', two],
+  ]) {
+    expect(
+      (
+        await t.request('/v1/objects/deal/records', {
+          key: keys.dana,
+          body: { values: { name, company } },
+        })
+      ).status,
+    ).toBe(201);
+  }
+  const kept = await create({
+    name: 'Relation board',
+    kind: 'board',
+    groupBy: 'company',
+    hiddenGroups: [two],
+  });
+  expect(kept.status, JSON.stringify(kept.body)).toBe(201);
+  const grouped = await t.request('/v1/objects/deal/aggregate', {
+    key: keys.reader,
+    body: { search: 'Grouped relationship', groupBy: 'company', viewGroups: { hidden: [two] } },
+  });
+  expect(grouped.body).toMatchObject({
+    total: 2,
+    groups: [{ value: one, total: 1, label: 'Relation One' }],
+  });
+  const page = await t.request('/v1/objects/deal/query', {
+    key: keys.reader,
+    body: { groupMatch: grouped.body.groups[0].match },
+  });
+  expect(page.body.records).toMatchObject([{ label: 'Grouped relationship A' }]);
+  expect((await t.request(`/v1/records/${two}`, { key: keys.dana, method: 'DELETE' })).status).toBe(
+    200,
+  );
+  expect(
+    (await t.request(`/v1/views/${kept.body.id}`, { key: keys.dana })).body.hiddenGroups,
+  ).toEqual([]);
+  expect((await patch(kept.body.id, { hiddenGroups: [two] })).status).toBe(422);
+});
+
+it('uses relative dates in queries, aggregates and a saved view', async () => {
+  const {
+    workspace,
+    keys: { writer },
+  } = await t.setupWorkspace(
+    { name: 'Date filters', template: 'sales' },
+    {
+      writer: { actor: { type: 'user', id: 'relative-view-dates' }, scopes: ['write', 'read'] },
+    },
+  );
+  const [dates] =
+    await db.owner`select current_date::text as today, (current_date-2)::text as past`;
+  await db.owner`update workspaces set settings='{"timeZone":"UTC"}' where id=${workspace.id}`;
+  const send = (route: string, body: unknown) =>
+    t.request(`/v1/objects/deal/${route}`, { key: writer, body });
+  for (const [name, closeDate] of [
+    ['Current deal', dates?.today],
+    ['Old deal', dates?.past],
+  ])
+    expect((await send('records', { values: { name, closeDate } })).status).toBe(201);
+  const today = { closeDate: { within: 'today' } };
+  expect((await send('query', { filter: today })).body.records).toMatchObject([
+    { label: 'Current deal' },
+  ]);
+  expect((await send('aggregate', { filter: { closeDate: { lt: 'today' } } })).body.total).toBe(1);
+  const view = await send('views', { name: 'Current closes', kind: 'table', filter: today });
+  expect(view.status).toBe(201);
+  expect((await send('query', { view: view.body.id })).body.records).toMatchObject([
+    { label: 'Current deal' },
+  ]);
+  expect(
+    (
+      await send('aggregate', {
+        view: view.body.id,
+        filter: { createdAt: { within: { last: 1, unit: 'day' } } },
+      })
+    ).body.total,
+  ).toBe(1);
+  for (const value of [
+    { last: 1001, unit: 'day' },
+    { last: 1, next: 1, unit: 'day' },
+    'since_today',
+  ])
+    expect((await send('query', { filter: { closeDate: { within: value } } })).status).toBe(422);
 });

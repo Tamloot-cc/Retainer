@@ -15,6 +15,7 @@ import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { type FieldState, relationTargetIds } from '../schema/types.js';
 import { identifiersFor, searchTextOf } from './derive.js';
 import { searchVector } from './search-sql.js';
+import { pruneHiddenViewGroups } from './view-groups.js';
 import { compareAssertions, pickWinner, type RankedAssertion, reviewReason } from './winner.js';
 
 /** Everything a write needs: who, where, and the schema it validated against. */
@@ -854,6 +855,7 @@ export async function markDeleted(
     where id = any(${[...ids]}::uuid[]) and deleted_at is null
     returning id`;
   const sorted = deleted.map((r) => r.id).sort();
+  await pruneHiddenViewGroups(tx, context.workspaceId, sorted, context.actor);
   if (sorted.length)
     await tx`update source_items set state='retracted',updated_at=clock_timestamp()
     where id in(select item_id from source_revisions where event_id=any(${sorted}::uuid[]) and is_current) and state<>'erased'`;

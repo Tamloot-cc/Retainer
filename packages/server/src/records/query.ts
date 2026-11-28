@@ -28,6 +28,7 @@ import type { FieldState } from '../schema/types.js';
 import { normalizeDomain, normalizeEmail, normalizePhone } from './derive.js';
 import { presentRecords, type RecordRow, recordColumns } from './read.js';
 import { relationReferences } from './references.js';
+import { relativeDate } from './relative-date.js';
 import { plainPrefixQuery } from './search-sql.js';
 import { normalizeFieldValue } from './values.js';
 
@@ -208,6 +209,17 @@ function builtInCondition(
   const allowed = ordered ? ['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte'] : ['eq', 'neq', 'in'];
   for (const [op, value] of Object.entries(conditions)) {
     const column = builtIn.expr;
+    if (builtIn.type === 'timestamptz') {
+      const relative = relativeDate(tx, column, false, name, op, value);
+      if (relative) {
+        parts.push(relative);
+        continue;
+      }
+      if (op === 'isNull' && typeof value === 'boolean') {
+        parts.push(value ? tx`${column} is null` : tx`${column} is not null`);
+        continue;
+      }
+    }
     const type = tx.unsafe(builtIn.type);
     const sqlOp = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' }[op];
     if (op === 'in' && Array.isArray(value)) {
@@ -374,6 +386,10 @@ function compileOperator(tx: Tx, field: FieldState, op: Operator, raw: unknown):
     return tx`(${alternatives.reduce((a, b) => tx`${a} or ${b}`)})`;
   }
 
+  if (field.type === 'date' || field.type === 'date_time') {
+    const relative = relativeDate(tx, typed(tx, field), field.type === 'date', field.name, op, raw);
+    if (relative) return relative;
+  }
   const value = valueFor(field, raw);
   if (op === 'eq' && field.type !== 'date_time') {
     return tx`r.data @> ${tx.json(jsonValue({ [key]: value }))}`;
@@ -565,11 +581,12 @@ export async function queryRecords(
   schema: CompiledSchema,
   object: CompiledObject,
   input: QueryInput,
+  extra = tx`true`,
 ): Promise<RecordPage> {
   const offset = decodeCursor(input.cursor);
   const rows = await tx<RecordRow[]>`
     select ${recordColumns(tx, 'r')} from records r
-    where ${matchingRecords(tx, workspaceId, schema, object, input)}
+    where ${matchingRecords(tx, workspaceId, schema, object, input)} and ${extra}
     order by ${compileSort(tx, object, input.sort)}
     limit ${input.limit + 1} offset ${offset}`;
   return pageOf(tx, schema, rows, input, offset, (records) => records);

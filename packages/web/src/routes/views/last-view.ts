@@ -27,7 +27,7 @@ export function useLastView(
   select: (id: string | undefined, options: { replace?: boolean }) => void,
 ): boolean {
   const [last] = useState(() => {
-    if (search.view || search.filter || search.sort) return '';
+    if (search.view || search.draft || search.filter || search.sort) return '';
     try {
       return localStorage.getItem(lastViewKey(workspace, object)) ?? '';
     } catch {
@@ -38,8 +38,9 @@ export function useLastView(
   useEffect(() => {
     if (done || !views) return;
     setDone(true);
-    if (!search.view && views.some((v) => v.id === last)) select(last, { replace: true });
-  }, [done, views, last, search.view, select]);
+    if (!search.view && !search.draft && views.some((v) => v.id === last))
+      select(last, { replace: true });
+  }, [done, views, last, search.view, search.draft, select]);
   // True until it knows whether to switch, so all records don't flash first.
   return !done;
 }

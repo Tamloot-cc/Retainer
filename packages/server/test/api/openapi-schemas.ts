@@ -12,7 +12,6 @@ import { addLinksInputSchema } from '../../src/memory/event-links.js';
 import { logEventInputSchema } from '../../src/memory/events.js';
 import { rememberInputSchema } from '../../src/memory/facts.js';
 import { moveEventsInputSchema } from '../../src/memory/move.js';
-import { aggregateInputSchema } from '../../src/records/aggregate.js';
 import { mergeInputSchema } from '../../src/records/merge.js';
 import { queryInputSchema } from '../../src/records/query.js';
 import {
@@ -22,7 +21,8 @@ import {
 } from '../../src/records/service.js';
 import { searchInputSchema } from '../../src/retrieval/search.js';
 import { schemaChangeRequestSchema } from '../../src/schema-engine/service.js';
-import { createViewSchema, updateViewSchema } from '../../src/views/service.js';
+import { viewAggregateSchema, viewQuerySchema } from '../../src/views/read.js';
+import { createViewSchema, updateViewSchema, viewDraftSchema } from '../../src/views/service.js';
 import { buildResponseSchemas } from './openapi-responses.js';
 
 function jsonSchema(validator: z.ZodType) {
@@ -58,7 +58,9 @@ const batchRecordInput = upsertRecordInput.extend({ match: uniqueMatch }).meta({
 
 export const requestValidators = {
   'accept-merge': mergeSuggestionInput,
-  'aggregate-records': aggregateInputSchema,
+  'aggregate-records': viewAggregateSchema,
+  'check-view': viewDraftSchema,
+  'check-view-on-object': viewDraftSchema,
   'create-dashboard': createDashboardSchema,
   'create-comment': commentInputSchema,
   'create-file-intent': fileIntentSchema,
@@ -78,7 +80,7 @@ export const requestValidators = {
   'merge-record': mergeInputSchema,
   'move-events': moveEventsInputSchema,
   'query-events': eventQueryInput,
-  'query-records': queryInputSchema,
+  'query-records': viewQuerySchema,
   'remember-fact': rememberInputSchema,
   'request-schema-change': schemaChangeRequestSchema,
   search: searchInputSchema,

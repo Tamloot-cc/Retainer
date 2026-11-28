@@ -270,7 +270,7 @@ agent to say so before acting on the records.
 **Web chats.** The line the server adds to a web chat's first message
 (dashboards.md §5.1) names both guides: "This chat is in Retainer's web
 app, which can show dashboards and views; read get_guide("dashboards") or
-get_guide("views") before drafting one." One line, so the base prompt and
+get_guide("views") before drafting one. For checked views, use a retainer-view fence." One line, so the base prompt and
 its cache stay shared.
 
 ### 5.2 The draft

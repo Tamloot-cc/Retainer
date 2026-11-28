@@ -811,6 +811,23 @@ endpoint({
   },
   response: { status: 201, schema: ref('SavedView') },
 });
+for (const [path, operationId] of [
+  ['/v1/views/check', 'check-view'],
+  ['/v1/objects/{object}/views/check', 'check-view-on-object'],
+] as const) {
+  endpoint({
+    tag: 'Views',
+    method: 'post',
+    path,
+    operationId,
+    summary: 'Check a view draft',
+    access: 'read',
+    description: 'Validate a draft and count matching records with the caller’s access.',
+    request: { example: { object: 'deal', name: 'Pipeline', kind: 'table', groupBy: 'company' } },
+    response: { schema: ref('ViewCheckResult') },
+  });
+}
+
 endpoint({
   tag: 'Views',
   method: 'get',
@@ -827,7 +844,8 @@ endpoint({
   operationId: 'update-view',
   summary: 'Update a saved view',
   access: 'write',
-  description: 'Only fields included in the request are changed.',
+  description:
+    'Only fields included in the request are changed. A stale expectedUpdatedAt returns 409.',
   request: { example: { name: 'Open deals' } },
   response: { schema: ref('SavedView') },
 });

@@ -58,6 +58,7 @@ import {
   type UnmatchedParticipant,
   type UnresolvedParticipant,
   type Via,
+  type ViewCheckResult,
   type WriteResponse,
 } from '@retainer/shared';
 import { z } from 'zod';
@@ -465,6 +466,55 @@ const comment = response<PresentedComment>()(
   }),
 );
 
+const savedView = response<SavedView>()(
+  z.object({
+    id,
+    object: text,
+    name: text,
+    description: text.nullable().optional(),
+    search: text.nullable().optional(),
+    granularity: z.enum(['day', 'week', 'month', 'quarter', 'year']).nullable().optional(),
+    groupOrder: z.enum(['default', 'asc', 'desc']).nullable().optional(),
+    hideEmptyGroups: z.boolean().nullable().optional(),
+    kind: z.enum(SAVED_VIEW_KINDS),
+    visibility: z.enum(SAVED_VIEW_VISIBILITIES),
+    position: z.number(),
+    filter: values.nullable(),
+    sort: z.array(z.object({ field: text, direction: z.enum(['asc', 'desc']) })).nullable(),
+    columns: z
+      .object({
+        order: z.array(text),
+        widths: z.record(text, z.int()).optional(),
+        aggregates: z.record(text, aggregateOp).optional(),
+      })
+      .nullable(),
+    groupBy: text.nullable(),
+    groupAggregate: z.object({ field: text, op: aggregateOp }).nullable(),
+    hiddenGroups: z.array(text.nullable()),
+    dateField: text.nullable(),
+    createdBy: actorSchema,
+    updatedBy: actorSchema,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    issues: z.array(text),
+  }),
+);
+const aggregateGroup = z.object({
+  value: text.nullable(),
+  overflow: z.literal(true).optional(),
+  match: z
+    .object({
+      field: text,
+      values: z.array(text.nullable()),
+      granularity: z.enum(['day', 'week', 'month', 'quarter', 'year']).optional(),
+      exclude: z.boolean().optional(),
+    })
+    .optional(),
+  label: text,
+  total: z.int(),
+  values: z.array(aggregateValue),
+});
+
 const responses = {
   Workspace: workspace,
   Actor: actorSchema,
@@ -485,7 +535,9 @@ const responses = {
   ),
   Record: record,
   RecordReference: recordReference,
-  RecordPage: response<RecordPage>()(z.object({ ...page, records: z.array(record) })),
+  RecordPage: response<RecordPage>()(
+    z.object({ ...page, records: z.array(record), issues: z.array(text).optional() }),
+  ),
   WriteResult: response<WriteResponse>()(
     z.object({
       id,
@@ -584,33 +636,21 @@ const responses = {
       counts: z.object({ profiles: z.int(), facts: z.int(), notes: z.int(), responses: z.int() }),
     }),
   ),
-  SavedView: response<SavedView>()(
-    z.object({
-      id,
-      object: text,
-      name: text,
-      kind: z.enum(SAVED_VIEW_KINDS),
-      visibility: z.enum(SAVED_VIEW_VISIBILITIES),
-      position: z.number(),
-      filter: values.nullable(),
-      sort: z.array(z.object({ field: text, direction: z.enum(['asc', 'desc']) })).nullable(),
-      columns: z
-        .object({
-          order: z.array(text),
-          widths: z.record(text, z.int()).optional(),
-          aggregates: z.record(text, aggregateOp).optional(),
-        })
-        .nullable(),
-      groupBy: text.nullable(),
-      groupAggregate: z.object({ field: text, op: aggregateOp }).nullable(),
-      hiddenGroups: z.array(text.nullable()),
-      dateField: text.nullable(),
-      createdBy: actorSchema,
-      updatedBy: actorSchema,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      issues: z.array(text),
-    }),
+  SavedView: savedView,
+  ViewCheckResult: response<ViewCheckResult>()(
+    z.union([
+      z.object({
+        ok: z.literal(false),
+        problems: z.array(z.object({ path: text, message: text })),
+      }),
+      z.object({
+        ok: z.literal(true),
+        problems: z.tuple([]),
+        count: z.int(),
+        groups: z.array(aggregateGroup).optional(),
+        preview: savedView.extend({ id: text }),
+      }),
+    ]),
   ),
   Assertion: assertion,
   DashboardSummary: dashboardSummary,
@@ -623,18 +663,10 @@ const responses = {
   AggregateResult: response<AggregateResult>()(
     z.object({
       total: z.int(),
+      issues: z.array(text).optional(),
       values: z.array(aggregateValue),
       tooManyGroups: z.literal(true).optional(),
-      groups: z
-        .array(
-          z.object({
-            value: text.nullable(),
-            label: text,
-            total: z.int(),
-            values: z.array(aggregateValue),
-          }),
-        )
-        .optional(),
+      groups: z.array(aggregateGroup).optional(),
     }),
   ),
   AttachedEventPage: response<AttachedEventPage>()(

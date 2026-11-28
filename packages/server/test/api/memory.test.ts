@@ -725,7 +725,7 @@ describe('POST /v1/events/query (7.1)', () => {
   it('refuses malformed values for shared columns with 422 naming the field, never 500', async () => {
     const cases: [Record<string, unknown>, string][] = [
       [{ id: 'not-a-uuid' }, 'id'],
-      [{ createdAt: { gt: 'yesterday' } }, 'createdAt'],
+      [{ createdAt: { gt: 'last week' } }, 'createdAt'],
       [{ occurredAt: { gte: 'last week' } }, 'occurredAt'],
       [{ occurredAt: { lt: '0000-01-01T00:00:00Z' } }, 'occurredAt'],
       [{ id: { in: ['3f1b7c1e-2c4b-4d36-9a8e-6f2f0f4f9a11', 'nope'] } }, 'id'],
@@ -754,7 +754,7 @@ describe('POST /v1/events/query (7.1)', () => {
     try {
       const result = await mcp.call('query_records', {
         object: 'event',
-        filter: { createdAt: { gt: 'yesterday' } },
+        filter: { createdAt: { gt: 'last week' } },
       });
       expect(result.isError).toBe(true);
       expect(result.body.error).toMatchObject({

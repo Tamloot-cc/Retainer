@@ -2,12 +2,14 @@ import type {
   AggregateGroup,
   AggregateInput,
   FieldView,
+  GroupMatch,
   ObjectView,
   PresentedRecord,
   QueryInput,
   RecordReference,
   SavedView,
 } from '@retainer/shared';
+import { displayViewGroups } from '@retainer/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, useWorkspace } from '../../api/client.js';
 import { fields } from '../../fields/index.js';
@@ -31,13 +33,7 @@ import { isWritable } from '../records/write-model.js';
 import { QueryError, recordTitle } from '../state.js';
 import { defaultColumnOrder, formatAggregate } from './list-state.js';
 import { MissingLayoutField } from './view-bar.js';
-import {
-  andFilter,
-  type BoardGroup,
-  boardGroups,
-  groupCondition,
-  groupKey,
-} from './views-state.js';
+import { andFilter, type BoardGroup, groupCondition, groupKey } from './views-state.js';
 
 const PAGE_SIZE = 25;
 /** How many of the view's fields a card shows under its title. */
@@ -57,6 +53,7 @@ export function BoardView({
   object,
   view,
   filter,
+  search,
   sort,
   order,
   writable,
@@ -67,6 +64,7 @@ export function BoardView({
   object: ObjectView;
   view: SavedView;
   filter: Record<string, unknown> | undefined;
+  search?: string;
   sort: QueryInput['sort'];
   /** The view's visible fields, in order; cards show the first few. */
   order: string[] | undefined;
@@ -84,6 +82,8 @@ export function BoardView({
   // Each column's count and header total, over the view's filter.
   const totalsInput: AggregateInput = {
     filter,
+    search,
+    viewGroups: { hidden: view.hiddenGroups },
     ...(field ? { groupBy: field.name } : {}),
     aggregates: view.groupAggregate ? [view.groupAggregate] : [],
   };
@@ -91,7 +91,6 @@ export function BoardView({
     queryKey: [session.workspace.id, 'aggregate', name, totalsInput],
     queryFn: ({ signal }) => api.aggregate(name, totalsInput, signal),
     enabled: !!field,
-    placeholderData: (previous) => previous,
   });
 
   if (!field)
@@ -105,8 +104,10 @@ export function BoardView({
       />
     );
 
-  const groups = boardGroups(field).filter((g) => !view.hiddenGroups.includes(g.value));
-  const byValue = new Map(totals.data?.groups?.map((g) => [g.value, g]));
+  const groups = displayViewGroups(totals.data?.groups ?? [], view, field).map((group) => ({
+    ...group,
+    key: group.overflow ? 'overflow' : groupKey(group.value),
+  }));
   const cardFields = (order ?? defaultColumnOrder(object))
     .filter((n) => n !== field.name && n !== object.labelField)
     .map((n) => object.fields.find((f) => f.name === n))
@@ -142,6 +143,9 @@ export function BoardView({
           <QueryError error={totals.error} retry={() => void totals.refetch()} />
         </Inset>
       ) : null}
+      {!totals.data && field.type === 'relation' && !totals.error && (
+        <Notice>Loading groups…</Notice>
+      )}
       <DragArea<Card>
         names={{
           item: (card) => recordTitle(card.record),
@@ -150,7 +154,7 @@ export function BoardView({
         overlay={(card) => <CardPreview {...toCard(card)} />}
         onMove={(card, key) => {
           const group = groupOf(key);
-          if (group) void moves.move(card, field, group.value, group.label);
+          if (group && !group.overflow) void moves.move(card, field, group.value, group.label);
         }}
       >
         <Board label={`${object.labelPlural} by ${field.label.toLowerCase()}`}>
@@ -161,15 +165,17 @@ export function BoardView({
               field={field}
               group={group}
               filter={filter}
+              search={search}
               sort={sort}
-              total={totals.data ? (byValue.get(group.value)?.total ?? 0) : undefined}
+              total={totals.data ? group.total : undefined}
               meta={
                 aggregateField && view.groupAggregate ? (
-                  <ColumnTotal field={aggregateField} group={byValue.get(group.value)} />
+                  <ColumnTotal field={aggregateField} group={group} />
                 ) : undefined
               }
               moving={moves.moving}
               draggable={draggable}
+              locked={!!group.overflow}
               selected={selected}
               onOpen={onOpen}
               toCard={toCard}
@@ -202,32 +208,38 @@ function Column({
   field,
   group,
   filter,
+  search,
   sort,
   total,
   meta,
   moving,
   draggable,
+  locked,
   selected,
   onOpen,
   toCard,
 }: {
   object: ObjectView;
   field: FieldView;
-  group: BoardGroup;
+  group: BoardGroup & { match?: GroupMatch; overflow?: true };
   filter: Record<string, unknown> | undefined;
+  search?: string;
   sort: QueryInput['sort'];
   total: number | undefined;
   meta: React.ReactNode;
   moving: Moving;
   draggable: boolean;
+  locked: boolean;
   selected: string | undefined;
   onOpen: (id: string) => void;
   toCard: (card: Card) => { title: string; fields: CardField[] };
 }) {
   const { session } = useWorkspace();
   const name = object.nameSingular;
-  const input = {
-    filter: andFilter(filter, groupCondition(field, group.value)),
+  const input: QueryInput = {
+    search,
+    filter: group.match ? filter : andFilter(filter, groupCondition(field, group.value)),
+    groupMatch: group.match,
     ...(sort ? { sort } : {}),
     limit: PAGE_SIZE,
     include: ['relationReferences'],
@@ -264,7 +276,7 @@ function Column({
       color={group.value === null ? undefined : categoryColor(group.value)}
       count={count}
       meta={meta}
-      locked={!draggable}
+      locked={locked || !draggable}
       footer={
         query.hasNextPage ? (
           <ColumnMore loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>

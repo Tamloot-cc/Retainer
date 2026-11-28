@@ -54,6 +54,8 @@ const READ_TOOLS = new Set([
   'query_records',
   'aggregate_records',
   'check_dashboard',
+  'list_views',
+  'check_view',
   'get_guide',
   'get_record',
   'get_context',
@@ -212,6 +214,10 @@ export function toolLine(part: ToolPart): string {
     }
     case 'aggregate_records':
       return verb('Calculating totals', 'Calculated totals');
+    case 'list_views':
+      return verb('Finding saved views', 'Found saved views');
+    case 'check_view':
+      return verb('Checking the view', 'Checked the view');
     case 'check_dashboard':
       return verb('Checking the dashboard', 'Checked the dashboard');
     case 'get_record':
