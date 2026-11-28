@@ -520,7 +520,7 @@ writeTamloot(
 // code in a closed sandbox. It is not an extension, so it has no catalog
 // entry, only an executable the routine executor finds by its registration ID.
 const routineHandlerDigest = hash(
-  ['routine.js', 'routine-sandbox.js', 'routine-builder.js']
+  ['routine.js', 'routine-sandbox.js']
     .map((file) => readFileSync(resolve(root, 'packages/runner/dist', file), 'utf8'))
     .join('\n'),
 );

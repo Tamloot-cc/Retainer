@@ -26,11 +26,26 @@ import { checkCode, checkManifest, fieldFor, objectFor } from './manifest.js';
 import { fireTick, matchingSince, scheduleTargets } from './matcher.js';
 import { pauseRoutine, queueRun } from './runs.js';
 
+/** A manifest and its code, as written: what `validate_routine` checks. */
 export const sourceInputSchema = z.strictObject({
   manifest: z.unknown(),
   code: z.string().max(200000),
 });
-export const proposeInputSchema = sourceInputSchema.extend({
+/**
+ * A source as written, or one already checked, by the `sourceId` a check or
+ * a preview answered (routines-in-chat spec §4.1). The code is sent once.
+ */
+export const sourceRefSchema = z.strictObject({
+  manifest: z.unknown().optional(),
+  code: z.string().max(200000).optional(),
+  sourceId: z
+    .uuid()
+    .optional()
+    .describe(
+      'A sourceId that validate_routine or preview_routine answered, instead of manifest and code.',
+    ),
+});
+export const proposeInputSchema = sourceRefSchema.extend({
   routineId: z.uuid().optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().min(1).max(10000),
@@ -38,6 +53,53 @@ export const proposeInputSchema = sourceInputSchema.extend({
   report: routineReportSchema,
 });
 export type ProposeInput = z.infer<typeof proposeInputSchema>;
+type SourceRef = z.infer<typeof sourceRefSchema>;
+
+/** A source by its ID, or as written; one or the other, never both. */
+async function resolveSource(
+  tx: Tx,
+  input: SourceRef,
+): Promise<{ manifest: unknown; code: string }> {
+  if (input.sourceId) {
+    if (input.manifest !== undefined || input.code !== undefined)
+      throw new AppError(422, 'invalid_request', 'send sourceId, or manifest and code, not both');
+    const [row] = await tx<{ manifest: unknown; code: string }[]>`
+      select manifest,code from routine_sources where id=${input.sourceId}`;
+    if (!row) throw notFound('routine draft');
+    return row;
+  }
+  if (input.manifest === undefined || typeof input.code !== 'string')
+    throw new AppError(422, 'invalid_request', 'send manifest and code, or a sourceId');
+  return { manifest: input.manifest, code: input.code };
+}
+
+/**
+ * A check job as `validate_routine` answers it, with its `sourceId` on
+ * every path (routines-in-chat spec §4.1).
+ */
+export function checkAnswer(job: {
+  id: string;
+  status: string;
+  code: string | null;
+  output: Record<string, unknown> | null;
+  sourceId?: string | null;
+}) {
+  const base = { jobId: job.id, status: job.status, sourceId: job.sourceId ?? null };
+  if (job.status === 'succeeded' && job.output)
+    return {
+      valid: job.output.valid === true,
+      problems: (job.output.problems as unknown[]) ?? [],
+      ...base,
+    };
+  if (['queued', 'running'].includes(job.status)) return { valid: null, problems: [], ...base };
+  return {
+    valid: false,
+    problems: [
+      { part: 'code', code: job.code ?? 'check_failed', message: 'the type-check could not run' },
+    ],
+    ...base,
+  };
+}
 
 const sourceHash = (manifest: RoutineManifest, code: string) =>
   createHash('sha256').update(stableJson({ manifest, code })).digest('hex');
@@ -130,34 +192,6 @@ export class Routines {
   }
 
   /**
-   * The built-in builder (§5.1): a sandbox job that reads the capabilities,
-   * asks the model and saves a proposal. Its model calls count against the
-   * daily cap. It cannot approve.
-   */
-  async build(caller: Caller, input: { description: string; routineId?: string | undefined }) {
-    readScope(caller);
-    if (!caller.scopes.includes('write') && !caller.scopes.includes('admin'))
-      throw forbidden('building a routine needs write access');
-    if (!this.config.modelAvailable)
-      throw new AppError(503, 'model_unavailable', 'this server has no model key for the builder');
-    return this.tx(caller, async (tx) => {
-      if (input.routineId) {
-        const [routine] =
-          await tx`select 1 from routines where id=${input.routineId} and status<>'archived'`;
-        if (!routine) throw notFound('routine');
-      }
-      const jobId = await queueRun(tx, caller.workspaceId, {
-        mode: 'build',
-        triggerKind: 'build',
-        input: { description: input.description, routineId: input.routineId ?? null },
-        initiatedBy: caller.actor,
-        initiatorUserId: caller.userId ?? caller.person?.id ?? null,
-      });
-      return { jobId };
-    });
-  }
-
-  /**
    * `validate_routine` (§5.1): the manifest is checked here; the code's
    * type-check runs in the sandbox, as a `check` job to poll.
    */
@@ -168,7 +202,7 @@ export class Routines {
       if (problems.length) return { valid: false as const, problems };
       const sourceId = await saveSource(tx, caller.workspaceId, manifest, input.code);
       const passed = await this.checkPassed(tx, sourceId, caps.typesFingerprint);
-      if (passed) return { valid: true as const, problems: [], jobId: passed };
+      if (passed) return { valid: true as const, problems: [], jobId: passed, sourceId };
       const jobId = await queueRun(tx, caller.workspaceId, {
         mode: 'check',
         triggerKind: 'check',
@@ -176,7 +210,7 @@ export class Routines {
         initiatedBy: caller.actor,
         input: { typesFingerprint: caps.typesFingerprint },
       });
-      return { valid: null, problems: [], jobId, status: 'queued' as const };
+      return { valid: null, problems: [], jobId, status: 'queued' as const, sourceId };
     });
   }
 
@@ -193,12 +227,13 @@ export class Routines {
    * `preview_routine` (§5.2, item 5): the recent changes the trigger would
    * have matched, and a dry run of the code on up to five of their records.
    */
-  async preview(caller: Caller, input: z.infer<typeof sourceInputSchema>) {
+  async preview(caller: Caller, input: SourceRef) {
     readScope(caller);
     return this.tx(caller, async (tx) => {
-      const { manifest, problems, schema } = await this.staticCheck(tx, caller, input);
+      const source = await resolveSource(tx, input);
+      const { manifest, problems, schema } = await this.staticCheck(tx, caller, source);
       if (problems.length) return { valid: false as const, problems };
-      const sourceId = await saveSource(tx, caller.workspaceId, manifest, input.code);
+      const sourceId = await saveSource(tx, caller.workspaceId, manifest, source.code);
       const { matched, records } =
         manifest.when.kind === 'record'
           ? await matchingSince(tx, schema, manifest, 30)
@@ -223,8 +258,103 @@ export class Routines {
         );
       // Nothing to dry-run: the preview is done now, with no ID to poll.
       if (!runs.length)
-        return { valid: true as const, problems: [], previewId: null, matched, runs, done: true };
-      return { valid: true as const, problems: [], previewId, matched, runs };
+        return {
+          valid: true as const,
+          problems: [],
+          sourceId,
+          previewId: null,
+          matched,
+          runs,
+          done: true,
+        };
+      return { valid: true as const, problems: [], sourceId, previewId, matched, runs };
+    });
+  }
+
+  /**
+   * What a chat's draft card shows that only Retainer may state
+   * (routines-in-chat spec §4.1): the source, Retainer's facts, the check
+   * Propose would run, the trigger's count now, the stored dry run when it
+   * is of this source, and the proposals made from it. It only reads: no
+   * sandbox job is queued, so opening a card costs nothing.
+   */
+  async draft(
+    caller: Caller,
+    sourceId: string,
+    options: { previewId?: string | undefined; routineId?: string | undefined } = {},
+  ) {
+    readScope(caller);
+    return this.tx(caller, async (tx) => {
+      const [source] = await tx<{ id: string; manifest: unknown; code: string }[]>`
+        select id,manifest,code from routine_sources where id=${sourceId}`;
+      if (!source) throw notFound('routine draft');
+      const { manifest, problems, schema, caps } = await this.staticCheck(tx, caller, source);
+      if (options.routineId) {
+        const [routine] = await tx<{ status: string }[]>`
+          select status from routines where id=${options.routineId}`;
+        if (!routine || routine.status === 'archived')
+          problems.push({
+            part: 'manifest',
+            code: 'routine_archived',
+            message: routine ? 'this routine is archived' : 'this routine no longer exists',
+          });
+      }
+      const ok =
+        !problems.length && !!(await this.checkPassed(tx, source.id, caps.typesFingerprint));
+      // A manifest with problems has no normalized form: show it as stored.
+      const shown = (problems.length ? source.manifest : manifest) as RoutineManifest;
+      const count = problems.some((p) => p.part === 'manifest')
+        ? null
+        : await draftCount(tx, caller.workspaceId, schema, manifest);
+      let preview: { available: false } | ({ available: true } & PreviewRuns) | null = null;
+      if (options.previewId) {
+        const found = await previewRuns(tx, options.previewId);
+        if (found.rows.some((run) => run.source_id !== source.id))
+          throw new AppError(409, 'preview_mismatch', 'this dry run is of another routine draft');
+        preview = found.rows.length
+          ? { available: true, done: found.done, runs: found.runs }
+          : { available: false };
+      }
+      const versions = await tx<
+        (Pick<
+          VersionRow,
+          | 'id'
+          | 'routine_id'
+          | 'number'
+          | 'name'
+          | 'description'
+          | 'summary'
+          | 'report'
+          | 'state'
+          | 'built_by'
+        > & {
+          created_at: Date;
+        })[]
+      >`select id,routine_id,number,name,description,summary,report,state,built_by,created_at
+        from routine_versions where source_id=${source.id} order by created_at,id`;
+      return {
+        sourceId: source.id,
+        manifest: shown,
+        code: source.code,
+        facts: safeFacts(shown, factsNames(caps)),
+        ok,
+        problems,
+        count,
+        preview,
+        proposals: versions.map((v) => ({
+          routineId: v.routine_id,
+          versionId: v.id,
+          number: v.number,
+          name: v.name,
+          description: v.description,
+          summary: v.summary,
+          report: v.report,
+          state: v.state,
+          builtBy: v.built_by,
+          byYou: v.built_by.type === caller.actor.type && v.built_by.id === caller.actor.id,
+          createdAt: v.created_at.toISOString(),
+        })),
+      };
     });
   }
 
@@ -232,14 +362,9 @@ export class Routines {
   async getPreview(caller: Caller, previewId: string) {
     readScope(caller);
     return this.tx(caller, async (tx) => {
-      const runs = await tx<RunRow[]>`
-        select * from routine_runs where preview_id=${previewId} order by created_at,id`;
-      if (!runs.length) throw notFound('routine preview');
-      return {
-        previewId,
-        done: runs.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
-        runs: await Promise.all(runs.map((run) => presentRun(tx, run, true))),
-      };
+      const { rows, done, runs } = await previewRuns(tx, previewId);
+      if (!rows.length) throw notFound('routine preview');
+      return { previewId, done, runs };
     });
   }
 
@@ -255,7 +380,7 @@ export class Routines {
 
   /**
    * `propose_routine` (§5.1): saves the description, manifest, code, summary
-   * and the builder's report for a person to review. The code must have
+   * and the report of the agent that built it, for a person to review. The code must have
    * passed a type-check against the workspace's current types.
    */
   async propose(caller: Caller, input: ProposeInput) {
@@ -263,12 +388,13 @@ export class Routines {
     if (!caller.scopes.includes('write') && !caller.scopes.includes('admin'))
       throw forbidden('proposing a routine needs write access');
     return this.tx(caller, async (tx) => {
-      const { manifest, problems, caps } = await this.staticCheck(tx, caller, input);
+      const source = await resolveSource(tx, input);
+      const { manifest, problems, caps } = await this.staticCheck(tx, caller, source);
       if (problems.length)
         throw new AppError(422, 'invalid_routine', 'the routine does not pass its checks', {
           problems,
         });
-      const sourceId = await saveSource(tx, caller.workspaceId, manifest, input.code);
+      const sourceId = await saveSource(tx, caller.workspaceId, manifest, source.code);
       if (!(await this.checkPassed(tx, sourceId, caps.typesFingerprint)))
         throw new AppError(
           409,
@@ -840,6 +966,30 @@ async function requireRecordFor(
     throw notFound(`${object?.name ?? 'record'} ${recordId}`);
 }
 
+/**
+ * The trigger's count now, worded by the card (routines-in-chat spec §5.1):
+ * changes of the last 30 days before the `if`, the records a schedule's
+ * tick reaches before its fan-out limit, or none for a manual routine.
+ */
+async function draftCount(
+  tx: Tx,
+  workspace: string,
+  schema: Awaited<ReturnType<typeof getSchema>>,
+  manifest: RoutineManifest,
+): Promise<{ kind: 'record' | 'schedule' | 'schedule_once' | 'manual'; value: number | null }> {
+  const when = manifest.when;
+  if (when.kind === 'record')
+    return { kind: 'record', value: (await matchingSince(tx, schema, manifest, 30, 0)).matched };
+  if (when.kind === 'schedule')
+    return when.object
+      ? {
+          kind: 'schedule',
+          value: (await scheduleTargets(tx, workspace, schema, manifest, 0)).matched,
+        }
+      : { kind: 'schedule_once', value: null };
+  return { kind: 'manual', value: null };
+}
+
 async function recentRecords(
   tx: Tx,
   schema: Awaited<ReturnType<typeof getSchema>>,
@@ -926,13 +1076,30 @@ export type RunRow = {
   created_at: Date;
 };
 
-function presentVersion(version: VersionRow, names: FactsNames) {
-  let facts: string[] = [];
+/** Retainer's facts for a manifest, or none when they cannot be worded. */
+function safeFacts(manifest: RoutineManifest, names: FactsNames): string[] {
   try {
-    facts = routineFacts(version.manifest, names);
+    return routineFacts(manifest, names);
   } catch {
-    facts = [];
+    return [];
   }
+}
+
+type PreviewRuns = { done: boolean; runs: Awaited<ReturnType<typeof presentRun>>[] };
+
+/** A preview's dry runs in order, whether they are all done, and as history shows them. */
+async function previewRuns(tx: Tx, previewId: string): Promise<PreviewRuns & { rows: RunRow[] }> {
+  const rows = await tx<RunRow[]>`
+    select * from routine_runs where preview_id=${previewId} order by created_at,id`;
+  return {
+    rows,
+    done: rows.every((run) => !['queued', 'running', 'waiting'].includes(run.status)),
+    runs: await Promise.all(rows.map((run) => presentRun(tx, run, true))),
+  };
+}
+
+function presentVersion(version: VersionRow, names: FactsNames) {
+  const facts = safeFacts(version.manifest, names);
   return {
     id: version.id,
     number: version.number,
@@ -1003,6 +1170,7 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
     finishedAt: run.finished_at?.toISOString() ?? null,
     expiresAt: run.expires_at?.toISOString() ?? null,
     initiatedBy: run.initiated_by,
+    sourceId: run.source_id,
     modelCalls: run.model_calls,
     output: run.output,
     calls: calls.map((call) => ({

@@ -220,6 +220,7 @@ const FAILURES: Record<string, string> = {
   run_timeout: 'It ran past its time limit.',
   output_too_large: 'It wrote more output than a run may keep.',
   no_code: 'This version has no code to run.',
+  dry_run_budget: 'Today’s model budget for dry runs was used up.',
 };
 
 /** Why a failed run failed, in a sentence, with the error it ended on. */
@@ -250,31 +251,17 @@ const GAPS: Record<RoutineGapCode, string> = {
 export const gapText = (code: string) => GAPS[code as RoutineGapCode] ?? plain(code);
 
 export const VERDICTS = {
-  full: 'The builder says this routine does everything you described.',
-  partial: 'The builder says this routine does only part of what you described.',
-  not_possible: 'The builder says this cannot be done yet.',
+  full: 'The agent that wrote it says this routine does everything you described.',
+  partial: 'The agent that wrote it says this routine does only part of what you described.',
+  not_possible: 'The agent that wrote it says this cannot be done yet.',
 } as const;
-
-/** The reasons a build job ends without a proposal, in a sentence. */
-export function buildFailureText(code: string | null) {
-  switch (code) {
-    case 'builder_failed':
-      return 'The builder could not write a routine that passes Retainer’s checks. Try describing it differently, or more simply.';
-    case 'model_unavailable':
-      return 'This server has no model key, so the builder cannot run. Your operator can add one.';
-    case 'run_expired':
-      return 'The builder took too long and stopped.';
-    default:
-      return `The builder stopped${code ? ` (${plain(code)})` : ''}.`;
-  }
-}
 
 /** An API error as a sentence; a 403 says who can do it instead. */
 export function errorText(error: unknown, action: string) {
   if (error instanceof RetainerApiError) {
     if (error.status === 403) return `Only a workspace admin can ${action}.`;
     if (error.code === 'model_unavailable')
-      return 'This server has no model key, so the builder cannot run. Your operator can add one.';
+      return 'This server has no model key, so routines cannot call a model. Your operator can add one.';
   }
   return error instanceof Error ? error.message : String(error);
 }

@@ -65,6 +65,7 @@ import {
   CHAT_LIMITS,
   type ExtensionToolRef,
   pinnedTools,
+  pinsRoutines,
   type RetainerToolHost,
   type RetainerToolResult,
 } from './tools.js';
@@ -99,6 +100,8 @@ export type AgentConfig = {
   keys: boolean;
   /** How long one tool request waits for an extension job; tests shorten it. */
   extensionWaitMs?: number | undefined;
+  /** Routines are enabled: chats pin the routine tools (routines-in-chat spec §3.1). */
+  routines?: boolean | undefined;
 };
 
 /** A saved chat message as the read endpoint returns it. */
@@ -245,6 +248,7 @@ export class AgentSessions {
         caller,
         this.host,
         this.extensions.catalog,
+        this.config.routines,
       );
       const [row] = await tx<SessionRow[]>`
         insert into agent_sessions (workspace_id, kind, client, owner, person_id, tools, extension_tools, system_blocks, limits)
@@ -613,6 +617,7 @@ export class AgentSessions {
         eventTypes: names(schema.eventTypeIds),
         date,
         client: session.client,
+        routines: pinsRoutines(session.tools as { name: string }[]),
       }),
     ];
   }

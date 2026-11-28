@@ -108,7 +108,7 @@ const detail = (over: Partial<RoutineDetail> = {}): RoutineDetail => {
   };
 };
 
-function mount(element: ReactNode, admin = true, report = vi.fn()) {
+function mount(element: ReactNode, admin = true, report = vi.fn(), agent = false) {
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -118,6 +118,7 @@ function mount(element: ReactNode, admin = true, report = vi.fn()) {
           session: {
             actor: { type: 'user', id: admin ? 'admin' : 'member' },
             routinesAvailable: true,
+            agentAvailable: agent,
             scopes: admin ? ['admin'] : ['read', 'write'],
             workspace: { id: 'workspace' },
           } as Session,
@@ -186,107 +187,35 @@ describe('routines list', () => {
     ).toBeTruthy();
   });
 
-  it('builds a routine from a description and opens the proposal', async () => {
+  it('opens a plain chat to build a routine, with no describe box', async () => {
     capabilities();
     vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
-    const build = vi.spyOn(api, 'buildRoutine').mockResolvedValue({ jobId: 'job-1' });
-    vi.spyOn(api, 'routineJob').mockResolvedValue(
-      run({
-        id: 'job-1',
-        mode: 'build',
-        trigger: 'build',
-        output: { outcome: 'succeeded', proposed: true, routineId: 'routine-9', versionId: 'v' },
-      }),
-    );
-    mount(<RoutinesPage />, false);
+    const chat = vi.spyOn(api, 'createAgentChat').mockResolvedValue({
+      id: 'chat-1',
+      title: null,
+      createdAt: '2026-11-28T08:00:00Z',
+    } as never);
+    mount(<RoutinesPage />, false, vi.fn(), true);
     expect(await screen.findByText('No routines yet')).toBeTruthy();
-    expect(screen.getByText(/go to the model provider/)).toBeTruthy();
-    await userEvent.type(
-      screen.getByRole('textbox', { name: 'Describe the routine' }),
-      'When a deal is won, thank them',
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Build routine' }));
-    expect(build).toHaveBeenCalledWith('When a deal is won, thank them', undefined);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'New routine' }));
+    expect(chat).toHaveBeenCalledWith(undefined, 'web');
     await vi.waitFor(() =>
-      expect(router.navigate).toHaveBeenCalledWith({
-        to: '/routines/$id',
-        params: { id: 'routine-9' },
-      }),
+      expect(router.navigate).toHaveBeenCalledWith({ to: '/chat/$id', params: { id: 'chat-1' } }),
     );
   });
 
-  it('shows what is missing when the builder says it cannot be done', async () => {
+  it('points to an MCP agent on a server without the workspace agent', async () => {
     capabilities();
     vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
-    vi.spyOn(api, 'buildRoutine').mockResolvedValue({ jobId: 'job-1' });
-    vi.spyOn(api, 'routineJob').mockResolvedValue(
-      run({
-        mode: 'build',
-        output: {
-          outcome: 'succeeded',
-          proposed: false,
-          report: {
-            verdict: 'not_possible',
-            gaps: [
-              { part: 'when a deal is deleted', reason: 'needs_deletion_trigger', fix: 'Later' },
-            ],
-          },
-        },
-      }),
-    );
     mount(<RoutinesPage />);
-    await userEvent.type(await screen.findByRole('textbox'), 'When a deal is deleted, tell me');
-    await userEvent.click(screen.getByRole('button', { name: 'Build routine' }));
-    expect(
-      await screen.findByText(/could not make this routine, so nothing was saved/),
-    ).toBeTruthy();
-    const gaps = screen.getByRole('list', { name: 'What it leaves out' });
-    expect(within(gaps).getByText('“when a deal is deleted”')).toBeTruthy();
-    expect(within(gaps).getByText('It would need to react when a record is deleted.')).toBeTruthy();
-    expect(within(gaps).getByText('What would fix it: Later')).toBeTruthy();
-    expect(router.navigate).not.toHaveBeenCalled();
-  });
-
-  it('says plainly why a build failed', async () => {
-    capabilities();
-    vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
-    vi.spyOn(api, 'buildRoutine').mockResolvedValue({ jobId: 'job-1' });
-    vi.spyOn(api, 'routineJob').mockResolvedValue(
-      run({
-        mode: 'build',
-        status: 'failed',
-        code: 'builder_failed',
-        output: {
-          outcome: 'failed',
-          code: 'builder_failed',
-          problems: [{ part: 'code', code: 'type', message: 'deal has no field "owner"' }],
-        },
-      }),
-    );
-    mount(<RoutinesPage />);
-    await userEvent.type(await screen.findByRole('textbox'), 'Thank the owner');
-    await userEvent.click(screen.getByRole('button', { name: 'Build routine' }));
-    expect(
-      await screen.findByText(/could not write a routine that passes Retainer’s checks/),
-    ).toBeTruthy();
-    expect(screen.getByText('deal has no field "owner"')).toBeTruthy();
-  });
-
-  it('explains a server without a model key', async () => {
-    capabilities();
-    vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
-    vi.spyOn(api, 'buildRoutine').mockRejectedValue(
-      new RetainerApiError(503, 'model_unavailable', 'no model key'),
-    );
-    mount(<RoutinesPage />);
-    await userEvent.type(await screen.findByRole('textbox'), 'Anything');
-    await userEvent.click(screen.getByRole('button', { name: 'Build routine' }));
-    expect(await screen.findByText(/This server has no model key/)).toBeTruthy();
+    expect(await screen.findByText(/an agent you connect over MCP/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'New routine' })).toBeNull();
   });
 });
 
 describe('routine page', () => {
-  it('shows a proposal with Retainer’s facts, the builder’s summary, its gaps and the code', async () => {
+  it('shows a proposal with Retainer’s facts, the agent’s summary, its gaps and the code', async () => {
     router.params = { id: 'routine-1' };
     vi.spyOn(api, 'routine').mockResolvedValue(detail({ proposals: 1 }));
     mount(<RoutinePage />);
@@ -295,9 +224,13 @@ describe('routine page', () => {
     expect(
       within(facts as HTMLElement).getByText("Runs when a deal's Stage changes."),
     ).toBeTruthy();
-    expect(screen.getAllByText('Written by the builder. Retainer does not check it.')).toBeTruthy();
     expect(
-      screen.getAllByText('The builder says this routine does only part of what you described.'),
+      screen.getAllByText('Written by the agent that built it. Retainer does not check it.'),
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText(
+        'The agent that wrote it says this routine does only part of what you described.',
+      ),
     ).toBeTruthy();
     expect(
       screen.getAllByText('What would fix it: Install an extension that sends WhatsApp messages'),
@@ -343,12 +276,30 @@ describe('routine page', () => {
   it('hides approval from a member', async () => {
     router.params = { id: 'routine-1' };
     vi.spyOn(api, 'routine').mockResolvedValue(detail({ proposals: 1 }));
-    mount(<RoutinePage />, false);
+    mount(<RoutinePage />, false, vi.fn(), true);
     expect(await screen.findByText('A workspace admin reviews and approves it.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Approve version 2' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Routine actions' })).toBeNull();
-    // A member can still describe a change.
-    expect(screen.getByRole('button', { name: 'Build a new version' })).toBeTruthy();
+    // A member can still ask the agent for a change.
+    expect(screen.getByRole('button', { name: 'Edit with the agent' })).toBeTruthy();
+  });
+
+  it('opens a chat that carries the routine and why it paused', async () => {
+    router.params = { id: 'routine-1' };
+    vi.spyOn(api, 'routine').mockResolvedValue(
+      detail({ status: 'paused', pausedReason: 'check_failed' }),
+    );
+    vi.spyOn(api, 'createAgentChat').mockResolvedValue({ id: 'chat-2' } as never);
+    const { firstMessages } = await import('../agent/first-message.js');
+    mount(<RoutinePage />, true, vi.fn(), true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit with the agent' }));
+    await vi.waitFor(() =>
+      expect(router.navigate).toHaveBeenCalledWith({ to: '/chat/$id', params: { id: 'chat-2' } }),
+    );
+    const text = firstMessages.get('chat-2') ?? '';
+    expect(text).toContain('(ID routine-1)');
+    expect(text).toContain('get_routine');
+    expect(text).toContain('It needs attention:');
   });
 
   it('tests a version on a record after saying what is real, then links to the run', async () => {

@@ -36,11 +36,14 @@ export type RoutineDriver = {
 /** Failed runs in a row before the routine pauses (§6.2). */
 const FAILURES_BEFORE_PAUSE = 3;
 
+/** Nothing queues `build` runs since the builder went (routines-in-chat spec §8). */
+type RunnableMode = Exclude<RoutineRunMode, 'build'>;
+
 export type ClaimedRun = {
   workspaceId: string;
   runId: string;
   routineId: string | null;
-  mode: RoutineRunMode;
+  mode: RunnableMode;
   fence: string;
   tools: string[];
   attempt: number;
@@ -65,10 +68,6 @@ type ClaimRow = {
   tool_contracts: Record<string, ToolContract> | null;
   approver_user_id: string | null;
 };
-
-/** Seconds a run of this mode may take (§4.6). The builder makes several model calls. */
-const timeoutFor = (mode: RoutineRunMode) =>
-  mode === 'build' ? ROUTINE_LIMITS.maxRunSeconds : ROUTINE_LIMITS.runSeconds;
 
 /**
  * The trusted side of routine runs (§6.2): it claims due runs, checks what
@@ -164,6 +163,11 @@ export class RoutineExecutor {
       }
       if (run.attempt >= ROUTINE_LIMITS.attempts) {
         await this.end(tx, id, 'failed', 'retry_exhausted');
+        return null;
+      }
+      // A build queued before the builder was removed has nothing to run it.
+      if (run.mode === 'build') {
+        await this.end(tx, id, 'failed', 'builder_removed');
         return null;
       }
       const schema = await getSchema(tx, workspace);
@@ -301,7 +305,7 @@ export class RoutineExecutor {
         recordId && !run.has_trigger_record
           ? keyed(schema, await getRecord(tx, workspace, schema, recordId))
           : undefined;
-      const timeout = timeoutFor(run.mode);
+      const timeout = ROUTINE_LIMITS.runSeconds;
       const [claimed] = await tx<{ fence: string; attempt: number; deadline: Date }[]>`
         update routine_runs set status='running',lease_owner=${this.options.owner},fence=fence+1,attempt=attempt+1,read_calls='{}',
           record_id=coalesce(${recordId}::uuid,record_id),

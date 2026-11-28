@@ -32,7 +32,7 @@ export const runRefused = (code: string, message: string) => new AppError(409, c
  * this fence and not expired. A normal run's routine must still be active; a
  * test run's initiator must still be an admin. Only the effects path writes:
  * writes through the plain REST routes are refused, so every write is
- * numbered and recorded. A dry run, a check and the builder write nothing.
+ * numbered and recorded. A dry run and a check write nothing.
  */
 export async function admitRoutine(
   tx: Tx,
@@ -83,10 +83,10 @@ export async function admitRoutine(
       'forbidden',
       writes
         ? 'routine code writes through the routine SDK, which numbers every effect'
-        : 'a dry run, a check and the builder write nothing',
+        : 'a dry run and a check write nothing',
     );
   const by = run.initiated_by?.name ?? run.initiated_by?.id;
-  const label = run.routine_name ?? 'Routine builder';
+  const label = run.routine_name ?? 'Routine draft';
   return {
     actor: {
       type: 'agent',

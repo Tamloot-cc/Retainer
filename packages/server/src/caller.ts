@@ -128,7 +128,7 @@ export type RoutineCaller = {
   runId: string;
   routineId: string | null;
   fence: string;
-  mode: 'run' | 'test' | 'dry' | 'check' | 'build';
+  mode: 'run' | 'test' | 'dry' | 'check';
   /** The tools the run may call: its manifest's list. */
   tools: string[];
   /**

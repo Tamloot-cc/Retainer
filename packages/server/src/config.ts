@@ -227,12 +227,12 @@ const configSchema = z
     /** Hosted routine model credentials. The API signs; the proxy and usage route verify. */
     RETAINER_ROUTINE_MODEL_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     RETAINER_ROUTINE_MODEL_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
-    /** The one model routine code and the routine builder call (routines spec §4.5). */
+    /** The one model routine code calls (routines spec §4.5). */
     RETAINER_ROUTINE_MODEL: z.preprocess(
       emptyToUndefined,
       z.string().min(1).max(200).default('claude-opus-5-5'),
     ),
-    /** Routine model calls per workspace per UTC day, dry runs and the builder's included (§6.3). */
+    /** Routine model calls per workspace per UTC day, dry runs included (§6.3); dry runs stop at half. */
     RETAINER_ROUTINE_MODEL_CALLS_PER_DAY: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().min(0).max(1000000).default(1000),

@@ -42,14 +42,8 @@ import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
 import { contextTypeFor, fieldFor, mapFilter, objectFor } from './manifest.js';
-import { pauseRoutine, queueRun, RUN_GRACE_SECONDS, useUp } from './runs.js';
-import {
-  insertProposal,
-  proposeInputSchema,
-  saveSource,
-  staticCheck,
-  workspaceZone,
-} from './service.js';
+import { pauseRoutine, RUN_GRACE_SECONDS, useUp } from './runs.js';
+import { workspaceZone } from './service.js';
 
 export type RuntimeConfig = RoutineConfig & {
   tokens: RunTokens;
@@ -71,7 +65,7 @@ type RunState = {
   routine_id: string | null;
   version_id: string | null;
   source_id: string | null;
-  mode: 'run' | 'test' | 'dry' | 'check' | 'build';
+  mode: 'run' | 'test' | 'dry' | 'check';
   trigger_kind: string;
   record_id: string | null;
   run_at: Date;
@@ -220,101 +214,10 @@ export class RoutineRuntime {
           run.mode === 'dry' ||
           (pinned !== undefined && pinned !== caps.typesFingerprint),
         ...(record ? { record } : {}),
-        ...(run.mode === 'build'
-          ? {
-              build: {
-                description: String(run.input?.description ?? ''),
-                routineId: (run.input?.routineId as string | null | undefined) ?? null,
-              },
-            }
-          : {}),
         ...(this.config.modelOrigin && this.config.modelAvailable
           ? { model: { origin: this.config.modelOrigin } }
           : {}),
       };
-    });
-  }
-
-  /** The builder checks its draft as fixed logic before it type-checks it (§5.2). */
-  async buildCheck(caller: Caller, input: { manifest: unknown; code: string }) {
-    const binding = this.binding(caller);
-    if (binding.mode !== 'build') throw forbidden('only the builder checks drafts here');
-    return withRead(this.sql, caller, async (tx, schema) => {
-      const { manifest, problems, caps } = await staticCheck(
-        tx,
-        caller.workspaceId,
-        this.config,
-        input,
-      );
-      return {
-        manifest,
-        problems,
-        typesFingerprint: caps.typesFingerprint,
-        // The builder checks `main` against it, as a validation's check does;
-        // a manifest with problems has no trigger to read it from.
-        ...(problems.length ? {} : { contextType: contextTypeFor(schema, manifest) }),
-      };
-    });
-  }
-
-  /**
-   * The builder's proposal (§5.1). The builder is first-party code in the
-   * sandbox: it type-checked the code against these types itself, which is
-   * recorded as the passed check a proposal needs. It cannot approve.
-   */
-  async buildPropose(caller: Caller, raw: unknown, typesFingerprint: string) {
-    const binding = this.binding(caller);
-    if (binding.mode !== 'build') throw forbidden('only the builder proposes here');
-    const input = proposeInputSchema.parse(raw);
-    return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
-      await lockSchemaShared(tx, caller.workspaceId);
-      await admitCaller(tx, caller);
-      const run = await this.run(tx, binding.runId, true);
-      const { manifest, problems, caps } = await staticCheck(
-        tx,
-        caller.workspaceId,
-        this.config,
-        input,
-      );
-      if (problems.length)
-        throw new AppError(422, 'invalid_routine', 'the routine does not pass its checks', {
-          problems,
-        });
-      if (typesFingerprint !== caps.typesFingerprint)
-        throw new AppError(409, 'check_required', 'the workspace changed while the builder worked');
-      const sourceId = await saveSource(tx, caller.workspaceId, manifest, input.code);
-      const checkId = await queueRun(tx, caller.workspaceId, {
-        mode: 'check',
-        triggerKind: 'check',
-        sourceId,
-        input: { typesFingerprint },
-      });
-      await tx`update routine_runs set status='succeeded',output=${tx.json({ valid: true, problems: [], typesFingerprint })},
-        started_at=clock_timestamp(),finished_at=clock_timestamp() where id=${checkId}`;
-      const requested = (run.input?.routineId as string | null | undefined) ?? undefined;
-      const by = run.initiated_by?.name ?? run.initiated_by?.id;
-      return insertProposal(
-        tx,
-        caller.workspaceId,
-        {
-          type: 'agent',
-          id: 'retainer-builder',
-          name: `Retainer's builder${by ? `, for ${by}` : ''}`,
-        },
-        { ...input, ...(requested ? { routineId: requested } : {}) },
-        manifest,
-        sourceId,
-        caps,
-      );
-    });
-  }
-
-  /** Builder runs read the capabilities through the runtime, as their own agent would. */
-  async capabilities(caller: Caller) {
-    this.binding(caller);
-    return withRead(this.sql, caller, async (tx, schema) => {
-      const { installed: _installed, ...caps } = await capabilities(tx, schema, this.config);
-      return caps;
     });
   }
 
@@ -596,7 +499,7 @@ export class RoutineRuntime {
     // A dry run's agent task runs too, in dry mode: it reports its writes and
     // calls no extension tool (agent spec §7.2).
     const reporting =
-      ['dry', 'check', 'build'].includes(binding.mode) &&
+      ['dry', 'check'].includes(binding.mode) &&
       request.operation !== 'ai.generate' &&
       request.operation !== 'ai.agent';
     if (request.operation === 'ai.agent') await this.markDelivered(caller, request, hash);
@@ -859,8 +762,8 @@ export class RoutineRuntime {
   ): Promise<RoutineEffectResponse> {
     if (!this.config.agentAvailable || !this.config.agentTools)
       throw new AppError(409, 'agent_unavailable', 'this server has no workspace agent');
-    if (run.mode === 'check' || run.mode === 'build')
-      throw new AppError(403, 'forbidden', 'a check and the builder hand no tasks to the agent');
+    if (run.mode === 'check')
+      throw new AppError(403, 'forbidden', 'a check hands no tasks to the agent');
     const granted = run.manifest?.agent?.tools;
     if (!granted)
       throw new AppError(
@@ -946,28 +849,37 @@ export class RoutineRuntime {
   ): Promise<RoutineEffectResponse> {
     if (!this.config.modelAvailable || !this.config.modelOrigin)
       throw new AppError(409, 'model_unavailable', 'this server has no model');
-    if (run.mode !== 'build' && !run.manifest?.uses.model)
+    if (!run.manifest?.uses.model)
       throw new AppError(
         403,
         'model_not_declared',
         'the manifest does not say the routine uses a model',
       );
     if (!started) {
-      if (this.config.modelCallsPerDay <= 0)
-        throw refused('budget_exhausted', 'this server allows no routine model calls');
       if (run.model_calls >= ROUTINE_LIMITS.modelCallsPerRun)
         throw refused(
           'budget_exhausted',
           `a run makes at most ${ROUTINE_LIMITS.modelCallsPerRun} model calls`,
         );
+      // A dry run stops at half the day's cap, so drafting can never use up
+      // what live routines need (routines-in-chat spec §7). One shared
+      // counter: the reservation stays one atomic step.
+      const dry = run.mode === 'dry';
+      const cap = dry ? Math.floor(this.config.modelCallsPerDay / 2) : this.config.modelCallsPerDay;
+      if (cap <= 0)
+        throw dry
+          ? refused('dry_run_budget', 'this server allows dry runs no model calls')
+          : refused('budget_exhausted', 'this server allows no routine model calls');
       const [day] = await tx<{ count: number }[]>`
         insert into routine_model_days(workspace_id,day,count)
         values(${caller.workspaceId},(clock_timestamp() at time zone 'UTC')::date,1)
         on conflict(workspace_id,day) do update set count=routine_model_days.count+1
-          where routine_model_days.count<${this.config.modelCallsPerDay}
+          where routine_model_days.count<${cap}
         returning count`;
       if (!day)
-        throw refused('budget_exhausted', 'the workspace used its routine model calls for today');
+        throw dry
+          ? refused('dry_run_budget', "today's model budget for dry runs is used up")
+          : refused('budget_exhausted', 'the workspace used its routine model calls for today');
       await tx`update routine_runs set model_calls=model_calls+1 where id=${run.id}`;
       await this.record(tx, caller.workspaceId, run.id, request, hash, { state: 'started' });
     }

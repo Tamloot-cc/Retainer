@@ -1,7 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { Caller } from '../../caller.js';
-import { proposeInputSchema, type Routines, sourceInputSchema } from '../../routines/service.js';
+import {
+  checkAnswer,
+  proposeInputSchema,
+  type Routines,
+  sourceInputSchema,
+  sourceRefSchema,
+} from '../../routines/service.js';
 import { run } from '../shared.js';
 
 /** Waits briefly for a sandbox job, so most checks answer in one call (routines spec §5.1). */
@@ -43,7 +49,7 @@ export function registerRoutineTools(server: McpServer, routines: Routines, call
     'validate_routine',
     {
       description:
-        'Check a routine before proposing it: the manifest completely (objects, fields, filters, cron, tools, model), the code for imports and main, then a full TypeScript type-check in the sandbox. Answers valid with problems that point at the manifest path or code line:column; if the sandbox is still working, poll get_routine_job with the jobId.',
+        'Check a routine before proposing it: the manifest completely (objects, fields, filters, cron, tools, model), the code for imports and main, then a full TypeScript type-check in the sandbox. Answers valid with problems that point at the manifest path or code line:column, and a sourceId for the checked manifest and code (pass it to preview_routine and propose_routine instead of sending them again); if the sandbox is still working, poll get_routine_job with the jobId.',
       inputSchema: sourceInputSchema.extend({ wait }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -63,8 +69,8 @@ export function registerRoutineTools(server: McpServer, routines: Routines, call
     'preview_routine',
     {
       description:
-        'Dry-run a routine on up to five recent records its trigger would have matched. Nothing is written and no tool is called: each run lists the writes and tool calls the code tried (a tool call ends that dry run). Answers how many recent changes matched and a previewId; read the runs with get_routine_preview. The previewId is null, with done true, when no recent record matched, so there is nothing to dry-run.',
-      inputSchema: sourceInputSchema,
+        'Dry-run a routine on up to five recent records its trigger would have matched. Pass the sourceId from validate_routine, or the manifest and code. Nothing is written and no tool is called: each run lists the writes and tool calls the code tried (a tool call ends that dry run). Answers how many recent changes matched and a previewId; read the runs with get_routine_preview. The previewId is null, with done true, when no recent record matched, so there is nothing to dry-run.',
+      inputSchema: sourceRefSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (input) => run(caller, 'read', () => routines.preview(caller, input)),
@@ -106,7 +112,7 @@ export function registerRoutineTools(server: McpServer, routines: Routines, call
     'propose_routine',
     {
       description:
-        "Save a routine for a person to review and approve. It must have passed validate_routine against the workspace's current types. Pass the person's description in their words, a one-sentence summary, and an honest report: verdict full, partial (list each gap with a gap code and what would fix it) or not_possible. Pass routineId to propose a new version of an existing routine. A proposal does nothing until an admin approves it.",
+        "Save a routine for a person to review and approve. It must have passed validate_routine against the workspace's current types; pass its sourceId, or the manifest and code. Pass the person's description in their words, a one-sentence summary, and an honest report: verdict full, partial (list each gap with a gap code and what would fix it) or not_possible. Pass routineId to propose a new version of an existing routine. A proposal does nothing until an admin approves it.",
       inputSchema: proposeInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
@@ -131,29 +137,4 @@ export function registerRoutineTools(server: McpServer, routines: Routines, call
     },
     ({ id }) => run(caller, 'read', () => routines.get(caller, id)),
   );
-}
-
-function checkAnswer(job: {
-  id: string;
-  status: string;
-  code: string | null;
-  output: Record<string, unknown> | null;
-}) {
-  if (job.status === 'succeeded' && job.output)
-    return {
-      valid: job.output.valid === true,
-      problems: (job.output.problems as unknown[]) ?? [],
-      jobId: job.id,
-      status: job.status,
-    };
-  if (['queued', 'running'].includes(job.status))
-    return { valid: null, problems: [], jobId: job.id, status: job.status };
-  return {
-    valid: false,
-    problems: [
-      { part: 'code', code: job.code ?? 'check_failed', message: 'the type-check could not run' },
-    ],
-    jobId: job.id,
-    status: job.status,
-  };
 }

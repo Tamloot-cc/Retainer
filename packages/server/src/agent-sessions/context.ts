@@ -44,6 +44,8 @@ export function chatContext(input: {
   objects: string[];
   eventTypes: string[];
   client?: 'web' | 'cli' | 'task' | null;
+  /** The chat pinned the routine tools (routines-in-chat spec §3.2). */
+  routines?: boolean;
   date: { words: string; zone: string };
 }): string {
   const list = (names: string[]) => (names.length ? names.join(', ') : 'none yet');
@@ -55,7 +57,9 @@ export function chatContext(input: {
     `- ${datePart(input.date)}`,
     ...(input.client === 'web'
       ? [
-          '- This chat is in Retainer’s web app, which can show dashboards and views; read get_guide("dashboards") or get_guide("views") before drafting one. For checked views, use a ```retainer-view fence.',
+          input.routines
+            ? '- This chat is in Retainer’s web app, which can show dashboards, views and routine drafts; read get_guide("dashboards"), get_guide("views") or get_guide("routines") before drafting one. For checked views, use a ```retainer-view fence; for checked routines, a ```retainer-routine fence.'
+            : '- This chat is in Retainer’s web app, which can show dashboards and views; read get_guide("dashboards") or get_guide("views") before drafting one. For checked views, use a ```retainer-view fence.',
         ]
       : []),
   ].join('\n');

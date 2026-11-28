@@ -15,6 +15,7 @@ type ChatBlockProps = {
 const blocks = new Map<string, ComponentType<ChatBlockProps>>([
   ['retainer-view', lazy(() => import('../views/chat-block.js'))],
   ['openui-lang', lazy(() => import('../dashboards/chat-block.js'))],
+  ['retainer-routine', lazy(() => import('../routines/chat-block.js'))],
 ]);
 
 const EMPTY_PREVIOUS: string[] = [];

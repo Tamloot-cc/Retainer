@@ -8,7 +8,13 @@ import { idParam, readBody } from '../../http/request.js';
 import type { AppEnv } from '../../http/response.js';
 import { validTimeZone } from '../../routines/cron.js';
 import type { RoutineRuntime } from '../../routines/runtime.js';
-import { proposeInputSchema, type Routines, sourceInputSchema } from '../../routines/service.js';
+import {
+  checkAnswer,
+  proposeInputSchema,
+  type Routines,
+  sourceInputSchema,
+  sourceRefSchema,
+} from '../../routines/service.js';
 
 /** Waits briefly for a sandbox job, within the hosted API's 30 seconds (§5.1). */
 async function settle<T extends { status?: string }>(read: () => Promise<T>, waitMs: number) {
@@ -36,33 +42,32 @@ export function routineRoutes(app: Hono<AppEnv>, routines: Routines, agent?: Age
       () => routines.getJob(caller, result.jobId),
       waitMs(c.req.query('wait')),
     );
-    return c.json(checkResult(job));
+    return c.json(checkAnswer(job));
   });
   app.post('/routines/preview', requireScope('read'), async (c) =>
-    c.json(await routines.preview(c.get('caller'), await readBody(c, sourceInputSchema))),
+    c.json(await routines.preview(c.get('caller'), await readBody(c, sourceRefSchema))),
   );
+  // A chat's draft card (routines-in-chat spec §4.1): it only reads.
+  app.get('/routines/drafts/:id', requireScope('read'), async (c) => {
+    const optional = z.uuid().optional();
+    const previewId = optional.safeParse(c.req.query('preview') || undefined);
+    const routineId = optional.safeParse(c.req.query('routine') || undefined);
+    if (!previewId.success || !routineId.success)
+      throw new AppError(422, 'invalid_request', 'preview and routine must be IDs');
+    return c.json(
+      await routines.draft(c.get('caller'), idParam(c), {
+        previewId: previewId.data,
+        routineId: routineId.data,
+      }),
+    );
+  });
   app.get('/routines/previews/:id', requireScope('read'), async (c) =>
     c.json(await routines.getPreview(c.get('caller'), idParam(c))),
   );
   app.get('/routines/jobs/:id', requireScope('read'), async (c) => {
     const job = await routines.getJob(c.get('caller'), idParam(c));
-    return c.json(job.mode === 'check' ? { ...job, ...checkResult(job) } : job);
+    return c.json(job.mode === 'check' ? { ...job, ...checkAnswer(job) } : job);
   });
-  app.post('/routines/build', requireScope('write'), async (c) =>
-    c.json(
-      await routines.build(
-        c.get('caller'),
-        await readBody(
-          c,
-          z.strictObject({
-            description: z.string().trim().min(1).max(10000),
-            routineId: z.uuid().optional(),
-          }),
-        ),
-      ),
-      202,
-    ),
-  );
   app.post('/routines', requireScope('write'), async (c) =>
     c.json(await routines.propose(c.get('caller'), await readBody(c, proposeInputSchema)), 201),
   );
@@ -141,32 +146,6 @@ export function routineRoutes(app: Hono<AppEnv>, routines: Routines, agent?: Age
   });
 }
 
-/** A check job's answer: valid, invalid with problems, or still running. */
-function checkResult(job: {
-  id: string;
-  status: string;
-  output: Record<string, unknown> | null;
-  code: string | null;
-}) {
-  if (job.status === 'succeeded' && job.output)
-    return {
-      valid: job.output.valid === true,
-      problems: (job.output.problems as unknown[]) ?? [],
-      jobId: job.id,
-      status: job.status,
-    };
-  if (['queued', 'running'].includes(job.status))
-    return { valid: null, problems: [], jobId: job.id, status: job.status };
-  return {
-    valid: false,
-    problems: [
-      { part: 'code', code: job.code ?? 'check_failed', message: 'the type-check could not run' },
-    ],
-    jobId: job.id,
-    status: job.status,
-  };
-}
-
 /**
  * The routine runtime (§3.3, §6.2): what the routine runner and the code in
  * its sandbox call, with the run's token. The token reaches nothing else.
@@ -178,9 +157,6 @@ export function routineRuntimeRoutes(app: Hono<AppEnv>, runtime: RoutineRuntime)
     await next();
   });
   app.get('/routines/runtime/run', async (c) => c.json(await runtime.context(c.get('caller'))));
-  app.get('/routines/runtime/capabilities', async (c) =>
-    c.json(await runtime.capabilities(c.get('caller'))),
-  );
   app.post('/routines/runtime/read', async (c) => {
     const { operation, args } = await readBody(
       c,
@@ -220,19 +196,6 @@ export function routineRuntimeRoutes(app: Hono<AppEnv>, runtime: RoutineRuntime)
         ? await runtime.modelFailed(c.get('caller'), position, body.error)
         : await runtime.modelResult(c.get('caller'), position, body.result),
     );
-  });
-  app.post('/routines/runtime/build/check', async (c) =>
-    c.json(await runtime.buildCheck(c.get('caller'), await readBody(c, sourceInputSchema))),
-  );
-  app.post('/routines/runtime/build/propose', async (c) => {
-    const { proposal, typesFingerprint } = await readBody(
-      c,
-      z.strictObject({
-        proposal: z.unknown(),
-        typesFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
-      }),
-    );
-    return c.json(await runtime.buildPropose(c.get('caller'), proposal, typesFingerprint), 201);
   });
 }
 

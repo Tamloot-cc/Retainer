@@ -155,15 +155,32 @@ export function createApp(deps: AppDeps) {
     }
   });
 
+  const extensions = new Extensions(
+    deps.sql,
+    deps.extensionCatalog,
+    deps.extensionSecrets,
+    deps.extensionActivation,
+    deps.extensionOAuthClients,
+  );
+  const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
+  const routineConfig = {
+    catalog: extensions.catalog.runtime,
+    modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
+    // `retainer.ai.agent` needs the agent's runtime and a way to deliver task jobs.
+    agentAvailable: !!deps.agent?.runtimeSecret && (deps.agent?.tasks ?? true),
+  };
+  // What connected agents and the chat get: one MCP server, routine tools
+  // included where routines are enabled (routines-in-chat spec §3.1).
+  const toolOptions: InProcessMcpOptions = {
+    extensionCatalog: deps.extensionCatalog,
+    extensionActivation: deps.extensionActivation,
+    fileStorage: deps.fileStorage,
+    fileQuota: deps.fileQuota,
+    routines: routinesAvailable ? routineConfig : undefined,
+  };
+
   // Before /v1's authentication: these routes take their own credentials.
-  const agentTools = deps.agent?.runtimeSecret
-    ? agentToolHost(deps.sql, {
-        extensionCatalog: deps.extensionCatalog,
-        extensionActivation: deps.extensionActivation,
-        fileStorage: deps.fileStorage,
-        fileQuota: deps.fileQuota,
-      })
-    : undefined;
+  const agentTools = deps.agent?.runtimeSecret ? agentToolHost(deps.sql, toolOptions) : undefined;
   const agent =
     deps.agent?.runtimeSecret && agentTools
       ? new AgentSessions(
@@ -177,6 +194,7 @@ export function createApp(deps: AppDeps) {
             workspaceDailySteps: deps.agent.workspaceDailySteps ?? 20000,
             keys: !deps.accountsSecret,
             extensionWaitMs: deps.agent.extensionWaitMs,
+            routines: routinesAvailable,
           },
           agentExtensions(deps.sql, deps.extensionCatalog ?? new ExtensionCatalog()),
         )
@@ -186,7 +204,6 @@ export function createApp(deps: AppDeps) {
 
   webhookIngress(app, deps.webhooks, deps.clientIp);
   mountModelRoutes(app, deps);
-  const routinesAvailable = deps.routines?.available === true && !!deps.runTokens;
   // Chat works only with its read store and somewhere to stream to: the agent's own
   // origin (hosted) or the container this server forwards to (self-hosted).
   const agentAvailable =
@@ -234,13 +251,6 @@ export function createApp(deps: AppDeps) {
   viewRoutes(v1, deps.sql);
   dashboardRoutes(v1, deps.sql);
   agentChatRoutes(v1, agent, publicOrigin);
-  const extensions = new Extensions(
-    deps.sql,
-    deps.extensionCatalog,
-    deps.extensionSecrets,
-    deps.extensionActivation,
-    deps.extensionOAuthClients,
-  );
   extensionRoutes(v1, extensions, !deps.accountsSecret);
   changeRoutes(v1, deps.sql, extensions.catalog);
   runtimeRoutes(
@@ -254,12 +264,6 @@ export function createApp(deps: AppDeps) {
   extensionDataRoutes(v1, deps.sql, extensions.catalog);
   webhookRuntime(v1, deps.webhooks);
   fileRoutes(v1, deps.sql, deps.fileStorage, deps.fileQuota);
-  const routineConfig = {
-    catalog: extensions.catalog.runtime,
-    modelAvailable: deps.routines?.modelAvailable ?? !!deps.model?.apiKey,
-    // `retainer.ai.agent` needs the agent's runtime and a way to deliver task jobs.
-    agentAvailable: !!agent && (deps.agent?.tasks ?? true),
-  };
   if (routinesAvailable && deps.runTokens) {
     routineRoutes(v1, new Routines(deps.sql, routineConfig), agent);
     routineRuntimeRoutes(
@@ -277,15 +281,8 @@ export function createApp(deps: AppDeps) {
       }),
     );
   }
-  // What connected agents get: /mcp and the agent briefing build the same server.
-  const mcpOptions: InProcessMcpOptions = {
-    extensionCatalog: deps.extensionCatalog,
-    extensionActivation: deps.extensionActivation,
-    fileStorage: deps.fileStorage,
-    fileQuota: deps.fileQuota,
-    routines: routinesAvailable ? routineConfig : undefined,
-    publicOrigin,
-  };
+  // /mcp and the agent briefing build the same server as the chat's tools.
+  const mcpOptions: InProcessMcpOptions = { ...toolOptions, publicOrigin };
   agentBriefingRoutes(v1, deps.sql, mcpOptions);
   app.route('/v1', v1);
 

@@ -972,9 +972,11 @@ can still report its usage, which counts, and the answer is `stop`
 
 - The chat creation request can include `client: "web"` or `client: "cli"`.
   Agent tasks record `task` as their client. On the first turn of a web chat,
-  the server adds one line naming `get_guide("dashboards")` and `get_guide("views")`
+  the server adds one line naming `get_guide("dashboards")` and `get_guide("views")`,
+  and `get_guide("routines")` when the chat pinned the routine tools,
   before drafting one. The guide is retrieved on demand. See the
-  [dashboards spec](dashboards.md#5-the-agent).
+  [dashboards spec](dashboards.md#5-the-agent) and
+  [routines-in-chat.md](routines-in-chat.md) §3.2.
 
 The web chat and the saved task trace group consecutive completed calls to
 the same tool with the same outcome. Expand a group to see its calls in order.
@@ -1124,6 +1126,7 @@ of the agent's.
 | ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- | ---------------------- |
 | `retainer.read`  | `search`, `query_records`, `aggregate_records`, `check_dashboard`, `list_views`, `check_view`, `get_record`, `get_context`, `get_timeline`, `describe_schema`, `get_event_content`, `get_guide` | Agent runtime, through the API     | Yes         | If listed              |
 | `retainer.write` | `upsert_record`, `upsert_records`, `log_event`, `remember`                                                                       | Same                               | Yes         | If listed              |
+| `retainer.routines` | `get_routine_capabilities`, `validate_routine`, `get_routine_job`, `preview_routine`, `get_routine_preview`, `list_routines`, `get_routine` ([routines-in-chat.md](routines-in-chat.md) §3.1) | Same | Where routines are enabled | No |
 | `web.search`     | Anthropic's `web_search_20250305`, as an AI SDK provider tool                                                  | At Anthropic                       | Yes         | If listed              |
 | `tools.<name>`   | Extension tools declared `read` (`extensions-tools.md`)                                                        | Through Retainer, as their own job | `read` only | `read` only, if listed |
 
@@ -1272,7 +1275,7 @@ A later independent trigger starts fresh. A change made by the run or its
 task triggers none (`routines.md` §6.5), so nothing redoes that work. So
 code before `ai.agent` should take its input from the trigger snapshot
 (`routines.md` §11.4, which replays unchanged) and not read what the run or
-its task writes. The routine builder's guidance says so. A waiting run
+its task writes. The routines guide says so. A waiting run
 that ends `diverged` is shown on the routine's runs page as needing
 attention. This is accepted: recording reads would keep CRM content per
 run.
@@ -1492,6 +1495,11 @@ sending workspace data out.
 - **Retainer writes stay inside the workspace**, at agent rank.
 - **Web search is still a channel.** A query can carry workspace data out.
   The review says so (§9.4).
+- **A routine drafted in a chat** may follow text an outsider wrote that the
+  agent read before drafting. The structure is the answer, with nothing
+  added: the person presses Propose, an admin approves, Retainer's facts
+  come from the manifest by fixed code, and the routines guide tells the
+  agent to build only what the person asked for (`routines-in-chat.md` §8).
 - **Mastra's guardrail processors** (`PromptInjectionDetector` and others)
   are candidates for that study. They call a model on every message, so they
   cost and slow each turn; not on by default.

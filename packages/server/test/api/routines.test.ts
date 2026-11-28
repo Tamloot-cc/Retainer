@@ -835,48 +835,6 @@ describe('routines', () => {
     });
   });
 
-  it("the builder's draft check returns the context its main must take", async () => {
-    const s = await setup();
-    const [build] = await db.owner<{ id: string; fence: string }[]>`
-      insert into routine_runs(workspace_id,mode,trigger_kind,status,fence,lease_until)
-      values(${s.workspace},'build','build','running',1,clock_timestamp()+interval '1 minute')
-      returning id,fence::text`;
-    const token = await tokens.issueRoutine(
-      s.workspace,
-      {
-        runId: build?.id as string,
-        routineId: null,
-        fence: build?.fence as string,
-        mode: 'build',
-        tools: [],
-      },
-      new Date(Date.now() + 60000),
-    );
-    const checked = await s.app.request('/v1/routines/runtime/build/check', {
-      key: token,
-      body: {
-        manifest: {
-          when: { kind: 'manual', object: 'company', label: 'Go' },
-          uses: { tools: [], model: false },
-        },
-        code: 'export async function main() {}\n',
-      },
-    });
-    expect(checked.body).toMatchObject({ problems: [], contextType: 'RoutineContext<"company">' });
-    // A draft whose manifest does not parse gets its problems, not a server error.
-    for (const manifest of [{}, null, { when: 'record' }]) {
-      const broken = await s.app.request('/v1/routines/runtime/build/check', {
-        key: token,
-        body: { manifest, code: 'export async function main() {}\n' },
-      });
-      expect(broken.status).toBe(200);
-      expect(broken.body.problems.map((p: { code: string }) => p.code)).toContain(
-        'invalid_manifest',
-      );
-      expect(broken.body.contextType).toBeUndefined();
-    }
-  });
-
   it('removing a field the code uses pauses the routine before it acts', async () => {
     const s = await setup();
     const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
@@ -1723,6 +1681,39 @@ describe('routines', () => {
       output: { type: 'string' },
     });
     expect(asked.body.error.code).toBe('budget_exhausted');
+    // A dry run under the same cap ends with the dry-run code, so the card and
+    // the agent read it as the budget, not a failure (routines-in-chat §7).
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'company', label: 'Ask' },
+          uses: { tools: [], model: true },
+        },
+        code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+      },
+    });
+    const runId = (preview.body.runs as string[])[0];
+    if (!runId) throw new Error('no dry run');
+    const claimed = await s.executor.claim(s.workspace, runId);
+    if (!claimed) throw new Error('dry run not claimed');
+    const key = await tokens.issueRoutine(
+      s.workspace,
+      { runId: claimed.runId, routineId: null, fence: claimed.fence, mode: 'dry', tools: [] },
+      new Date(Date.now() + 60000),
+    );
+    const dry = await s.app.request('/v1/routines/runtime/effects', {
+      key,
+      body: {
+        position: 1,
+        operation: 'ai.generate',
+        args: { instructions: 'Say hi', input: null, output: { type: 'string' } },
+      },
+    });
+    expect(dry.body.error.code).toBe('dry_run_budget');
     const days = await db.owner`select 1 from routine_model_days where workspace_id=${s.workspace}`;
     expect(days).toHaveLength(0);
   });
@@ -2438,5 +2429,247 @@ describe('routines: run now, and a paused schedule (issue 147)', () => {
       body: {},
     });
     expect(notSchedule.body.error.code).toBe('not_schedule');
+  });
+});
+
+describe('routines built in the chat (routines-in-chat spec)', () => {
+  const MODEL_ROUTINE = {
+    manifest: {
+      when: { kind: 'manual', object: 'company', label: 'Ask' },
+      uses: { tools: [], model: true },
+    },
+    code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+  };
+  const meta = {
+    name: 'Tier Acme companies',
+    description: 'When a company called Acme is created, set its tier to gold.',
+    summary: 'Sets new Acme companies to the gold tier.',
+    report: { verdict: 'full', gaps: [] },
+  };
+
+  /** Validates through the queued path and returns the job's answer. */
+  async function validated(s: Setup, source: { manifest: unknown; code: string }) {
+    const first = await s.app.request('/v1/routines/validate?wait=0', {
+      key: s.keys.agent,
+      body: source,
+    });
+    expect(first.status).toBe(200);
+    expect(first.body.sourceId).toEqual(expect.any(String));
+    if (first.body.valid !== null) return first.body;
+    await s.executor.tick();
+    const job = await s.app.request(`/v1/routines/jobs/${first.body.jobId}`, {
+      key: s.keys.agent,
+    });
+    return job.body;
+  }
+
+  it('answers sourceId on every check path, and previews and proposes by it', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const job = await validated(s, source);
+    expect(job).toMatchObject({ valid: true, sourceId: expect.any(String) });
+    const sourceId = job.sourceId as string;
+    // A check already passed answers the same source at once.
+    const again = await s.app.request('/v1/routines/validate', { key: s.keys.agent, body: source });
+    expect(again.body).toMatchObject({ valid: true, sourceId });
+    await createCompany(s.app, s.keys.admin, 'Acme Source');
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: { sourceId },
+    });
+    expect(preview.body).toMatchObject({ valid: true, sourceId, previewId: expect.any(String) });
+    // Not both: a source by ID, or as written.
+    const both = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: { sourceId, ...source },
+    });
+    expect(both.status).toBe(422);
+    const proposed = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: { sourceId, ...meta },
+    });
+    expect(proposed.status).toBe(201);
+    const routine = await s.app.request(`/v1/routines/${proposed.body.routineId}`, {
+      key: s.keys.agent,
+    });
+    expect(routine.body.versions[0].code).toBe(source.code);
+  });
+
+  it('the draft route reads facts, the check, the count, the dry run and proposals, queuing nothing', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const { sourceId } = await validated(s, source);
+    await createCompany(s.app, s.keys.admin, 'Acme Draft');
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: { sourceId },
+    });
+    await s.executor.tick();
+    const runs = async () =>
+      (
+        await db.owner<{ n: number }[]>`
+        select count(*)::int as n from routine_runs where workspace_id=${s.workspace}`
+      )[0]?.n;
+    const before = await runs();
+    const read = await s.app.request(
+      `/v1/routines/drafts/${sourceId}?preview=${preview.body.previewId}`,
+      { key: s.keys.agent },
+    );
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({
+      sourceId,
+      code: source.code,
+      ok: true,
+      problems: [],
+      count: { kind: 'record', value: expect.any(Number) },
+      preview: { available: true, done: true },
+      proposals: [],
+    });
+    expect(read.body.facts.length).toBeGreaterThan(0);
+    expect(await runs()).toBe(before);
+    const proposed = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: { sourceId, ...meta },
+    });
+    const after = await s.app.request(`/v1/routines/drafts/${sourceId}`, { key: s.keys.agent });
+    expect(after.body.preview).toBeNull();
+    expect(after.body.proposals).toEqual([
+      expect.objectContaining({
+        routineId: proposed.body.routineId,
+        number: 1,
+        state: 'proposed',
+        name: meta.name,
+        byYou: true,
+      }),
+    ]);
+    const admin = await s.app.request(`/v1/routines/drafts/${sourceId}`, { key: s.keys.admin });
+    expect(admin.body.proposals[0].byYou).toBe(false);
+  });
+
+  it('refuses a preview of another source, and marks a preview whose runs are gone', async () => {
+    const s = await setup();
+    const one = await validated(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const two = await validated(s, {
+      ...TIER_ROUTINE(s.key('tier'), s.key('name')),
+      code: 'export async function main() {\n  return 2;\n}\n',
+    });
+    await createCompany(s.app, s.keys.admin, 'Acme Mismatch');
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: { sourceId: one.sourceId },
+    });
+    const mismatch = await s.app.request(
+      `/v1/routines/drafts/${two.sourceId}?preview=${preview.body.previewId}`,
+      { key: s.keys.agent },
+    );
+    expect(mismatch.status).toBe(409);
+    expect(mismatch.body.error.code).toBe('preview_mismatch');
+    const gone = await s.app.request(
+      `/v1/routines/drafts/${one.sourceId}?preview=${randomUUID()}`,
+      { key: s.keys.agent },
+    );
+    expect(gone.status).toBe(200);
+    expect(gone.body.preview).toEqual({ available: false });
+  });
+
+  it('reports an archived target, and a check older than retention keeps', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const { routineId } = await activate(s, source);
+    const { sourceId } = await validated(s, source);
+    await s.app.request(`/v1/routines/${routineId}/archive`, { key: s.keys.admin, body: {} });
+    const archived = await s.app.request(`/v1/routines/drafts/${sourceId}?routine=${routineId}`, {
+      key: s.keys.agent,
+    });
+    expect(archived.body.ok).toBe(false);
+    expect(archived.body.problems).toEqual([expect.objectContaining({ code: 'routine_archived' })]);
+    const refused = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: { sourceId, routineId, ...meta },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('routine_archived');
+    // After 7 days the check's output is cleared: the draft needs a fresh check.
+    await db.owner`update routine_runs set finished_at=now()-interval '8 days' where workspace_id=${s.workspace}`;
+    await s.maintenance.maintain();
+    const stale = await s.app.request(`/v1/routines/drafts/${sourceId}`, { key: s.keys.agent });
+    expect(stale.body).toMatchObject({ ok: false, problems: [] });
+    const notValidated = await s.app.request('/v1/routines', {
+      key: s.keys.agent,
+      body: { sourceId, ...meta },
+    });
+    expect(notValidated.body.error.code).toBe('not_validated');
+  });
+
+  it('a source from another workspace is not found', async () => {
+    const s = await setup();
+    const other = await setup();
+    const { sourceId } = await validated(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    const draft = await other.app.request(`/v1/routines/drafts/${sourceId}`, {
+      key: other.keys.agent,
+    });
+    expect(draft.status).toBe(404);
+    const preview = await other.app.request('/v1/routines/preview', {
+      key: other.keys.agent,
+      body: { sourceId },
+    });
+    expect(preview.status).toBe(404);
+  });
+
+  it('dry runs stop at half the daily cap, atomically, while a live run keeps the rest', async () => {
+    const s = await setup({ modelCallsPerDay: 4 });
+    const { routineId, versionId } = await activate(s, MODEL_ROUTINE);
+    for (let n = 0; n < 5; n++) await createCompany(s.app, s.keys.admin, `Acme Dry ${n}`);
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: MODEL_ROUTINE,
+    });
+    expect(preview.body.runs).toHaveLength(5);
+    const keys: string[] = [];
+    for (const runId of preview.body.runs as string[]) {
+      const claimed = await s.executor.claim(s.workspace, runId);
+      if (!claimed) throw new Error('dry run not claimed');
+      keys.push(
+        await tokens.issueRoutine(
+          s.workspace,
+          { runId: claimed.runId, routineId: null, fence: claimed.fence, mode: 'dry', tools: [] },
+          new Date(Date.now() + 60000),
+        ),
+      );
+    }
+    const args = { instructions: 'Say hi', input: null, output: { type: 'string' } };
+    const answers = await Promise.all(
+      keys.map((key) =>
+        s.app.request('/v1/routines/runtime/effects', {
+          key,
+          body: { position: 1, operation: 'ai.generate', args },
+        }),
+      ),
+    );
+    expect(answers.map((a) => a.body.state ?? a.body.error?.code).sort()).toEqual([
+      'dry_run_budget',
+      'dry_run_budget',
+      'dry_run_budget',
+      'model',
+      'model',
+    ]);
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Live');
+    const { effect } = await drive(s, routineId, versionId, acme);
+    expect((await effect(1, 'ai.generate', args)).body.state).toBe('model');
+    const [day] = await db.owner<{ count: number }[]>`
+      select count from routine_model_days where workspace_id=${s.workspace}`;
+    expect(day?.count).toBe(3);
+  });
+
+  it('the build route is gone', async () => {
+    const s = await setup();
+    const res = await s.app.request('/v1/routines/build', {
+      key: s.keys.agent,
+      body: { description: 'Anything' },
+    });
+    expect(res.status).toBe(404);
   });
 });
