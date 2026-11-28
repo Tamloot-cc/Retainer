@@ -4,23 +4,16 @@ import type { Tx } from '../db/tx.js';
 import { AppError } from '../errors.js';
 
 /**
- * Who may approve a routine or start a test run, as `retainer_routine_admin`
- * checks it later: a person's user ID in accounts mode, `key:<actor ID>` for
- * an admin API key. Null for anyone else, agents included (routines spec §5.3).
+ * Who may approve a routine or start a test run: a person's user ID in
+ * accounts mode, `key:<actor ID>` for an admin API key. Null for anyone else,
+ * agents included (routines spec §5.3). Checked only at that moment: an
+ * approval or a started test run stands when the person later loses admin.
  */
 export function adminIdentity(caller: Caller): string | null {
   if (caller.run || caller.installation || caller.routine || caller.actor.type !== 'user')
     return null;
   if (!caller.scopes.includes('admin')) return null;
   return caller.userId ?? `key:${caller.actor.id}`;
-}
-
-export async function stillAdmin(tx: Tx, workspace: string, who: string | null) {
-  if (!who) return false;
-  const [row] = await tx<
-    { ok: boolean }[]
-  >`select retainer_routine_admin(${workspace}::uuid,${who}) as ok`;
-  return row?.ok === true;
 }
 
 /** A run's lease outlasts its deadline by this much, to record the outcome. */
@@ -60,8 +53,6 @@ export async function admitRoutine(
       mode: string;
       routine_status: string | null;
       routine_name: string | null;
-      initiator_user_id: string | null;
-      approver_user_id: string | null;
       initiated_by: Actor | null;
       number: number | null;
       deleting: boolean;
@@ -70,7 +61,7 @@ export async function admitRoutine(
   >`select r.status,r.fence::text,coalesce(r.expires_at>clock_timestamp(),true) as live,r.mode,
       coalesce(${runDeadline(tx)}>clock_timestamp(),true) as admits,
       rt.status as routine_status,coalesce(v.name,rt.name) as routine_name,
-      r.initiator_user_id,v.approver_user_id,r.initiated_by,v.number,
+      r.initiated_by,v.number,
       w.deletion_scheduled_at is not null as deleting
     from routine_runs r join workspaces w on w.id=r.workspace_id
     left join routines rt on rt.id=r.routine_id left join routine_versions v on v.id=r.version_id
@@ -84,12 +75,6 @@ export async function admitRoutine(
   if (!run.live) throw runRefused('run_expired', 'the run has expired');
   if (run.mode === 'run' && run.routine_status !== 'active')
     throw runRefused('routine_paused', 'the routine is not active');
-  // An approver who stops being an admin pauses the routine at once (§5.3):
-  // every effect checks it, not only the run's start, which records the pause.
-  if (run.mode === 'run' && !(await stillAdmin(tx, workspace, run.approver_user_id)))
-    throw runRefused('routine_paused', "the routine's approver is no longer an admin");
-  if (run.mode === 'test' && !(await stillAdmin(tx, workspace, run.initiator_user_id)))
-    throw runRefused('routine_paused', 'the person who started this test is no longer an admin');
   const writes = run.mode === 'run' || run.mode === 'test';
   // A write has the attempt's one cutoff, as tool and model calls do (#131):
   // the grace after it is only for the executor to record the outcome.

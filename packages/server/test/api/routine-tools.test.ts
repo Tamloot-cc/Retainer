@@ -401,7 +401,7 @@ describe('routine tool calls', () => {
     expect(routine.body).toMatchObject({ status: 'needs_attention', pausedReason: 'tool_changed' });
   });
 
-  it('an approver who stops being an admin stops the run at its next effect and its tool job', async () => {
+  it('an approver who stops being an admin leaves the run going: its next effect and tool job run (#229)', async () => {
     const s = await setup();
     const { token } = await s.press();
     const effect = (position: number) =>
@@ -417,12 +417,15 @@ describe('routine tool calls', () => {
     expect(started.body.state).toBe('pending');
     // The approver (the admin key's person) loses admin while the run is going.
     await db.owner`update api_keys set revoked_at=now() where workspace_id=${s.workspace} and 'admin'=any(scopes)`;
-    const refused = await effect(2);
-    expect(refused.body.error.code).toBe('routine_paused');
-    expect(await s.queue.claim(s.workspace, started.body.tool.callId, 'tool-runner')).toBe(null);
-    const [job] = await db.owner<{ status: string; code: string }[]>`
-      select status,code from extension_jobs where id=${started.body.tool.callId}`;
-    expect(job).toEqual({ status: 'cancelled', code: 'caller_stopped' });
+    const next = await effect(2);
+    expect(next.status).toBe(200);
+    expect(next.body.state).toBe('pending');
+    expect(await s.queue.claim(s.workspace, started.body.tool.callId, 'tool-runner')).not.toBe(
+      null,
+    );
+    const routine =
+      await db.owner`select status,paused_reason from routines where id=${s.routineId}`;
+    expect(routine).toEqual([{ status: 'active', paused_reason: null }]);
   });
 
   it("a tool job does not start once its caller's routine is paused", async () => {

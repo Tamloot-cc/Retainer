@@ -75,8 +75,6 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
       return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Ask the agent to narrow it to fewer records, then approve the new version.';
     case 'tool_changed':
       return 'A tool it uses changed what it does or how it connects. An admin needs to approve it again before it runs.';
-    case 'approver_left':
-      return 'The admin who approved it is no longer an admin. Another admin needs to approve it before it runs.';
     case 'check_failed':
       return 'The workspace changed (a field, object or tool) and its code no longer fits. Ask the agent to repair it, then approve the new version.';
     case 'failing':
@@ -91,7 +89,7 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
 }
 /** Reasons a paused routine cannot simply be resumed: it needs a new approval. */
 export const needsApproval = (reason: string | null) =>
-  ['tool_changed', 'approver_left', 'check_failed'].includes(reason ?? '');
+  ['tool_changed', 'check_failed'].includes(reason ?? '');
 
 const RUN_STATUS: Record<RoutineRunStatus, { label: string; tone: Tone }> = {
   queued: { label: 'Waiting to start', tone: 'pending' },

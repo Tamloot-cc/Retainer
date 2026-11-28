@@ -626,25 +626,22 @@ history are how a person catches that.
 - **Repair.** The description is the lasting record of intent. The builder
   can translate it again against the current workspace, and a person approves
   the repaired version. A rewrite never goes live without approval.
-- If the approver leaves the workspace or loses the admin role, the routine
-  pauses until another admin approves it. An active routine pauses with
-  `approver_left` at its next run. One that is already paused or needs
-  attention is stored as `approver_left` in the same transaction as the
-  change that removed admin: an organization or workspace role change, a
-  removal, a deleted account, a revoked or narrowed API key, or the workspace
-  moving to another organization. Database triggers record it, so every path
-  and cascade is covered and every reader (web app, MCP, CLI, runtime) sees
-  the same reason. A routine that stops after its approver left is stored as
-  `approver_left` too. A reason that says what must change before it runs
-  again (`check_failed`, `tool_changed`, `schedule_too_large`) outranks
-  `approver_left` and is kept; approving a repaired version clears either.
+- **An approval stays valid when the approver later loses admin.** A
+  routine keeps running on its approved version when the approver leaves
+  the workspace or organization, loses the admin role, has their account
+  deleted or has their admin API key revoked or narrowed. A test run started
+  by an admin goes on if that person loses admin mid-run. Approving a
+  version and starting a test run still need an admin at that moment. The
+  routine writes as an agent, not as the approver, so nobody's access is
+  borrowed. If an admin is removed for cause, another admin pauses or
+  archives the routines they approved (#229).
 - **Changing version.** A run is pinned to the version that was active when
   it was queued. When a new version is approved, runs already started finish
   on their own version, within the run's time limit. Runs not yet started,
   queued or held, are discarded, and the approval screen says how many.
 - **Pausing.** A routine pauses when an admin pauses or archives it, when a
-  re-check fails, when a tool's contract changes, when it keeps failing, and
-  when its approver stops being an admin. A pause takes effect at once:
+  re-check fails, when a tool's contract changes and when it keeps failing.
+  A pause takes effect at once:
   Retainer checks that the routine is active before every effect, and again
   when a tool job it called starts. Pausing permanently fences started
   runs and marks them `stopped`. Resuming leaves those runs stopped.
@@ -1363,8 +1360,8 @@ they left open:
   attempts, claimed through `retainer_routine_runs_due`; they are not
   `extension_jobs`. A tool call is an extension job (`trigger_kind = 'tool'`)
   in its own lane, so it never waits behind the extension's other jobs, and
-  its claim checks again that the calling run is running, its routine active
-  and a test's initiator still an admin.
+  its claim checks again that the calling run is running and its routine
+  active.
 - **The runner's answer.** Protocol v1 carries output only on success, so
   the routine runner always answers `succeeded` with the routine's
   `outcome` (`succeeded`, `failed` or `stopped`), its code and, for a check,
@@ -1515,16 +1512,10 @@ they left open:
   description the routine's live metadata.
 - **Re-approval creates a version.** Approving an already approved version
   records a new version and preserves the prior approval. Resume never
-  approves: when the active version's approver is no longer an admin,
-  however the routine paused, `resume` refuses with `approval_required`.
-  The stored pause reason is `approver_left` (§5.3), unless a repair
-  reason outranks it, until an admin approves it on the review screen,
-  which clears it (#167). Only the active version's runs can change the
-  Routine's health.
-- **The approver is checked at every effect.** An approver who stops being
-  an admin refuses the run's next effect as `routine_paused` and cancels a
-  tool job it has not started, as a test run's initiator does; the next
-  run's start records the pause (`approver_left`).
+  approves: it keeps the active version's approval, even when its approver
+  has since lost admin (§5.3, #229). It refuses with `approval_required`
+  only for a routine paused for a repair (`check_failed`, `tool_changed`).
+  Only the active version's runs can change the Routine's health.
 - **A tool is checked again when it is called.** An extension upgraded
   after a run started could change a tool's contract mid-run, so the call
   compares the installed tool with the version's pin, as the run's start

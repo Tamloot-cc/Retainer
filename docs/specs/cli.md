@@ -375,11 +375,11 @@ field values but requires `keep`, which of the pair's two records survives
 the values the merge rules pick. Choosing
 values field by field stays in the web app.
 
-**Routine resume keeps the existing approval.** When the active version's
-approver is no longer an admin, `resume` refuses with `approval_required`
-for every caller, CLI or not (#167), and the CLI shows the link to the
-routine's review screen (§5.3). When the approval is still valid, it
-resumes as today.
+**Routine resume keeps the existing approval.** It approves nothing new,
+and the approval stands even when its approver has since lost admin (#229).
+When the routine paused for a repair, `resume` refuses with
+`approval_required` for every caller, CLI or not, and the CLI shows the
+link to the routine's review screen (§5.3).
 
 **The record says how a decision was made.** `Actor` gets an optional `via`
 field, for display only, added to `actorSchema` explicitly (it is a
@@ -720,7 +720,7 @@ Integration tests against real Postgres, as everywhere:
 - **Elevated:** each decision allowed and recorded with `via`; the person's
   role still caps everything (a viewer who elevates can't approve); a window
   in one workspace allows nothing in another; a workspace window allows no
-  organization action; resuming a routine whose approver has left returns a
+  organization action; resuming a routine paused for a repair returns
   `approval_required` and approves nothing; schema approval rechecks the
   window after its schema locks.
 - **Window rules:** ends at its time; `--end`, logout, disconnect and losing
