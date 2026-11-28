@@ -550,7 +550,8 @@ who made it, **Edit with the agent**, **Share with workspace** or **Make
 private**, **Rename** and **Delete**. Empty state: "No dashboards yet. Ask
 the agent for one, such as 'deals by stage this quarter', then pin it."
 
-**New dashboard** (2026-11-28, not built yet) opens a new chat that says how
+**New dashboard** (2026-11-28, not built yet), and the empty state's **Open
+chat**, open the chat's starter (`/chat?new=dashboard`). It says how
 building a dashboard works and offers one prompt: "Suggest a few dashboards
 I could build from this workspace's data." The dashboards guide gains a
 **Suggesting** section for that answer. Both are shared with views and

@@ -96,7 +96,9 @@ What is better than the text box it replaces:
 
 Decided in `chat-builds.md` (2026-11-27), restated:
 
-- The chat is the only way in. The Routines page links to a plain chat.
+- The chat is the only way in. The Routines page links to a plain chat
+  (since 2026-11-28, to a chat that suggests routines: `chat-builds.md`
+  §5.2).
 - The person keeps, with a button. In the chat no tool proposes.
 - The agent runs the dry run once, while drafting. Opening the card never
   starts one.
@@ -500,9 +502,10 @@ Removed, in the PR that ships this, after the eval (§9):
   (`routines/describe.tsx`). The list page gets a **New routine** link
   that opens a plain chat (`chat-builds.md` §2); a routine's page gets
   **Edit with the agent**. Since 2026-11-28 (not built yet), **New
-  routine** opens a chat that says how building a routine works and offers
-  "Suggest a few routines that would save time in this workspace." The
-  routines guide's **Suggesting** section keeps ideas within
+  routine** links to `/chat?new=routine`, which creates no chat until the
+  person sends. It says how building a routine works and offers "Suggest a
+  few routines that would save time in this workspace." The routines
+  guide's **Suggesting** section keeps ideas within
   `get_routine_capabilities` and runs no check or dry run until the person
   picks one (`chat-builds.md` §5.2).
 - `POST /v1/routines/build`, the runner's internal

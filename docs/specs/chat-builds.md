@@ -143,7 +143,7 @@ change when the chat builds routines:
   returns `previewId: null`). So the card must be able to show and propose
   a checked draft with "no recent matches", without a dry run to point at.
 - **The Routines page's text box is replaced by a link to the chat**, a
-  plain chat as §2 says. The built-in builder, a job in the sandbox that
+  chat that starts as §5.2 says. The built-in builder, a job in the sandbox that
   called the model through the proxy, is gone; the chat's agent builds.
 
 How the `retainer-routine` fence and the card work in detail is in
@@ -154,26 +154,27 @@ routines need.
 ### 5.2 Starting from a feature page
 
 Decided with the product owner, 2026-11-28, after trying the prompt by
-hand on dashboards and views. It teaches the pattern by example: the
-person sees what the agent can make from their own data before they have
-to describe anything.
+hand on dashboards and views; revised the same day after Codex's review.
+It teaches the pattern by example: the person sees what the agent can
+make from their own data before they have to describe anything.
 
-**The button.** Each feature page has a **New** button, shown when the
-workspace agent is available and the person has `write`:
+**The entries.** Each is shown when the workspace agent is available and
+the person has `write`; routines also need `routinesAvailable`:
 
-| Page                            | Button            | Opens                                |
-| ------------------------------- | ----------------- | ------------------------------------ |
-| Dashboards                      | **New dashboard** | `/chat?new=dashboard`                |
-| An object page, in the view bar | **New view**      | `/chat?new=view&object=<object key>` |
-| Routines                        | **New routine**   | `/chat?new=routine`                  |
+| Page                       | Entry                            | Opens                          |
+| -------------------------- | -------------------------------- | ------------------------------ |
+| Dashboards                 | **New dashboard** button         | `/chat?new=dashboard`          |
+| Dashboards, empty          | its **Open chat** link           | `/chat?new=dashboard`          |
+| An object page, views menu | **New view with the agent** item | `/chat?new=view&object=<name>` |
+| Routines                   | **New routine** button           | `/chat?new=routine`            |
 
-Each opens a new, empty chat; nothing is created until the person sends
-a message, as with any new chat. **New routine** exists today and starts a
-plain chat; it opens this one instead. Without the agent, a page keeps
-what it shows today (the Routines page's MCP note, for one).
+`<name>` is the object's `nameSingular`, as the view bar's API calls use;
+the chat shows its `labelPlural`. The views menu keeps **New view…**, the
+manual dialog, which is the only entry when the agent is off.
 
-**The top of the chat.** In place of the general intro and suggestions,
-an empty chat opened this way shows:
+**The starter.** `/chat?new=…` is the chat index (`ChatsPage`), not a
+stored chat: opening it creates nothing, so leaving it leaves the chat
+list as it was. In place of the general intro and suggestions it shows:
 
 - **A short explanation** of the five steps in the feature's words, three
   lines at most. For dashboards: "Describe a dashboard and the agent drafts
@@ -182,28 +183,48 @@ an empty chat opened this way shows:
   routines say Propose and that an admin approves before anything runs.
 - **One suggestion prompt**, a button that sends it:
   - "Suggest a few dashboards I could build from this workspace's data."
-  - "Suggest a few views of `<Companies>` I could keep." (the object's
-    plural name)
+  - "Suggest a few views of Companies I could keep." (the object's
+    `labelPlural`)
   - "Suggest a few routines that would save time in this workspace."
+- **The composer**, its placeholder naming the feature ("Describe a view
+  of Companies…").
 
-The person can press it or type their own request. The prompt is plain
-words the person sees in the thread; the web app adds nothing hidden to
-it. How the agent answers lives in the guide (below), so MCP agents asked
-the same thing answer the same way.
+Pressing the prompt or sending typed text creates a web chat and hands the
+text over as its first message, the path the index already uses. The text
+is exactly what the person sees in the thread; nothing hidden is added. So
+typed text carries no context the person did not write: "group these by
+stage" does not say which object. The guide tells the agent to ask one
+short question when a request does not say which feature or object it
+means, as the routines guide already does for an unclear routine.
+
+The URL is checked when the page reads it, not only when the entry is
+shown. A `new` value the person cannot use (no `write`, routines off, an
+unknown or renamed object) gives the plain index, so a bookmarked link
+never offers what the server does not. **Edit with the agent** keeps its
+own path: it creates the chat at once, with the kept thing in its first
+message.
+
+**Finding the guide.** The line the server adds to a web chat's first
+message (`agent-sessions/context.ts`) says to read a feature's guide
+"before drafting one"; it becomes "before drafting one or suggesting
+ideas for one". The dashboards, views and routines guides' MCP
+descriptions say the same, so an MCP agent asked for ideas finds them.
 
 **The answer.** Each guide gains a short **Suggesting** section. When asked
 for ideas, the agent:
 
-1. Reads the guide, as for any draft (rule 3), and `describe_schema`.
+1. Reads `describe_schema` (and, for routines, `get_routine_capabilities`).
 2. Looks at the data: counts and groupings with `aggregate_records`, a few
    records with `query_records`, enough to tell which objects and fields
    are filled and which are empty.
 3. Looks at what exists: `list_views` for the object, `list_routines` for
    routines, so it does not suggest a near copy.
-4. Answers with three to five ideas. Each has a short name, one line on
-   what it shows or does, and why it fits this workspace ("212 deals, 80%
-   with a stage and amount"). It leaves out ideas the data cannot support:
-   no "revenue by month" when no record has an amount.
+4. Answers with up to five ideas. Each has a short name, one line on what
+   it shows or does, and why it fits this workspace ("212 deals, 80% with
+   a stage and amount"). It leaves out ideas the data cannot support: no
+   "revenue by month" when no record has an amount. Fewer is fine, even
+   none: then it says what is missing (no records yet, no amounts) or
+   points to the view or routine that already does the job.
 5. Ends by asking which one to build. It drafts nothing until the person
    picks one or describes their own; then the five steps run as usual.
 
@@ -218,13 +239,25 @@ one the person already has. Accepted: the person sees their dashboards one
 page back. The ideas come from a model and vary between chats; the guide
 asks for ideas grounded in the data, not a fixed list.
 
-**Tests.** Web unit tests: each page's button opens the right URL, shown
-only with the agent and `write`; the chat at each `new=` value shows its
-explanation and prompt, and the prompt sends as typed text. An end-to-end
-test per feature: press New, press the prompt, the agent's answer arrives
-(the e2e agent fixture). The guide sections are checked by hand on a
-seeded workspace before merging, as the product owner did with the
-dashboards and views prompts.
+**Tests.**
+
+- Web unit tests: each entry links to the right URL and shows only when
+  allowed; the starter at each `new` value shows its explanation, prompt
+  and placeholder; a `new` value that is not allowed (routines off, no
+  `write`, unknown object) shows the plain index; opening the starter
+  creates no chat; sending creates one with the visible text as its first
+  message.
+- Server unit test: the web-chat line names suggesting.
+- End to end, per feature: press the entry, press the prompt, the agent's
+  answer arrives (the e2e agent fixture). The routines tests that expect
+  **New routine** to create a chat at once
+  (`routines/routines.test.tsx`, `e2e/routines-chat.spec.ts`) change to
+  the starter.
+- By hand on a seeded workspace before merging, from a fresh chat for each
+  feature: the tool calls read the guide, the schema and the data; a
+  routine suggestion reaches `get_routine_capabilities` and stops before
+  `validate_routine` or `preview_routine`; an empty object gets fewer
+  ideas and says why.
 
 ## 6. Later
 
