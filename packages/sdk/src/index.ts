@@ -30,6 +30,7 @@ export { isMaintenance, isMaintenanceRead, retryAfterMs, waitForRetry } from './
 import type {
   Actor,
   AddedLinks,
+  AgentBriefing,
   AggregateInput,
   AggregateResult,
   AssertionView,
@@ -252,6 +253,10 @@ export class RetainerClient {
   }
   schema(signal?: AbortSignal) {
     return this.get<SchemaDescription>('/v1/schema', {}, signal);
+  }
+  /** What Retainer tells every agent that connects: instructions, tools and guides. */
+  agentBriefing(signal?: AbortSignal) {
+    return this.get<AgentBriefing>('/v1/agent-briefing', {}, signal);
   }
   templates(signal?: AbortSignal) {
     return this.get<{ templates: TemplateView[] }>('/v1/templates', {}, signal);

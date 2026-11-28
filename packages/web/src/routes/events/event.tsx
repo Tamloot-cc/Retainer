@@ -19,7 +19,7 @@ import {
   RecordAvatar,
   Stack,
 } from '../../ui/index.js';
-import { DeveloperFacts, useApiName } from '../developer.js';
+import { DeveloperFacts, useAgentDescription, useApiName } from '../developer.js';
 import { MemoryTabs, useMemoryNav } from '../records/record-memory.js';
 import { useRecord } from '../records/record-view.js';
 import { classLabel, eventTitle, objectByName, QueryError } from '../state.js';
@@ -35,7 +35,8 @@ export function EventPage() {
   const { session, schema } = useWorkspace(),
     client = useQueryClient(),
     nav = useMemoryNav(),
-    apiName = useApiName();
+    apiName = useApiName(),
+    agentDescription = useAgentDescription();
   // The record read: it carries the tab counts, and the sheet shares its cache.
   const query = useRecord(id);
   const [confirm, setConfirm] = useState(false),
@@ -127,7 +128,12 @@ export function EventPage() {
             {others.map((f) => {
               const Display = fields[f.type].Display;
               return (
-                <Property key={f.name} label={f.label} apiName={apiName(f.name)}>
+                <Property
+                  key={f.name}
+                  label={f.label}
+                  apiName={apiName(f.name)}
+                  descriptionLine={agentDescription(f.description)}
+                >
                   <Display field={f} value={r.fields[f.name]} references={r.relationReferences} />
                 </Property>
               );

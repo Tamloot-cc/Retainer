@@ -24,6 +24,7 @@ import { type RateLimit, rateLimit } from '../http/rate-limit.js';
 import { type AppEnv, errorResponse, toAppError } from '../http/response.js';
 import { agentToolHost } from '../mcp/agent-tools.js';
 import { hostedSetup } from '../mcp/hosted-setup.js';
+import type { InProcessMcpOptions } from '../mcp/in-process.js';
 import { mcpRoute, PINNED_MCP_ROUTE } from '../mcp/route.js';
 import { mountModelRoutes } from '../model/mount.js';
 import { RoutineRuntime } from '../routines/runtime.js';
@@ -32,6 +33,7 @@ import { VERSION } from '../version.js';
 import type { Webhooks } from '../webhooks/service.js';
 import { admitRestrictedApi, admitRestrictedCredential } from './restricted.js';
 import { agentChatRoutes, agentRuntimeRoutes, agentStreamForward } from './routes/agent.js';
+import { agentBriefingRoutes } from './routes/agent-briefing.js';
 import { changeRoutes } from './routes/changes.js';
 import { commentRoutes } from './routes/comments.js';
 import { dashboardRoutes } from './routes/dashboards.js';
@@ -275,6 +277,16 @@ export function createApp(deps: AppDeps) {
       }),
     );
   }
+  // What connected agents get: /mcp and the agent briefing build the same server.
+  const mcpOptions: InProcessMcpOptions = {
+    extensionCatalog: deps.extensionCatalog,
+    extensionActivation: deps.extensionActivation,
+    fileStorage: deps.fileStorage,
+    fileQuota: deps.fileQuota,
+    routines: routinesAvailable ? routineConfig : undefined,
+    publicOrigin,
+  };
+  agentBriefingRoutes(v1, deps.sql, mcpOptions);
   app.route('/v1', v1);
 
   // Accounts mode: apps connect to /mcp over OAuth as well as with API keys
@@ -350,16 +362,7 @@ export function createApp(deps: AppDeps) {
       });
     });
   }
-  mcpRoute(app, deps.sql, {
-    publicOrigin,
-    oauth,
-    rateLimit: limit,
-    extensionCatalog: deps.extensionCatalog,
-    extensionActivation: deps.extensionActivation,
-    fileStorage: deps.fileStorage,
-    fileQuota: deps.fileQuota,
-    routines: routinesAvailable ? routineConfig : undefined,
-  });
+  mcpRoute(app, deps.sql, { ...mcpOptions, oauth, rateLimit: limit });
 
   if (deps.webDir) {
     const root = resolve(deps.webDir);

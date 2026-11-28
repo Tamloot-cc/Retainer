@@ -12,7 +12,13 @@ const view = new RegExp(`^/v1/(?:views/${uuid}|objects/[a-z0-9_-]+/views)$`);
 const dashboard = new RegExp(`^/v1/dashboards(?:/${uuid})?$`);
 const recordQuery = /^\/v1\/objects\/[a-z0-9_-]+\/(query|aggregate)$/;
 const mcp = new RegExp(`^/mcp(?:/w/${uuid})?$`);
-const restReads = new Set(['/v1/me', '/v1/schema', '/v1/review', '/v1/schema/changes']);
+const restReads = new Set([
+  '/v1/me',
+  '/v1/schema',
+  '/v1/agent-briefing',
+  '/v1/review',
+  '/v1/schema/changes',
+]);
 const restPostReads = new Set(['/v1/search', '/v1/feed/query', '/v1/events/query']);
 const event = new RegExp(`^/v1/events/${uuid}(?:/(?:content|claims))?$`);
 const mcpMethods = new Set(['initialize', 'notifications/initialized', 'ping', 'tools/list']);

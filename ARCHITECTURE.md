@@ -1636,6 +1636,12 @@ at `discover_schema` when the workspace is not initialized. `dashboards` teaches
 the dashboard language; a web chat's first message tells the workspace agent
 to read it before drafting a dashboard (1.4).
 
+**Read over REST.** `GET /v1/agent-briefing` (scope `read`) returns the
+server instructions, the tools as `tools/list` answers on an MCP server built
+for the caller with the same options as `/mcp`, and every guide. It is read
+only, and it is how the web app's Agent view shows what agents are told
+([agent-view.md](docs/specs/agent-view.md)).
+
 `schema_design` holds the rules for growing or reviewing a schema in use;
 `discover_schema` includes the same rules. Agents change the schema
 mid-task, long after setup, so the `propose_schema_change` description

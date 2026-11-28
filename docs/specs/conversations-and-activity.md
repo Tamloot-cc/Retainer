@@ -260,8 +260,10 @@ ARCHITECTURE.md records history.
 
 ### 5.7 Developer view (D8)
 
-A **Developer view** switch in the account menu, remembered per browser in
-`localStorage`, available to every actor. When on:
+The account menu's **View** control has three levels: Standard, Developer
+and Agent ([agent-view.md](agent-view.md)). Each adds to the one before, so
+Agent includes all of Developer. Remembered per browser in `localStorage`,
+available to every actor. At Developer:
 
 - Object and field labels show their API names beside them in lists,
   headers, filters and forms.

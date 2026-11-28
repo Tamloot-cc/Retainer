@@ -479,8 +479,7 @@ test('shows API names, IDs, write paths and JSON in developer view, remembered p
   await expect(page.getByRole('button', { name: 'JSON' })).toHaveCount(0);
 
   await page.getByRole('button', { name: /^Account: / }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Developer view' }).click();
-  await page.keyboard.press('Escape');
+  await page.getByRole('menuitemradio', { name: 'Developer' }).click();
   await expect(page.getByText('upsert_record', { exact: true })).toBeVisible();
   await expect(page.getByText(`PATCH /v1/records/${dana.id}`)).toBeVisible();
   await expect(page.getByText(dana.id, { exact: true })).toBeVisible();
@@ -506,8 +505,7 @@ test('shows API names, IDs, write paths and JSON in developer view, remembered p
   ).toBeVisible();
 
   await page.getByRole('button', { name: /^Account: / }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Developer view' }).click();
-  await page.keyboard.press('Escape');
+  await page.getByRole('menuitemradio', { name: 'Standard' }).click();
   await expect(page.getByText('jobTitle', { exact: true })).toHaveCount(0);
   await page.goto(`${r.url}/app/r/${dana.id}`);
   await expect(page.getByText('upsert_record')).toHaveCount(0);

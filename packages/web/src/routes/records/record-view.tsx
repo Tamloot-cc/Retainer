@@ -38,7 +38,7 @@ import {
   Stack,
 } from '../../ui/index.js';
 import { useRememberCommand } from '../command-recents.js';
-import { DeveloperFacts, useApiName } from '../developer.js';
+import { DeveloperFacts, useAgentDescription, useApiName } from '../developer.js';
 import { EventDetailsView } from '../events/event-details.js';
 import { ExtensionRecordButtons } from '../extensions/record-buttons.js';
 import { RoutineButtons } from '../routines/record-buttons.js';
@@ -187,7 +187,8 @@ export function RecordView({
   nav: MemoryNav;
 }) {
   const { session, schema } = useWorkspace(),
-    apiName = useApiName();
+    apiName = useApiName(),
+    agentDescription = useAgentDescription();
   useRememberCommand('record', r.id);
   const [history, setHistory] = useState<FieldView | null>(null),
     [historyCursor, setHistoryCursor] = useState<string>();
@@ -237,7 +238,12 @@ export function RecordView({
             {inverse.map((f) => {
               const Display = fields[f.type].Display;
               return (
-                <Property key={f.name} label={f.label} apiName={apiName(f.name)}>
+                <Property
+                  key={f.name}
+                  label={f.label}
+                  apiName={apiName(f.name)}
+                  descriptionLine={agentDescription(f.description)}
+                >
                   <Stack>
                     <Display
                       field={f}
@@ -327,6 +333,7 @@ export function FieldProperty({
   onHistory: () => void;
 }) {
   const { session } = useWorkspace();
+  const descriptionLine = useAgentDescription()(field.description);
   const [editing, setEditing] = useState(false);
   const [markdown, setMarkdown] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
@@ -343,6 +350,7 @@ export function FieldProperty({
       label={field.label}
       description={field.description}
       apiName={apiName}
+      descriptionLine={descriptionLine}
       onEdit={editable ? () => setEditing(true) : undefined}
       editor={editing ? <InlineEditor record={record} field={field} onDone={done} /> : null}
       actions={

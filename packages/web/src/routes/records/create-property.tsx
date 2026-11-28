@@ -4,7 +4,7 @@ import { type Ref, useId } from 'react';
 import { dateText, type InputProps } from '../../fields/common.js';
 import { fields } from '../../fields/index.js';
 import { cn } from '../../ui/core.js';
-import { ApiName, Button } from '../../ui/index.js';
+import { ApiName, Button, DescriptionLine } from '../../ui/index.js';
 
 export function hasPropertyPicker(field: FieldView) {
   return field.type === 'select' || field.type === 'multi_select' || field.type === 'relation';
@@ -28,6 +28,7 @@ export function CreateProperty({
   expanded,
   onToggle,
   apiName,
+  descriptionLine,
   error,
   ref,
 }: InputProps & {
@@ -35,6 +36,8 @@ export function CreateProperty({
   expanded: boolean;
   onToggle: () => void;
   apiName?: string;
+  /** Agent view: the field's description, under the chip. */
+  descriptionLine?: string | undefined;
   error?: string;
   ref?: Ref<HTMLDivElement>;
 }) {
@@ -76,6 +79,7 @@ export function CreateProperty({
         </Button>
       )}
       {apiName ? <ApiName>{apiName}</ApiName> : null}
+      <DescriptionLine className="max-w-80">{descriptionLine}</DescriptionLine>
       {error && picker ? (
         <span id={errorId} className="text-xs text-destructive">
           {error}

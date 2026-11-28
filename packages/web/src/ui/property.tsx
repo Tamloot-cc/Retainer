@@ -10,7 +10,7 @@ import {
   useRef,
 } from 'react';
 import { cn, focusFirst, isPlainClick, PANEL } from './core.js';
-import { ApiName } from './layout.js';
+import { ApiName, DescriptionLine } from './layout.js';
 import { PanelBody } from './popover.js';
 import { DescriptionTooltip } from './tooltip.js';
 
@@ -38,6 +38,7 @@ export function Property({
   label,
   description,
   apiName,
+  descriptionLine,
   actions,
   onEdit,
   editor,
@@ -47,6 +48,8 @@ export function Property({
   description?: string | null;
   /** Developer view: the API name, shown beside the label. */
   apiName?: string;
+  /** Agent view: the description, as a muted line under the label. */
+  descriptionLine?: string | undefined;
   actions?: ReactNode;
   onEdit?: () => void;
   editor?: ReactNode;
@@ -76,6 +79,7 @@ export function Property({
           <span tabIndex={description?.trim() ? 0 : undefined}>{label}</span>
         </DescriptionTooltip>
         {apiName ? <ApiName>{apiName}</ApiName> : null}
+        <DescriptionLine>{descriptionLine}</DescriptionLine>
       </dt>
       <dd className="m-0 min-w-0">
         {editor ?? (

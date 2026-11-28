@@ -162,17 +162,43 @@ export function Code({ children }: { children: ReactNode }) {
 
 /**
  * An API name beside the label people read, shown in developer view: quiet
- * and monospace.
+ * and monospace. `title` is its tooltip, such as the field's description in
+ * agent view where there is no room for a line.
  */
-export function ApiName({ children }: { children: ReactNode }) {
+export function ApiName({ children, title }: { children: ReactNode; title?: string | undefined }) {
   return (
     <code
       data-api-name
+      title={title}
       className="ml-1.5 shrink-0 font-mono text-[11px] font-normal text-muted-foreground/80 [overflow-wrap:anywhere]"
     >
       {children}
     </code>
   );
+}
+
+/**
+ * A field or object description as a quiet line, shown in agent view where
+ * developer view shows the API name. Renders nothing for blank text.
+ */
+export function DescriptionLine({
+  children,
+  className,
+}: {
+  children: string | null | undefined;
+  className?: string;
+}) {
+  return children?.trim() ? (
+    <span
+      data-agent-description
+      className={cn(
+        'block whitespace-normal text-xs font-normal text-muted-foreground [overflow-wrap:anywhere]',
+        className,
+      )}
+    >
+      {children.trim()}
+    </span>
+  ) : null;
 }
 
 /** A small button that copies `value` to the clipboard and says so. */

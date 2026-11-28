@@ -39,7 +39,7 @@ import {
   Tabs,
   useTabAnchor,
 } from '../../ui/index.js';
-import { ApiLabel, useDeveloper } from '../developer.js';
+import { ApiLabel, useAgentView, useDeveloper } from '../developer.js';
 import { REASONS, ViaLabel } from '../events/event-details.js';
 import {
   byCursor,
@@ -50,6 +50,7 @@ import {
   recordTitle,
   useView,
 } from '../state.js';
+import { AgentContextPanel } from './agent-context.js';
 import { CommentsPanel } from './comments.js';
 import { CandidateRecord } from './record-actions.js';
 import { RecordHistory } from './record-history.js';
@@ -94,6 +95,8 @@ const TAB_HINTS = {
     'What came out of this event: field values and facts saved on other records because of it. A value that is no longer current is marked.',
   history: 'Values set on these fields over time, and who set them.',
   json: 'This record’s raw data, as the API returns it.',
+  context:
+    'What Retainer sends an agent that reads this record with get_context: its values, linked records, facts and recent events, fitted to a size budget.',
 };
 
 /** One tab of a record's memory. Its value must have a hint, so a new tab can't skip one. */
@@ -110,10 +113,13 @@ export function memoryTabs({
   isEvent,
   counts,
   developer,
+  agent = false,
 }: {
   isEvent: boolean;
   counts?: RecordCounts;
   developer: boolean;
+  /** Agent view: entity records add the Agent context tab after JSON (agent view spec §5). */
+  agent?: boolean;
 }) {
   const comments = {
     value: 'comments' as const,
@@ -137,6 +143,7 @@ export function memoryTabs({
         { value: 'linked', label: 'Linked', ...counted(counts?.linked) },
       ];
   const all: MemoryTab[] = developer ? [...tabs, { value: 'json', label: 'JSON' }] : tabs;
+  if (agent && !isEvent) all.push({ value: 'context', label: 'Agent context' });
   return all.map((t) => ({ ...t, hint: TAB_HINTS[t.value] }));
 }
 
@@ -147,9 +154,10 @@ export const defaultMemoryTab = (isEvent: boolean, counts?: RecordCounts) =>
 /** The tabbed bottom of a record or event: its comments and memory. */
 export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: MemoryNav }) {
   const { schema } = useWorkspace(),
-    developer = useDeveloper();
+    developer = useDeveloper(),
+    agent = useAgentView();
   const isEvent = !!record.event;
-  const tabs = memoryTabs({ isEvent, counts: record.counts, developer });
+  const tabs = memoryTabs({ isEvent, counts: record.counts, developer, agent });
   // Chosen once: removing the last comment doesn't move anyone off the tab.
   const [opening] = useState(() => defaultMemoryTab(isEvent, record.counts));
   const tab = tabs.some((t) => t.value === nav.tab) ? (nav.tab as string) : opening;
@@ -182,6 +190,7 @@ export function MemoryTabs({ record, nav }: { record: PresentedRecord; nav: Memo
         {tab === 'json' ? (
           <JsonBlock value={record} label={isEvent ? 'Event JSON' : 'Record JSON'} />
         ) : null}
+        {tab === 'context' ? <AgentContextPanel record={record} /> : null}
       </TabPanel>
     </div>
   );

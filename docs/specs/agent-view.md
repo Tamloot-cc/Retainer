@@ -1,6 +1,6 @@
 # Agent view: spec
 
-Status: **decided**, 2026-11-28. Not built yet. Experimental: it ships
+Status: **implemented**, 2026-11-28. Experimental: it ships
 behind the same account-menu control as Developer view and changes nothing
 for people who leave it off.
 
