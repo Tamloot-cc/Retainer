@@ -193,7 +193,7 @@ test('selects rows in a list to delete them together or merge two', async ({
   await page.screenshot({ path: '/tmp/retainer-web-list-selection.png' });
 
   // The warning counts what both deletes cascade to, once each.
-  await page.getByRole('button', { name: 'Delete…' }).click();
+  await page.getByRole('button', { name: 'Delete 2 companies…' }).click();
   const confirm = page.getByRole('dialog', { name: 'Delete 2 companies?' });
   await expect(
     confirm.getByText('Deleting them also deletes 3 people linked to them.'),

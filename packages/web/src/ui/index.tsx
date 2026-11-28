@@ -917,7 +917,11 @@ export {
   MenuChoice,
   MenuChoices,
   MenuHeading,
+  type MenuOpening,
   MenuSeparator,
+  PointMenu,
+  type PointMenuOpening,
+  usePointMenu,
 } from './menu.js';
 export {
   IconLabel,

@@ -1,6 +1,15 @@
 import * as MenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check } from 'lucide-react';
-import type { ReactNode } from 'react';
+import {
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { cn, PANEL, PLACEMENT } from './core.js';
 
 const ITEM =
@@ -108,4 +117,145 @@ export function MenuHeading({ children }: { children: ReactNode }) {
 }
 export function MenuSeparator() {
   return <MenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />;
+}
+
+/** Where a menu opened at a point is, and what it is for. */
+export type MenuOpening<T> = { x: number; y: number; value: T };
+/** What `PointMenu` needs of an opening: where, and the element to give focus back to. */
+export type PointMenuOpening = MenuOpening<unknown> & { origin?: Element };
+
+const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
+const LONG_PRESS = 600;
+
+/**
+ * Opens a menu at the pointer for what `find` reads off the element
+ * right-clicked: spread `handlers` on the surface. Where `find` gives
+ * nothing, and in inputs, the browser's own menu opens. On touch a long
+ * press opens it.
+ */
+export function usePointMenu<T>(
+  find: (element: Element) => T | undefined,
+  /** Called as the menu opens, e.g. to select what it acts on. */
+  onOpen?: (value: T) => void,
+) {
+  const [opening, setOpening] = useState<(MenuOpening<T> & { origin: Element }) | null>(null);
+  const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+  const findRef = useRef({ find, onOpen });
+  findRef.current = { find, onOpen };
+  const open = useCallback((target: EventTarget | null, x: number, y: number) => {
+    if (!(target instanceof Element) || target.closest(EDITABLE)) return false;
+    const value = findRef.current.find(target);
+    if (value === undefined) return false;
+    findRef.current.onOpen?.(value);
+    // A menu opened from the keyboard has no pointer: open it at the element.
+    if (!x && !y) {
+      const box = target.getBoundingClientRect();
+      x = box.left + Math.min(box.width, 24);
+      y = box.bottom;
+    }
+    setOpening({ x, y, value, origin: target });
+    return true;
+  }, []);
+  const cancel = useCallback(() => {
+    if (press.current) window.clearTimeout(press.current.timer);
+  }, []);
+  useEffect(() => cancel, [cancel]);
+  const handlers = useMemo(
+    () => ({
+      onContextMenu: (e: ReactMouseEvent) => {
+        cancel();
+        if (open(e.target, e.clientX, e.clientY)) e.preventDefault();
+      },
+      onPointerDown: (e: ReactPointerEvent) => {
+        cancel();
+        press.current = null;
+        if (e.pointerType === 'mouse') return;
+        const { target, clientX: x, clientY: y } = e;
+        const state = { x, y, fired: false, timer: 0 };
+        state.timer = window.setTimeout(() => {
+          state.fired = open(target, x, y);
+        }, LONG_PRESS);
+        press.current = state;
+      },
+      onPointerMove: (e: ReactPointerEvent) => {
+        const p = press.current;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) cancel();
+      },
+      onPointerUp: cancel,
+      onPointerCancel: cancel,
+      // The click that ends a long press doesn't also open the record.
+      onClickCapture: (e: ReactMouseEvent) => {
+        if (!press.current?.fired) return;
+        press.current = null;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+    }),
+    [open, cancel],
+  );
+  const close = useCallback(() => setOpening(null), []);
+  return { opening, handlers, close };
+}
+
+/**
+ * A menu at a point, for `usePointMenu`: the same items as `Menu`. When it
+ * closes without an item moving focus (to a dialog), focus goes back to
+ * where the menu was opened.
+ */
+export function PointMenu({
+  opening,
+  label,
+  onClose,
+  children,
+}: {
+  opening: PointMenuOpening | null;
+  label: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!opening) return null;
+  const origin = opening.origin;
+  return (
+    <MenuPrimitive.Root
+      open
+      modal={false}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <MenuPrimitive.Trigger asChild>
+        <span
+          aria-hidden
+          tabIndex={-1}
+          className="pointer-events-none fixed size-0"
+          style={{ left: opening.x, top: opening.y }}
+        />
+      </MenuPrimitive.Trigger>
+      <MenuPrimitive.Portal>
+        <MenuPrimitive.Content
+          aria-label={label}
+          // Named by `label`: the trigger is an empty point.
+          aria-labelledby={undefined}
+          align="start"
+          {...PLACEMENT}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            const focused = document.activeElement;
+            if (
+              origin instanceof HTMLElement &&
+              origin.isConnected &&
+              (!focused || focused === document.body)
+            )
+              (origin.closest<HTMLElement>('a, button, [tabindex]') ?? origin).focus();
+          }}
+          className={cn(
+            PANEL,
+            'flex max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-48 max-w-[92vw] flex-col overflow-y-auto p-1',
+          )}
+        >
+          {children}
+        </MenuPrimitive.Content>
+      </MenuPrimitive.Portal>
+    </MenuPrimitive.Root>
+  );
 }
