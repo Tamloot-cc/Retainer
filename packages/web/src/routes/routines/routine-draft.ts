@@ -114,7 +114,7 @@ export function draftState(fence: RoutineFence, draft: RoutineDraft): DraftState
   const proposal = matchingProposal(fence, draft.proposals);
   if (proposal) return { kind: 'proposed', proposal };
   if (draft.problems.length) return { kind: 'problems' };
-  if (!draft.checked) return { kind: 'unchecked' };
+  if (!draft.ok) return { kind: 'unchecked' };
   return { kind: 'ready' };
 }
 

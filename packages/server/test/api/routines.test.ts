@@ -2490,7 +2490,6 @@ describe('routines built in the chat (routines-in-chat spec)', () => {
       sourceId,
       code: source.code,
       ok: true,
-      checked: true,
       problems: [],
       count: { kind: 'record', value: expect.any(Number) },
       preview: { available: true, done: true },
@@ -2564,7 +2563,7 @@ describe('routines built in the chat (routines-in-chat spec)', () => {
     await db.owner`update routine_runs set finished_at=now()-interval '8 days' where workspace_id=${s.workspace}`;
     await s.maintenance.maintain();
     const stale = await s.app.request(`/v1/routines/drafts/${sourceId}`, { key: s.keys.agent });
-    expect(stale.body).toMatchObject({ ok: false, checked: false, problems: [] });
+    expect(stale.body).toMatchObject({ ok: false, problems: [] });
     const notValidated = await s.app.request('/v1/routines', {
       key: s.keys.agent,
       body: { sourceId, ...meta },

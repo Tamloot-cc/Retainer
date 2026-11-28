@@ -53,7 +53,6 @@ const draft = (over: object = {}) => ({
   facts: ["Runs when a deal's Stage changes.", 'Writes as an agent.'],
   ok: true,
   problems: [],
-  checked: true,
   count: { kind: 'record', value: 4 },
   preview: { available: true, done: true, runs: [run] },
   proposals: [],
@@ -162,7 +161,7 @@ test.describe('routines built in chat', () => {
   });
 
   test('a draft whose check no longer holds offers no Propose', async ({ page, retainer }) => {
-    await stubRoutes(page, () => draft({ ok: false, checked: false }));
+    await stubRoutes(page, () => draft({ ok: false }));
     retainer.anthropic?.enqueue({
       blocks: [{ type: 'text', text: draftText(fence) }],
       stopReason: 'end_turn',

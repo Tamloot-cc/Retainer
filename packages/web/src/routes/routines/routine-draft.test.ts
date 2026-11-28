@@ -45,7 +45,6 @@ const draft = (over: Partial<RoutineDraft> = {}): RoutineDraft => ({
   facts: [],
   ok: true,
   problems: [],
-  checked: true,
   count: { kind: 'record', value: 3 },
   preview: null,
   proposals: [],
@@ -124,7 +123,7 @@ describe('a reopened card', () => {
         draft({ problems: [{ part: 'manifest', code: 'tool_not_connected', message: 'x' }] }),
       ).kind,
     ).toBe('problems');
-    expect(draftState(parsed, draft({ checked: false, ok: false })).kind).toBe('unchecked');
+    expect(draftState(parsed, draft({ ok: false })).kind).toBe('unchecked');
     expect(draftState(parsed, draft()).kind).toBe('ready');
   });
 
