@@ -14,6 +14,7 @@ import {
   Page,
   Stack,
 } from '../../ui/index.js';
+import { canStart } from '../agent/chats-search.js';
 import { QueryError } from '../state.js';
 import { routineStatus, useRoutines } from './model.js';
 import { TimeZoneLine } from './time-zone.js';
@@ -26,7 +27,7 @@ export function RoutinesPage() {
   const { session } = useWorkspace();
   const routines = useRoutines();
   const canBuild = canMutate(session);
-  const inChat = canBuild && session.agentAvailable === true;
+  const inChat = canStart('routine', session);
   const all = routines.data?.routines ?? [];
   const live = all.filter((r) => r.status !== 'archived');
   const archived = all.filter((r) => r.status === 'archived');

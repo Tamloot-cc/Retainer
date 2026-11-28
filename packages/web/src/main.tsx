@@ -39,7 +39,7 @@ import {
 } from './api/client.js';
 import { UpdatingBanner } from './api/maintenance.js';
 import { SignIn } from './auth/sign-in.js';
-import { validateChatsSearch } from './routes/agent/starter.js';
+import { validateChatsSearch } from './routes/agent/chats-search.js';
 import { CommandPalette } from './routes/command.js';
 import {
   DeveloperContext,

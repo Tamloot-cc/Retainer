@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Ellipsis, LayoutDashboard, MessageSquarePlus } from 'lucide-react';
 import { lazy, Suspense, useId, useState } from 'react';
-import { api, canMutate, hasScope, useWorkspace } from '../../api/client.js';
+import { api, hasScope, useWorkspace } from '../../api/client.js';
 import { actorLabel } from '../../provenance/index.js';
 import {
   Button,
@@ -18,6 +18,7 @@ import {
 } from '../../ui/index.js';
 import { Menu, MenuAction } from '../../ui/menu.js';
 import { type BlockHistory, extendMessageBlockHistory } from '../agent/chat-blocks.js';
+import { canStart } from '../agent/chats-search.js';
 import { firstMessages } from '../agent/first-message.js';
 import { agentKey, type ChatMessage } from '../agent/model.js';
 import { QueryError } from '../state.js';
@@ -33,11 +34,7 @@ export function DashboardsPage() {
     queryKey: [...dashboardKey(session.workspace.id), 'list'],
     queryFn: ({ signal }) => api.dashboards(undefined, signal),
   });
-  // The chat's starter for a new dashboard (chat-builds.md §5.2); a reader gets a plain chat.
-  const canBuild = canMutate(session);
-  const chatLink = canBuild
-    ? ({ to: '/chat', search: { new: 'dashboard' } } as const)
-    : ({ to: '/chat' } as const);
+  const canBuild = canStart('dashboard', session);
   return (
     <Page
       title="Dashboards"
@@ -45,7 +42,7 @@ export function DashboardsPage() {
       actions={
         canBuild ? (
           <Button asChild>
-            <Link {...chatLink}>
+            <Link to="/chat" search={{ new: 'dashboard' }}>
               <MessageSquarePlus size={14} /> New dashboard
             </Link>
           </Button>
@@ -63,7 +60,9 @@ export function DashboardsPage() {
             description="Ask the agent for one, such as ‘deals by stage this quarter’, then pin it."
           />
           <Button asChild>
-            <Link {...chatLink}>Open chat</Link>
+            <Link to="/chat" search={{ new: 'dashboard' }}>
+              Open chat
+            </Link>
           </Button>
         </div>
       ) : (

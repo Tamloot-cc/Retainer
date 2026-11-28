@@ -1,6 +1,7 @@
 import * as MenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check } from 'lucide-react';
 import {
+  type ReactElement,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
@@ -67,6 +68,18 @@ export function MenuAction({
       onSelect={onSelect}
       className={cn(ITEM, destructive && 'text-destructive data-highlighted:bg-destructive/10')}
     >
+      {children}
+    </MenuPrimitive.Item>
+  );
+}
+
+/**
+ * A destination: `children` is one link (the router's `Link`), so it opens in
+ * a new tab and copies as a URL like any link.
+ */
+export function MenuLink({ children }: { children: ReactElement }) {
+  return (
+    <MenuPrimitive.Item asChild className={ITEM}>
       {children}
     </MenuPrimitive.Item>
   );

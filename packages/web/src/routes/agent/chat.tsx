@@ -14,6 +14,7 @@ import {
   useState,
 } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
+import { cn } from '../../ui/core.js';
 import {
   Button,
   Dialog,
@@ -26,6 +27,7 @@ import {
 } from '../../ui/index.js';
 import { MessageScroller, MessageScrollerItem } from '../../ui/message.js';
 import { QueryError } from '../state.js';
+import type { ChatsSearch } from './chats-search.js';
 import { firstMessages } from './first-message.js';
 import { ChatMessages } from './messages.js';
 import {
@@ -39,7 +41,7 @@ import {
   sendErrorText,
   turnEnd,
 } from './model.js';
-import { type ChatsSearch, chatStarter } from './starter.js';
+import { chatStarter } from './starter.js';
 import { chatTransport } from './transport.js';
 
 const ABOUT =
@@ -65,17 +67,23 @@ function Suggestions({
   disabled?: boolean;
   suggestions?: readonly string[];
 }) {
+  const lone = suggestions.length === 1;
   return (
     <ul
       aria-label="Suggestions"
       className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
     >
       {suggestions.map((suggestion) => (
-        <li key={suggestion} className="shrink-0">
+        // A lone suggestion (a feature's starter) wraps on a phone instead of scrolling out of view.
+        <li key={suggestion} className={lone ? 'min-w-0' : 'shrink-0'}>
           <Button
             size="small"
             disabled={disabled}
-            className="rounded-full px-3 font-normal md:h-7"
+            className={cn(
+              'rounded-full px-3 font-normal md:h-7',
+              lone &&
+                'h-auto min-h-8 rounded-2xl py-1.5 text-start whitespace-normal md:h-auto md:py-1',
+            )}
             onClick={() => onSend(suggestion)}
           >
             {suggestion}
@@ -182,7 +190,7 @@ function Composer({
 export function ChatsPage() {
   const { session, schema } = useWorkspace();
   const search = useSearch({ strict: false }) as ChatsSearch;
-  const starter = chatStarter(search, session, schema.objects);
+  const starter = chatStarter(search, session, schema);
   const navigate = useNavigate();
   const chats = useQuery({
     queryKey: [...agentKey(session.workspace.id), 'chats'],

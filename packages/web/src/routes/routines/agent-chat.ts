@@ -28,9 +28,9 @@ export function editRoutineMessage(
 export function useRoutineChat() {
   const navigate = useNavigate();
   return useMutation({
-    mutationFn: async (text?: string) => {
+    mutationFn: async (text: string) => {
       const chat = await api.createAgentChat(undefined, 'web');
-      if (text) firstMessages.set(chat.id, text);
+      firstMessages.set(chat.id, text);
       return chat;
     },
     onSuccess: (chat) => void navigate({ to: '/chat/$id', params: { id: chat.id } }),
