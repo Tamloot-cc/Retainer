@@ -726,20 +726,65 @@ describe('routines', () => {
     ]);
   });
 
-  it('a preview counts every recent matching change, past the sample it reads', async () => {
+  it('a record preview counts eligible records once using their current values', async () => {
     const s = await setup();
     const acme = await createCompany(s.app, s.keys.admin, 'Acme Busy');
-    // 5,100 matching changes: more than the preview ever read, and than its sample.
+    // Many matching changes to the same record still count as one match.
     await db.owner`insert into record_changes(workspace_id,position,record_id,object_type_id,operation,field_keys,cause,cause_depth,created_at)
       select c.workspace_id,c.position+1000000+g,c.record_id,c.object_type_id,'create',c.field_keys,c.cause,c.cause_depth,c.created_at
       from record_changes c, generate_series(1,5100) g where c.record_id=${acme} and c.operation='create'`;
+    const renamed = await createCompany(s.app, s.keys.admin, 'Acme Renamed');
+    const updated = await s.app.request(`/v1/records/${renamed}`, {
+      method: 'PATCH',
+      key: s.keys.admin,
+      body: { values: { name: 'Other' } },
+    });
+    expect(updated.status).toBe(200);
     const res = await s.app.request('/v1/routines/preview', {
       key: s.keys.agent,
       body: TIER_ROUTINE(s.key('tier'), s.key('name')),
     });
     expect(res.status).toBe(200);
-    expect(res.body.matched).toBeGreaterThan(5100);
+    expect(res.body.matched).toBe(1);
+    expect(res.body.runs).toHaveLength(1);
+    expect(await db.owner`select record_id from routine_runs where id=${res.body.runs[0]}`).toEqual(
+      [{ record_id: acme }],
+    );
   });
+
+  it.each(['schedule', 'manual'] as const)(
+    'a %s preview counts all eligible records and samples up to five',
+    async (kind) => {
+      const s = await setup();
+      const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+      for (let i = 0; i < 6; i++) await createCompany(s.app, s.keys.admin, `Acme Eligible ${i}`);
+      await createCompany(s.app, s.keys.admin, 'Acme Excluded');
+      for (let i = 0; i < 5; i++) await createCompany(s.app, s.keys.admin, `Other Eligible ${i}`);
+      const when =
+        kind === 'schedule'
+          ? {
+              kind,
+              object: 'company',
+              cron: '0 9 * * *',
+              filter: { [s.key('name')]: { contains: 'Eligible' } },
+            }
+          : { kind, object: 'company', label: 'Go' };
+      const res = await s.app.request('/v1/routines/preview', {
+        key: s.keys.agent,
+        body: { ...source, manifest: { ...source.manifest, when } },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.matched).toBe(kind === 'schedule' ? 6 : 7);
+      expect(res.body.runs).toHaveLength(5);
+      await s.executor.tick();
+      const preview = await s.app.request(`/v1/routines/previews/${res.body.previewId}`, {
+        key: s.keys.agent,
+      });
+      expect(preview.body.runs.map((run: { status: string }) => run.status)).toEqual(
+        Array(5).fill('succeeded'),
+      );
+    },
+  );
 
   it('removing a watched field pauses a record routine instead of leaving it deaf', async () => {
     const s = await setup();
@@ -823,6 +868,59 @@ describe('routines', () => {
     expect(run).toMatchObject({ status: 'succeeded', output: { result: 1 } });
     const record = await s.app.request(`/v1/records/${acme}`, { key: s.keys.admin });
     expect(record.body.fields.source).toBe('web');
+  });
+
+  it('serializes two concurrent manual runs on the same record without oncePerRecord', async () => {
+    const s = await setup();
+    const source = TIER_ROUTINE(s.key('tier'), s.key('name'));
+    const { routineId } = await activate(s, {
+      ...source,
+      manifest: {
+        ...source.manifest,
+        when: { kind: 'manual', object: 'company', label: 'Set tier' },
+      },
+    });
+    const recordId = await createCompany(s.app, s.keys.admin, 'Acme Concurrent');
+    const press = () =>
+      s.app.request(`/v1/routines/${routineId}/run`, {
+        key: s.keys.admin,
+        body: { recordIds: [recordId] },
+      });
+    const pressed = await Promise.all([press(), press()]);
+    expect(pressed.map((res) => res.status)).toEqual([202, 202]);
+    const ids = pressed.map((res) => res.body.runs[0] as string);
+    expect(new Set(ids).size).toBe(2);
+
+    const claims = await Promise.all(ids.map((id) => s.executor.claim(s.workspace, id)));
+    const [first] = claims.filter((claim) => claim !== null);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    if (!first) throw new Error('neither run was claimed');
+    const waiting = ids.find((id) => id !== first.runId);
+    if (!waiting) throw new Error('no waiting run');
+    const status = () =>
+      db.owner`select id,status,attempt from routine_runs where id=any(${ids}::uuid[])`;
+    expect(await status()).toEqual(
+      expect.arrayContaining([
+        { id: first.runId, status: 'running', attempt: 1 },
+        { id: waiting, status: 'queued', attempt: 0 },
+      ]),
+    );
+    // The unique index independently protects the invariant if both workers pass the busy check.
+    await expect(
+      db.owner`update routine_runs set status='running' where id=${waiting}`,
+    ).rejects.toMatchObject({ code: '23505', constraint_name: 'routine_runs_one_running_uq' });
+
+    const effects = () => db.owner`select run_id,state from routine_run_results
+      where run_id=any(${ids}::uuid[]) and operation='record.update'`;
+    await s.executor.execute(first);
+    expect(await effects()).toEqual([{ run_id: first.runId, state: 'done' }]);
+    expect(await s.executor.tick()).toEqual({ executed: 1 });
+    expect(await effects()).toEqual(
+      expect.arrayContaining(ids.map((run_id) => ({ run_id, state: 'done' }))),
+    );
+    expect(await status()).toEqual(
+      expect.arrayContaining(ids.map((id) => ({ id, status: 'succeeded', attempt: 1 }))),
+    );
   });
 
   it('discovery skips queued runs a running run on the same record blocks (#131)', async () => {

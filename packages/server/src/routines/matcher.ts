@@ -3,8 +3,8 @@ import { retainedFloor } from '../db/change-cursor.js';
 import type { Sql } from '../db/client.js';
 import { inWorkspace, lockPrivacyShared, lockSchemaShared, type Tx } from '../db/tx.js';
 import { log } from '../log.js';
-import { matchingRecords } from '../records/query.js';
-import { type CompiledSchema, getSchema } from '../schema/compiled.js';
+import { compileFilter, matchingRecords } from '../records/query.js';
+import { type CompiledObject, type CompiledSchema, getSchema } from '../schema/compiled.js';
 import { nextInZone } from './cron.js';
 import { manifestResolves, mapFilter, objectFor } from './manifest.js';
 import { hourlyAllowance, NO_RECORD, pauseRoutine, queueRun, usedUp } from './runs.js';
@@ -37,45 +37,72 @@ export function triggerMatches(
   return false;
 }
 
-/**
- * For a preview: how many changes of the last `days` the trigger would
- * have matched (the cost estimate) and the most recent distinct records.
- */
-export async function matchingSince(
+/** The trigger as SQL (`triggerMatches`), excluding changes caused by merges. */
+function recentChanges(
+  tx: Tx,
+  object: CompiledObject,
+  when: Extract<RoutineManifest['when'], { kind: 'record' }>,
+) {
+  return tx`c.object_type_id=${object.id} and c.created_at>statement_timestamp()-interval '30 days'
+    and c.merged_from_id is null and (
+      ${when.on.includes('created') ? tx`c.operation='create'` : tx`false`}
+      or ${when.on.includes('links') ? tx`c.operation='links'` : tx`false`}
+      or ${
+        when.on.includes('updated')
+          ? tx`(c.operation in ('update','supersede') ${when.fields?.length ? tx`and c.field_keys ?| ${when.fields}::text[]` : tx``})`
+          : tx`false`
+      })`;
+}
+
+/** The draft card's pre-condition count of changes, before coalescing records. */
+export async function recentTriggerCount(
   tx: Tx,
   schema: CompiledSchema,
   manifest: RoutineManifest,
-  days: number,
-  sample = 5,
 ) {
   const when = manifest.when;
-  if (when.kind !== 'record') return { matched: 0, records: [] as string[] };
+  if (when.kind !== 'record') return 0;
   const object = objectFor(schema, when.object);
-  if (!object) return { matched: 0, records: [] as string[] };
-  // The trigger as SQL (`triggerMatches`), so every matching change is counted.
-  const where = tx`object_type_id=${object.id} and created_at>clock_timestamp()-${days}*interval '1 day'
-    and merged_from_id is null and (
-      ${when.on.includes('created') ? tx`operation='create'` : tx`false`}
-      or ${when.on.includes('links') ? tx`operation='links'` : tx`false`}
-      or ${
-        when.on.includes('updated')
-          ? tx`(operation in ('update','supersede') ${when.fields?.length ? tx`and field_keys ?| ${when.fields}::text[]` : tx``})`
-          : tx`false`
-      })`;
-  const [count] = await tx<
-    { n: number }[]
-  >`select count(*)::int as n from record_changes where ${where}`;
-  if (sample <= 0) return { matched: count?.n ?? 0, records: [] as string[] };
-  // The five live records with the most recent matches: a record merged
-  // since its change counts as its survivor (§6.1), and a deleted one or
-  // repeated changes to one record take no extra slot.
-  const live = await tx<{ id: string }[]>`
-    with m as (select record_id,position from record_changes where ${where} and record_id is not null)
-    select s.id from m join records r on r.id=m.record_id
-    join records s on s.id=coalesce(r.merged_into_id,r.id)
-    where s.deleted_at is null and s.merged_into_id is null
-    group by s.id order by max(m.position) desc limit ${sample}`;
-  return { matched: count?.n ?? 0, records: live.map((row) => row.id) };
+  if (!object) return 0;
+  const [row] = await tx<{ count: number }[]>`
+    select count(*)::int as count from record_changes c where ${recentChanges(tx, object, when)}`;
+  return row?.count ?? 0;
+}
+
+export async function previewTargets(
+  tx: Tx,
+  workspace: string,
+  schema: CompiledSchema,
+  manifest: RoutineManifest,
+) {
+  const when = manifest.when;
+  if (when.kind === 'schedule' && !when.object) return { matched: 1, records: [] };
+  const object = when.object ? objectFor(schema, when.object) : undefined;
+  if (!object) return { matched: 0, records: [] };
+  const filter = manifest.if ? mapFilter(object, manifest.if, 'name') : undefined;
+  const eligible = matchingRecords(tx, workspace, schema, object, { filter }, 'source');
+  const where =
+    when.kind === 'schedule' && when.filter
+      ? tx`${eligible} and ${compileFilter(tx, object, mapFilter(object, when.filter, 'name'))}`
+      : eligible;
+  // Changes identify candidates. Collapse them to surviving records before
+  // checking today's condition, and order the sample by latest matching change.
+  const rows =
+    when.kind === 'record'
+      ? await tx<{ id: string; matched: number }[]>`
+      with candidates as (
+        select coalesce(original.merged_into_id,original.id) as id,max(c.position) as position
+        from record_changes c join records original on original.id=c.record_id
+        where ${recentChanges(tx, object, when)}
+        group by coalesce(original.merged_into_id,original.id)
+      )
+      select r.id,count(*) over ()::int as matched from candidates
+      join records r on r.id=candidates.id where ${where} and r.merged_into_id is null
+      order by candidates.position desc,r.id limit 5`
+      : await tx<{ id: string; matched: number }[]>`
+      select r.id,count(*) over ()::int as matched from records r
+      where ${where} and r.merged_into_id is null order by r.updated_at desc,r.id limit 5`;
+  return { matched: rows[0]?.matched ?? 0, records: rows.map((row) => row.id) };
 }
 
 /** The records a schedule tick would fan out to, and how many there are. */
@@ -91,7 +118,7 @@ export async function scheduleTargets(
   const object = objectFor(schema, when.object);
   if (!object) return { matched: 0, records: [] as string[] };
   const filter = when.filter ? mapFilter(object, when.filter, 'name') : undefined;
-  const where = matchingRecords(tx, workspace, schema, object, filter ? { filter } : {}, 'source');
+  const where = matchingRecords(tx, workspace, schema, object, { filter }, 'source');
   const [count] = await tx<
     { count: number }[]
   >`select count(*)::int as count from records r where ${where}`;

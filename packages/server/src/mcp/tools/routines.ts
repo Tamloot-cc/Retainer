@@ -69,7 +69,7 @@ export function registerRoutineTools(server: McpServer, routines: Routines, call
     'preview_routine',
     {
       description:
-        'Dry-run a routine on up to five recent records its trigger would have matched. Pass the sourceId from validate_routine, or the manifest and code. Nothing is written and no tool is called: each run lists the writes and tool calls the code tried (a tool call ends that dry run). Answers how many recent changes matched and a previewId; read the runs with get_routine_preview. The previewId is null, with done true, when no recent record matched, so there is nothing to dry-run.',
+        'Dry-run a routine on up to five recent records that match its trigger and pass its condition with their current values. Pass the sourceId from validate_routine, or the manifest and code. Nothing is written and no tool is called: each run lists the writes and tool calls the code tried (a tool call ends that dry run). Answers how many distinct records are eligible (one run for a schedule without an object) and a previewId; read the runs with get_routine_preview. The previewId is null, with done true, when no record is eligible, so there is nothing to dry-run.',
       inputSchema: sourceRefSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

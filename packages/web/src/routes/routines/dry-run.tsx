@@ -77,9 +77,11 @@ export function DryRunDialog({
         </Stack>
       ) : (
         <Stack>
-          {start.data.matched !== undefined ? <Matched count={start.data.matched} /> : null}
+          {start.data.matched !== undefined ? (
+            <Matched count={start.data.matched} when={version.manifest.when} />
+          ) : null}
           {!previewId ? (
-            <Empty quiet title="No recent records to run it on, so there is nothing to show." />
+            <Empty quiet title="No matching records to dry-run." />
           ) : preview.error ? (
             <Notice error>{errorText(preview.error, 'see a dry run')}</Notice>
           ) : !preview.data ? (
@@ -96,12 +98,15 @@ export function DryRunDialog({
   );
 }
 
-/** How many recent changes or records it would have started on. */
-function Matched({ count }: { count: number }) {
+function Matched({ count, when }: { count: number; when: RoutineVersionView['manifest']['when'] }) {
+  if (when.kind === 'schedule' && !when.object)
+    return <Muted small>This schedule runs once per tick.</Muted>;
+  const records = count === 1 ? '1 record matches' : `${count.toLocaleString()} records match`;
+  const window =
+    when.kind === 'record' ? ' among records with a matching change in the last 30 days' : '';
   return (
     <Muted small>
-      {count === 1 ? '1 recent change or record' : `${count} recent changes or records`} would start
-      it, before its condition is checked. The runs below show which ones it acts on.
+      {records} the routine’s criteria now{window}.
     </Muted>
   );
 }

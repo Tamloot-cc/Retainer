@@ -437,7 +437,9 @@ describe('routine page', () => {
       manifest: version().manifest,
       code: version().code,
     });
-    expect(await within(dialog).findByText(/3 recent changes or records/)).toBeTruthy();
+    expect(
+      await within(dialog).findByText(/3 records match the routine’s criteria now.*last 30 days/),
+    ).toBeTruthy();
     expect(within(dialog).getByText(/reading 'sector'/)).toBeTruthy();
     const calls = within(dialog).getByRole('list', { name: 'Dry run calls' });
     expect(within(calls).getByText('Update a record')).toBeTruthy();
@@ -689,6 +691,15 @@ describe('what counts as a change (#151)', () => {
     recordId: null,
     ...over,
   });
+  it('shows Done, no changes on the run page after a read-only call', async () => {
+    const completed = run({ calls: [call({ tool: { name: 'lookup', effect: 'read' } })] });
+    router.params = { id: 'routine-1', run: completed.id };
+    vi.spyOn(api, 'routineRun').mockResolvedValue(completed);
+    mount(<RoutineRunPage />);
+    expect(await screen.findByText('Done, no changes')).toBeTruthy();
+    expect(screen.getByText(/finished without changing anything/)).toBeTruthy();
+  });
+
   it('a read-only tool is not a change; a write or send tool, a write, and an older call are', () => {
     expect(madeChanges({ calls: [call({ tool: { name: 'lookup', effect: 'read' } })] })).toBe(
       false,

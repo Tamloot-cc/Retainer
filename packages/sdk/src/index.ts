@@ -1374,6 +1374,7 @@ export class RetainerClient {
       sourceId?: string;
       /** Null when nothing matched recently: there is nothing to dry-run or poll. */
       previewId?: string | null;
+      /** Eligible records after the condition, or one run for a schedule without an object. */
       matched?: number;
       done?: boolean;
     }>('/v1/routines/preview', input);

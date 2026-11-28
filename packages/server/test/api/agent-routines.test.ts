@@ -84,6 +84,16 @@ describe('the chat’s routine tools', () => {
     expect(proposed.body).toMatchObject({ ok: false, error: { code: 'tool_not_available' } });
   });
 
+  it('tells the chat to encode explicit once-per-record intent in a manual manifest', async () => {
+    const chat = await turn(withRoutines, keys.writer);
+    const guide = await chat.call('get_guide', { name: 'routines' });
+    expect(guide.body).toMatchObject({ ok: true });
+    const output = guide.body.output;
+    expect(output).toMatch(/"kind": "manual"[^\n]+"oncePerRecord"\?: true/);
+    expect(output).toContain('only once per project');
+    expect(output).toContain('A check in the code alone is not enough');
+  });
+
   it('pins none of them, and leaves the guide out, where routines are off', async () => {
     const chat = await turn(without, keys.writer);
     const names = chat.session.tools.map((tool) => tool.name);
