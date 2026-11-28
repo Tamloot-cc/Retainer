@@ -1,6 +1,7 @@
 import {
   AGGREGATE_GRANULARITIES,
   AGGREGATE_MAX_GROUPS,
+  AGGREGATE_MAX_MEASURES,
   AGGREGATE_OPS,
   type AggregateGroup,
   type AggregateOp,
@@ -38,7 +39,7 @@ export const aggregateInputSchema = queryInputSchema.pick({ search: true, filter
     .array(
       z.strictObject({ field: z.string(), op: z.enum(AGGREGATE_OPS), as: z.string().optional() }),
     )
-    .max(50)
+    .max(AGGREGATE_MAX_MEASURES)
     .default([]),
   groupBy: z
     .string()

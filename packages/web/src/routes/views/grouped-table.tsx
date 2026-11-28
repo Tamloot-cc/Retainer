@@ -1,4 +1,5 @@
 import {
+  AGGREGATE_MAX_MEASURES,
   type AggregateGroup,
   type AggregateInput,
   displayViewGroups,
@@ -33,17 +34,38 @@ export function GroupedTable({
     field,
     op,
   }));
+  const queryFilter = { search: input.search, filter: input.filter };
+  const groupedFooterCapacity = AGGREGATE_MAX_MEASURES - groupTotals.length;
+  const additionalFooterTotals = columnTotals.slice(groupedFooterCapacity);
   const grouping: AggregateInput = {
     groupBy: view.groupBy ?? undefined,
     granularity: view.granularity ?? undefined,
-    search: input.search,
-    filter: input.filter,
-    aggregates: [...groupTotals, ...columnTotals],
+    ...queryFilter,
+    aggregates: [...groupTotals, ...columnTotals.slice(0, groupedFooterCapacity)],
     viewGroups: { hidden: view.hiddenGroups },
   };
   const totals = useQuery({
-    queryKey: [session.workspace.id, 'aggregate', name, grouping],
-    queryFn: ({ signal }) => api.aggregate(name, grouping, signal),
+    queryKey: [session.workspace.id, 'aggregate', name, grouping, additionalFooterTotals],
+    queryFn: async ({ signal }) => {
+      // The remaining measures are footer totals, so they need only the
+      // view's filter and search, without any grouping.
+      const batches: Promise<Awaited<ReturnType<typeof api.aggregate>>>[] = [];
+      for (
+        let offset = 0;
+        offset < additionalFooterTotals.length;
+        offset += AGGREGATE_MAX_MEASURES
+      ) {
+        const aggregates = additionalFooterTotals.slice(offset, offset + AGGREGATE_MAX_MEASURES);
+        batches.push(api.aggregate(name, { ...queryFilter, aggregates }, signal));
+      }
+      const [grouped, ...extra] = await Promise.all([
+        api.aggregate(name, grouping, signal),
+        ...batches,
+      ]);
+      return extra.length
+        ? { ...grouped, values: [...grouped.values, ...extra.flatMap((result) => result.values)] }
+        : grouped;
+    },
   });
   if (totals.error)
     return (

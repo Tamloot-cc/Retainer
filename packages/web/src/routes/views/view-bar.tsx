@@ -296,10 +296,16 @@ export function ViewDialog({
   const [name, setName] = useState(view?.name ?? ''),
     [kind, setKind] = useState<SavedViewKind>(view?.kind ?? 'table'),
     // The field each layout would use, kept while switching between them.
-    [picked, setPicked] = useState<Record<FieldLayout, string>>(() => ({
-      board: view?.groupBy ?? layoutFields(object, 'board')[0]?.name ?? '',
-      calendar: view?.dateField ?? layoutFields(object, 'calendar')[0]?.name ?? '',
-    })),
+    [picked, setPicked] = useState<Record<FieldLayout, string>>(() => {
+      const boardFields = layoutFields(object, 'board');
+      return {
+        board:
+          boardFields.find((field) => field.name === view?.groupBy)?.name ??
+          boardFields[0]?.name ??
+          '',
+        calendar: view?.dateField ?? layoutFields(object, 'calendar')[0]?.name ?? '',
+      };
+    }),
     [visibility, setVisibility] = useState<SavedViewVisibility>(view?.visibility ?? 'workspace'),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);

@@ -190,4 +190,66 @@ test.describe('relation boards', () => {
     await expect(page.getByRole('link', { name: 'Move this deal', exact: true })).toBeVisible();
     await expect.poll(async () => (await retainer.request(`/views/${kept.id}`)).groupBy).toBeNull();
   });
+
+  test('chooses a valid board field when switching a date-grouped table to a board', async ({
+    page,
+    retainer,
+  }) => {
+    const kept = await retainer.request('/objects/deal/views', {
+      name: 'By close month',
+      kind: 'table',
+      groupBy: 'closeDate',
+      granularity: 'month',
+    });
+    await signIn(page, retainer.url, retainer.keys.user);
+    await page.goto(`${retainer.url}/app/o/deal?view=${kept.id}`);
+    await page.getByRole('button', { name: 'View: By close month' }).click();
+    await page.getByRole('menuitem', { name: 'Edit view…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Edit view' });
+    await dialog.getByRole('button', { name: 'Board', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: /^Group by/ })).toContainText('Stage');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect
+      .poll(async () => await retainer.request(`/views/${kept.id}`))
+      .toMatchObject({ kind: 'board', groupBy: 'stage', granularity: null });
+  });
+
+  test('loads grouped rows and footers beyond the aggregate measure limit', async ({
+    page,
+    retainer,
+  }) => {
+    const measures = Array.from({ length: 51 }, (_, index) => ({
+      name: `measure${index + 1}`,
+      label: `Measure ${index + 1}`,
+      type: 'number',
+      isFilterable: true,
+    }));
+    await retainer.request(
+      '/schema/changes',
+      {
+        operations: measures.map((field) => ({ op: 'create_field', object: 'deal', field })),
+      },
+      retainer.keys.user,
+    );
+    const totals = Object.fromEntries(measures.map(({ name }) => [name, 'sum']));
+    await retainer.request('/objects/deal/records', {
+      values: {
+        name: 'Deal with totals',
+        stage: 'lead',
+        ...Object.fromEntries(measures.map(({ name }, index) => [name, index + 1])),
+      },
+    });
+    const kept = await retainer.request('/objects/deal/views', {
+      name: 'Deal totals',
+      kind: 'table',
+      groupBy: 'stage',
+      hideEmptyGroups: true,
+      groupAggregate: { field: 'name', op: 'countNotEmpty' },
+      columns: { order: ['stage'], aggregates: totals },
+    });
+    await signIn(page, retainer.url, retainer.keys.user);
+    await page.goto(`${retainer.url}/app/o/deal?view=${kept.id}`);
+    await expect(page.getByRole('link', { name: 'Deal with totals', exact: true })).toBeVisible();
+    await expect(page.getByText(/Measure 51.*Sum.*51/)).toBeVisible();
+  });
 });

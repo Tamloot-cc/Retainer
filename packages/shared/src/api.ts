@@ -269,7 +269,7 @@ export type EventQueryColumn = (typeof EVENT_QUERY_COLUMNS)[number];
  * and `type` (the event type's API name, with `eq`, `neq` and `in`; not a sort);
  * `search` matches the core title and summary. Newest first by default.
  */
-export type EventQueryInput = Omit<QueryInput, 'filter' | 'sort'> & {
+export type EventQueryInput = Omit<QueryInput, 'filter' | 'sort' | 'view' | 'groupMatch'> & {
   filter?: Record<string, unknown>;
   sort?: { field: EventQueryColumn; direction: 'asc' | 'desc' }[];
 };
@@ -945,6 +945,7 @@ export function aggregateOps(field: {
 export const AGGREGATE_GRANULARITIES = ['day', 'week', 'month', 'quarter', 'year'] as const;
 /** The most groups one grouped aggregate returns. */
 export const AGGREGATE_MAX_GROUPS = 200;
+export const AGGREGATE_MAX_MEASURES = 50;
 /** `POST /v1/objects/:object/aggregate`. */
 export type AggregateInput = {
   view?: string;
