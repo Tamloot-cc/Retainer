@@ -1130,14 +1130,14 @@ function presentVersion(version: VersionRow, names: FactsNames) {
   };
 }
 
+/** Pause reasons more telling than `approver_left`: what must change before it runs again. */
+const NEEDS_REPAIR = ['check_failed', 'tool_changed', 'schedule_too_large'];
+
 /**
  * Whether a stopped routine's approver is no longer an admin (#167), as the
  * `approver_gone` column; a running or archived routine never asks. The
  * query aliases `routines` as `r`.
  */
-/** Pause reasons more telling than `approver_left`: what must change before it runs again. */
-const NEEDS_REPAIR = ['check_failed', 'tool_changed', 'schedule_too_large'];
-
 const approverGone = (tx: Tx) => tx`case when r.status not in ('active','archived') then
   (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
     from routine_versions a where a.id=r.active_version_id) end as approver_gone`;
