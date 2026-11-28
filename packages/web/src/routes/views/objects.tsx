@@ -425,12 +425,12 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
       if (!saved) return;
       const current = await api.view(saved.id);
       const chat = await api.createAgentChat(undefined, 'web');
-      const context = { object: current.object, ...viewSettings(current) };
+      const context = { view: current.id, ...viewSettings(current) };
       const fence = '```';
       firstMessages.set(
         chat.id,
         [
-          `I'd like to change my view "${current.name}" (saved view ID ${current.id}). Use these settings as the starting point and ask me what to change.`,
+          `I'd like to change my view "${current.name}" on the ${current.object} object. Use these settings as the starting point and ask me what to change.`,
           ...current.issues.map((issue) => `- ${issue}`),
           `${fence}retainer-view\n${JSON.stringify(context, null, 2)}\n${fence}`,
         ].join('\n\n'),

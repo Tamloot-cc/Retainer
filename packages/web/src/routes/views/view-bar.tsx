@@ -329,6 +329,7 @@ export function ViewDialog({
             name: name.trim(),
             description: description.trim() || null,
             ...shape,
+            ...(view.kind === 'board' && kind === 'table' ? { groupBy: null } : {}),
             // Hidden columns belong to the field they were hidden under.
             ...(kind === 'board' && picked.board !== view.groupBy ? { hiddenGroups: null } : {}),
             ...(ownsIt && visibility !== view.visibility ? { visibility } : {}),

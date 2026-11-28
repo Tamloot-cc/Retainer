@@ -470,7 +470,8 @@ One PR, as features land whole:
    (`records/query.ts`, the shared filter types), for every reader at
    once.
 2. **Views**: `description` as a column beside `name` (`db/schema.ts`,
-   one migration); the new `config` keys in `views/service.ts` (`search`,
+   a schema migration); an upgrade migration for dormant grouping settings
+   from older views; the new `config` keys in `views/service.ts` (`search`,
    `granularity`, `groupOrder`, `hideEmptyGroups`); the wider `groupBy`
    with its Other group, their checks and repair, the
    issue a widening repair leaves (§4.6), the check route,

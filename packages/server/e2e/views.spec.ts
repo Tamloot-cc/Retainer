@@ -128,6 +128,7 @@ test.describe('views built in chat', () => {
     await page.goto(`${retainer.url}/app/o/deal?view=${kept.id}`);
     await page.getByRole('button', { name: 'View: Pipeline review' }).click();
     await page.getByRole('menuitem', { name: 'Edit with the agent' }).click();
+    await expect(page.getByLabel('You')).toContainText(`"view": "${kept.id}"`);
     await page.getByRole('button', { name: 'Update “Pipeline review”' }).click();
     await expect
       .poll(
@@ -180,5 +181,13 @@ test.describe('relation boards', () => {
     await expect
       .poll(async () => (await retainer.request(`/records/${moving.id}`)).fields.company)
       .toBe(globex.id);
+
+    await page.getByRole('button', { name: 'View: By company' }).click();
+    await page.getByRole('menuitem', { name: 'Edit view…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Edit view' });
+    await dialog.getByRole('button', { name: 'Table', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'Move this deal', exact: true })).toBeVisible();
+    await expect.poll(async () => (await retainer.request(`/views/${kept.id}`)).groupBy).toBeNull();
   });
 });
