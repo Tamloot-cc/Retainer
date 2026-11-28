@@ -35,7 +35,7 @@ export function RecordChooser({
     return (
       <Notice error>
         The object this routine runs on is no longer in the workspace, so it can’t be tested.
-        Describe it again to repair it.
+        Ask the agent to repair it.
       </Notice>
     );
   if (!object) return <Loading>Finding the records it runs on…</Loading>;

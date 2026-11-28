@@ -72,13 +72,13 @@ export function pausedText(routine: Pick<RoutineView, 'status' | 'pausedReason'>
     case 'schedule_over_limit':
       return 'A scheduled run matched more than 200 records, so Retainer paused it and held those runs. Nothing was done for them. Resume it, then run or discard them. Narrowing which records it runs on is the lasting fix.';
     case 'schedule_too_large':
-      return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Describe it again with fewer records to run on, then approve the new version.';
+      return 'A scheduled run matched more than 2,000 records, too many to hold, so Retainer paused it and did nothing. Ask the agent to narrow it to fewer records, then approve the new version.';
     case 'tool_changed':
       return 'A tool it uses changed what it does or how it connects. An admin needs to approve it again before it runs.';
     case 'approver_left':
       return 'The admin who approved it is no longer an admin. Another admin needs to approve it before it runs.';
     case 'check_failed':
-      return 'The workspace changed (a field, object or tool) and its code no longer fits. Describe it again to repair it, then approve the new version.';
+      return 'The workspace changed (a field, object or tool) and its code no longer fits. Ask the agent to repair it, then approve the new version.';
     case 'failing':
       return 'Its runs kept failing, so Retainer paused it. Check the recent runs below before you resume it.';
     case null:

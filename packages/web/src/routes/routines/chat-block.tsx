@@ -1,7 +1,7 @@
 import { RetainerApiError } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { api, canMutate, useWorkspace } from '../../api/client.js';
 import { Button, CodeBlock, Muted, Notice, RelativeTime, Stack } from '../../ui/index.js';
 import { DraftCard } from '../agent/draft-card.js';
@@ -82,8 +82,15 @@ export default function RoutineChatBlock({
       : {}),
     staleTime: 2000,
     retry: false,
-    refetchInterval: (query) => (query.state.data?.done ? false : 2000),
+    // A failed poll stops: the card says so instead of showing a stale run.
+    refetchInterval: (query) => (query.state.error || query.state.data?.done ? false : 2000),
   });
+  // A dry run gone since (404) is read again through the draft, which then
+  // says it is no longer available.
+  const pollGone = polled.error instanceof RetainerApiError && polled.error.status === 404;
+  useEffect(() => {
+    if (pollGone) void draft.refetch();
+  }, [pollGone, draft.refetch]);
   const propose = useMutation({
     mutationFn: () => {
       if (!fence) throw new Error('The routine draft is incomplete.');
@@ -100,13 +107,18 @@ export default function RoutineChatBlock({
     draft.error instanceof RetainerApiError && draft.error.status === 404
       ? 'This draft has expired. Ask the agent to draft it again.'
       : undefined;
+  // Shown in the dry run's section: the rest of the card still holds.
+  const pollError =
+    polled.error && !pollGone
+      ? `Couldn’t follow this dry run: ${errorText(polled.error, 'follow this dry run')}`
+      : undefined;
   const message =
     parsed.error ??
     expired ??
     (draft.error ? errorText(draft.error, 'see this draft') : undefined) ??
     (complete || streaming ? undefined : 'The routine draft is incomplete.');
   const data =
-    draft.data && stored && polled.data
+    draft.data && stored && polled.data && !polled.error
       ? { ...draft.data, preview: { ...stored, done: polled.data.done, runs: polled.data.runs } }
       : draft.data;
   const state = fence && data ? draftState(fence, data) : undefined;
@@ -200,6 +212,7 @@ export default function RoutineChatBlock({
                     It last ran <RelativeTime at={lastRan} />.
                   </Muted>
                 ) : null}
+                {pollError ? <Notice error>{pollError}</Notice> : null}
                 <DryRunList runs={data.preview.runs} done={data.preview.done} />
                 <Muted small>
                   Records are read as they are today, and a model can answer differently next time.
