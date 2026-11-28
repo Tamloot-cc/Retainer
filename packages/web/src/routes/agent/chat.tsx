@@ -1,7 +1,7 @@
 import { useChat } from '@ai-sdk/react';
 import type { AgentChatDetail } from '@retainer/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { ArrowUp, MessageSquarePlus, Square, Trash2 } from 'lucide-react';
 import {
   type FormEvent,
@@ -14,6 +14,7 @@ import {
   useState,
 } from 'react';
 import { api, useWorkspace } from '../../api/client.js';
+import { cn } from '../../ui/core.js';
 import {
   Button,
   Dialog,
@@ -26,6 +27,7 @@ import {
 } from '../../ui/index.js';
 import { MessageScroller, MessageScrollerItem } from '../../ui/message.js';
 import { QueryError } from '../state.js';
+import type { ChatsSearch } from './chats-search.js';
 import { firstMessages, newChat } from './first-message.js';
 import { ChatMessages } from './messages.js';
 import {
@@ -39,6 +41,7 @@ import {
   sendErrorText,
   turnEnd,
 } from './model.js';
+import { chatStarter } from './starter.js';
 import { chatTransport } from './transport.js';
 
 const ABOUT =
@@ -55,18 +58,32 @@ const SUGGESTIONS = [
   'What do you remember about me?',
 ];
 
-function Suggestions({ onSend, disabled }: { onSend: (text: string) => void; disabled?: boolean }) {
+function Suggestions({
+  onSend,
+  disabled,
+  suggestions = SUGGESTIONS,
+}: {
+  onSend: (text: string) => void;
+  disabled?: boolean;
+  suggestions?: readonly string[];
+}) {
+  const lone = suggestions.length === 1;
   return (
     <ul
       aria-label="Suggestions"
       className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
     >
-      {SUGGESTIONS.map((suggestion) => (
-        <li key={suggestion} className="shrink-0">
+      {suggestions.map((suggestion) => (
+        // A lone suggestion (a feature's starter) wraps on a phone instead of scrolling out of view.
+        <li key={suggestion} className={lone ? 'min-w-0' : 'shrink-0'}>
           <Button
             size="small"
             disabled={disabled}
-            className="rounded-full px-3 font-normal md:h-7"
+            className={cn(
+              'rounded-full px-3 font-normal md:h-7',
+              lone &&
+                'h-auto min-h-8 rounded-2xl py-1.5 text-start whitespace-normal md:h-auto md:py-1',
+            )}
             onClick={() => onSend(suggestion)}
           >
             {suggestion}
@@ -165,9 +182,15 @@ function Composer({
   );
 }
 
-/** `/chat`: the person's chats with the agent, newest first, and a box to start one. */
+/**
+ * `/chat`: the person's chats with the agent, newest first, and a box to start one.
+ * With `?new=`, a feature page's starter (chat-builds.md §5.2): that feature's
+ * steps and one suggestion prompt. Nothing is created until the person sends.
+ */
 export function ChatsPage() {
-  const { session } = useWorkspace();
+  const { session, schema } = useWorkspace();
+  const search = useSearch({ strict: false }) as ChatsSearch;
+  const starter = chatStarter(search, session, schema);
   const navigate = useNavigate();
   const chats = useQuery({
     queryKey: [...agentKey(session.workspace.id), 'chats'],
@@ -185,7 +208,7 @@ export function ChatsPage() {
   return (
     <Page
       title="Chat"
-      description={ABOUT}
+      description={starter?.about ?? ABOUT}
       actions={
         <Button onClick={() => start.mutate(undefined)} disabled={start.isPending}>
           <MessageSquarePlus size={14} /> New chat
@@ -193,8 +216,18 @@ export function ChatsPage() {
       }
     >
       <div className="flex flex-col gap-3">
-        <Composer text={draft} onText={setDraft} busy={start.isPending} onSend={startChat} />
-        <Suggestions disabled={start.isPending} onSend={startChat} />
+        <Composer
+          text={draft}
+          onText={setDraft}
+          busy={start.isPending}
+          onSend={startChat}
+          placeholder={starter?.placeholder}
+        />
+        <Suggestions
+          disabled={start.isPending}
+          onSend={startChat}
+          suggestions={starter ? [starter.prompt] : undefined}
+        />
       </div>
       {start.error ? <Notice error>{sendErrorText(start.error)}</Notice> : null}
       {chats.error ? (

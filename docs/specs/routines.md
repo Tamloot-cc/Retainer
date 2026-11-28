@@ -728,6 +728,12 @@ sequenceDiagram
 
 - A run is one job on the existing queue, with its leases, retries and
   at-least-once delivery. One run at a time per routine and record.
+- A run someone waits on (a button press, a test, Run now, a dry run, a
+  check) starts within seconds. The self-hosted worker polls the queue every
+  second. The hosted executor passes once a minute, so after queuing such a
+  run the API invokes it asynchronously (`RETAINER_EXECUTOR_FUNCTION`); a pass
+  already running finds the run itself, and the minute pass stays the
+  fallback if the invoke fails.
 - **Every effect is numbered.** The SDK issues a run's effects one at a time,
   and Retainer records each under a key made of the run and its position: the
   operation, a hash of its arguments and its result. A write is recorded in the same

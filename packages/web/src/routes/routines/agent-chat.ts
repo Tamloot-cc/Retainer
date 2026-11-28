@@ -21,8 +21,8 @@ export function editRoutineMessage(
 }
 
 /**
- * Opens a web chat with the agent, plain or with a first message: the only
- * way into building a routine (chat-builds.md §2).
+ * Opens a web chat with the agent, with a first message: **Edit with the
+ * agent**. A new routine starts at the chat's starter (chat-builds.md §5.2).
  */
 export function useRoutineChat() {
   const navigate = useNavigate();

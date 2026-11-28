@@ -189,22 +189,17 @@ describe('routines list', () => {
     ).toBeTruthy();
   });
 
-  it('opens a plain chat to build a routine, with no describe box', async () => {
+  it('links New routine to the chat’s starter, creating no chat (chat-builds.md §5.2)', async () => {
     capabilities();
     vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
-    const chat = vi.spyOn(api, 'createAgentChat').mockResolvedValue({
-      id: 'chat-1',
-      title: null,
-      createdAt: '2026-11-28T08:00:00Z',
-    } as never);
+    const chat = vi.spyOn(api, 'createAgentChat');
     mount(<RoutinesPage />, false, vi.fn(), true);
     expect(await screen.findByText('No routines yet')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'New routine' }));
-    expect(chat).toHaveBeenCalledWith(undefined, 'web');
-    await vi.waitFor(() =>
-      expect(router.navigate).toHaveBeenCalledWith({ to: '/chat/$id', params: { id: 'chat-1' } }),
+    expect(screen.getByRole('link', { name: 'New routine' }).getAttribute('href')).toBe(
+      '/chat?new=routine',
     );
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it('points to an MCP agent on a server without the workspace agent', async () => {
@@ -212,7 +207,7 @@ describe('routines list', () => {
     vi.spyOn(api, 'routines').mockResolvedValue({ timeZone: 'UTC', routines: [] });
     mount(<RoutinesPage />);
     expect(await screen.findByText(/an agent you connect over MCP/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'New routine' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'New routine' })).toBeNull();
   });
 });
 

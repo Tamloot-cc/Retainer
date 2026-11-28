@@ -128,6 +128,20 @@ const configSchema = z
         )
         .optional(),
     ),
+    /**
+     * Hosted: the `executor` function's name or ARN. The API invokes it
+     * asynchronously after queuing a routine run, so a pressed button starts
+     * within seconds instead of at the next minute's pass (Retainer#147).
+     */
+    RETAINER_EXECUTOR_FUNCTION: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .regex(
+          /^(arn:aws:lambda:[a-z0-9-]+:\d{12}:function:)?[A-Za-z0-9_-]{1,64}(:[A-Za-z0-9_$-]+)?$/,
+        )
+        .optional(),
+    ),
     RETAINER_AGENT_PERSON_DAILY_STEPS: z.coerce.number().int().min(1).default(2000),
     RETAINER_AGENT_WORKSPACE_DAILY_STEPS: z.coerce.number().int().min(1).default(20000),
     RETAINER_EXECUTOR_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(8),

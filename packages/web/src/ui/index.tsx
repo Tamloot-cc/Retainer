@@ -918,6 +918,7 @@ export {
   MenuChoice,
   MenuChoices,
   MenuHeading,
+  MenuLink,
   type MenuOpening,
   MenuSeparator,
   PointMenu,

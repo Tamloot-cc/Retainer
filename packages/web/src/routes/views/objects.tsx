@@ -39,6 +39,7 @@ import {
   Segmented,
   Toolbar,
 } from '../../ui/index.js';
+import { canStart } from '../agent/chats-search.js';
 import { newChat } from '../agent/first-message.js';
 import { useRememberCommand } from '../command-recents.js';
 import { useAgentDescription, useApiName } from '../developer.js';
@@ -692,6 +693,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
             writable={writable}
             onSelect={(id) => selectView(id)}
             onNew={() => setViewDialog('new')}
+            newWithAgent={canStart('view', session)}
             onEdit={() => setViewDialog('edit')}
             onEditAgent={saved ? () => editWithAgent.mutate() : undefined}
             onDelete={() => setViewDialog('delete')}

@@ -38,4 +38,21 @@ describe('the chat context', () => {
       }),
     ).toBe(text);
   });
+
+  it('tells a web chat to read a guide before drafting or suggesting (chat-builds.md §5.2)', () => {
+    const date = workspaceDate(new Date('2026-11-26T10:00:00Z'), 'UTC');
+    const base = {
+      ownerName: 'Maya',
+      personal: false,
+      workspaceName: 'Acme',
+      objects: [],
+      eventTypes: [],
+      date,
+    };
+    for (const routines of [false, true]) {
+      const text = chatContext({ ...base, client: 'web', routines });
+      expect(text).toContain('before drafting one or suggesting ideas for one.');
+    }
+    expect(chatContext({ ...base, client: 'cli' })).not.toContain('suggesting ideas');
+  });
 });

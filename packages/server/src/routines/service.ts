@@ -167,6 +167,16 @@ export class Routines {
     private readonly config: RoutineConfig,
   ) {}
 
+  /**
+   * Wakes the executor once the transaction that queued a run has committed,
+   * so someone waiting on the run sees it start promptly (`RoutineConfig.wake`).
+   */
+  private async woken<T>(work: Promise<T>, queued: (result: T) => boolean): Promise<T> {
+    const result = await work;
+    if (this.config.wake && queued(result)) await this.config.wake();
+    return result;
+  }
+
   private tx<T>(caller: Caller, fn: (tx: Tx) => Promise<T>) {
     return inWorkspace(this.sql, caller.workspaceId, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
@@ -198,7 +208,7 @@ export class Routines {
    */
   async validate(caller: Caller, input: z.infer<typeof sourceInputSchema>) {
     readScope(caller);
-    return this.tx(caller, async (tx) => {
+    const validated = this.tx(caller, async (tx) => {
       const { manifest, problems, caps } = await this.staticCheck(tx, caller, input);
       if (problems.length) return { valid: false as const, problems };
       const sourceId = await saveSource(tx, caller.workspaceId, manifest, input.code);
@@ -213,6 +223,7 @@ export class Routines {
       });
       return { valid: null, problems: [], jobId, status: 'queued' as const, sourceId };
     });
+    return this.woken(validated, (result) => 'status' in result);
   }
 
   /** A check of this source against these types that passed, if one did. */
@@ -230,7 +241,7 @@ export class Routines {
    */
   async preview(caller: Caller, input: SourceRef) {
     readScope(caller);
-    return this.tx(caller, async (tx) => {
+    const previewed = this.tx(caller, async (tx) => {
       const source = await resolveSource(tx, input);
       const { manifest, problems, schema } = await this.staticCheck(tx, caller, source);
       if (problems.length) return { valid: false as const, problems };
@@ -270,6 +281,7 @@ export class Routines {
         };
       return { valid: true as const, problems: [], sourceId, previewId, matched, runs };
     });
+    return this.woken(previewed, (result) => !!result.runs?.length);
   }
 
   /**
@@ -548,13 +560,16 @@ export class Routines {
       await this.activate(tx, caller.workspaceId, routineId, manifest, caps.timezone, approvedId);
       return { routineId, versionId: approvedId, discardedRuns };
     });
-    if ('checkRequired' in approved)
+    if ('checkRequired' in approved) {
+      // The recheck is queued and committed: start it before answering.
+      await this.config.wake?.();
       throw new AppError(
         409,
         'check_required',
         'the workspace changed since this code was checked; a new check is running, approve again when it passes',
         { jobId: approved.checkRequired },
       );
+    }
     return approved;
   }
 
@@ -698,7 +713,7 @@ export class Routines {
   /** Runs or discards the runs a routine holds (§6.5). */
   async releaseHeld(caller: Caller, routineId: string, action: 'run' | 'discard') {
     requireAdmin(caller);
-    return this.tx(caller, async (tx) => {
+    const released = this.tx(caller, async (tx) => {
       // A paused routine refuses every effect, so its held runs would only be
       // held again: running them needs the routine on first.
       if (action === 'run') {
@@ -719,6 +734,7 @@ export class Routines {
         where routine_id=${routineId} and status='held' returning id`;
       return { routineId, [action === 'run' ? 'queued' : 'discarded']: rows.length };
     });
+    return this.woken(released, (result) => Number(result.queued ?? 0) > 0);
   }
 
   /**
@@ -727,7 +743,7 @@ export class Routines {
    */
   async test(caller: Caller, routineId: string, versionId: string, recordId: string | null) {
     const who = requireAdmin(caller);
-    return this.tx(caller, async (tx) => {
+    const tested = this.tx(caller, async (tx) => {
       const [version] = await tx<VersionRow[]>`
         select v.*,s.manifest,s.code from routine_versions v join routine_sources s on s.id=v.source_id
         where v.id=${versionId} and v.routine_id=${routineId}`;
@@ -758,6 +774,7 @@ export class Routines {
       });
       return { runId: id };
     });
+    return this.woken(tested, () => true);
   }
 
   /** A person presses a routine's button on one or more records (§4.2, `manual`). */
@@ -766,7 +783,7 @@ export class Routines {
     if (caller.actor.type !== 'user') throw forbidden('only a person presses a routine button');
     if (!caller.scopes.includes('write') && !caller.scopes.includes('admin'))
       throw forbidden('running a routine needs write access');
-    return this.tx(caller, async (tx) => {
+    const pressed = this.tx(caller, async (tx) => {
       // Enqueue before a competing pause, or observe the pause and refuse.
       const [routine] = await tx<RoutineRow[]>`
         select * from routines where id=${routineId} for no key update`;
@@ -797,6 +814,7 @@ export class Routines {
       }
       return { runs };
     });
+    return this.woken(pressed, (result) => result.runs.length > 0);
   }
 
   /**
@@ -806,7 +824,7 @@ export class Routines {
    */
   async runNow(caller: Caller, routineId: string) {
     requireAdmin(caller);
-    return this.tx(caller, async (tx) => {
+    const fired = this.tx(caller, async (tx) => {
       await lockSchemaShared(tx, caller.workspaceId);
       // Held for the whole tick: a regular tick skips the routine meanwhile,
       // and a second press waits, then fires its own tick.
@@ -836,6 +854,7 @@ export class Routines {
       );
       return { routineId, ...fired };
     });
+    return this.woken(fired, (result) => result.queued > 0);
   }
 
   /** Buttons a person can press on a record of this object. */
