@@ -2034,8 +2034,7 @@ enforcement. Until then, new code keeps that path open:
    workspace, `retainer_workspaces_due` (4.2), which returns workspace IDs
    only, and `retainer_erase_private_derivatives`, which `forget` calls to
    delete private copies of what it erases and which returns nothing.
-   Routines add `retainer_routine_admin` (who may approve) and
-   `retainer_set_workspace_time_zone`; standalone installations add
+   Routines add `retainer_set_workspace_time_zone`; standalone installations add
    `retainer_lookup_extension_key` and `retainer_oauth_reference` (4.6).
    Discovery functions that return due IDs (extension jobs and changes,
    routine runs, schedules and retention, file maintenance, change retention

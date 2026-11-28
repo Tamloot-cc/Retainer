@@ -15,7 +15,6 @@ import { installedTools, sameContract, toolContract } from '../extensions/tools.
 import { matchingRecords } from '../records/query.js';
 import { getRecord } from '../records/read.js';
 import { resolveRecordId } from '../records/write.js';
-import { stillAdmin } from '../routine-runtime/admission.js';
 import type { RoutineConfig } from '../routines/capabilities.js';
 import { manifestResolves, mapFilter, objectFor } from '../routines/manifest.js';
 import { dispatchRoutines, fireSchedule } from '../routines/matcher.js';
@@ -58,12 +57,10 @@ type ClaimRow = {
   attempt: number;
   expired: boolean;
   expires_at: Date | null;
-  initiator_user_id: string | null;
   manifest: RoutineManifest | null;
   routine_status: string | null;
   active_version_id: string | null;
   tool_contracts: Record<string, ToolContract> | null;
-  approver_user_id: string | null;
 };
 
 /**
@@ -145,9 +142,9 @@ export class RoutineExecutor {
       await tx`select rt.id from routines rt join routine_runs r on r.routine_id=rt.id
         where r.id=${id} and r.mode='run' for no key update of rt`;
       const [run] = await tx<ClaimRow[]>`
-        select r.id,r.routine_id,r.version_id,r.mode,r.status,r.record_id,r.attempt,r.initiator_user_id,r.expires_at,
+        select r.id,r.routine_id,r.version_id,r.mode,r.status,r.record_id,r.attempt,r.expires_at,
           r.input ? 'triggerRecord' as has_trigger_record,coalesce(r.expires_at<=clock_timestamp(),false) as expired,s.manifest,rt.status as routine_status,
-          rt.active_version_id,v.tool_contracts,v.approver_user_id
+          rt.active_version_id,v.tool_contracts
         from routine_runs r left join routine_sources s on s.id=r.source_id
         left join routines rt on rt.id=r.routine_id left join routine_versions v on v.id=r.version_id
         where r.id=${id} and ((r.status='queued' and r.available_at<=clock_timestamp())
@@ -180,7 +177,7 @@ export class RoutineExecutor {
           await this.end(tx, id, 'discarded', 'new_version');
           return null;
         }
-        // A changed tool contract or a departed approver pauses before the run (§5.3).
+        // A changed tool contract pauses the routine before the run (§5.3).
         const installed = this.options.config.catalog
           ? await installedTools(tx, this.options.config.catalog)
           : [];
@@ -188,27 +185,22 @@ export class RoutineExecutor {
           const tool = installed.find((t) => t.name === name && t.status !== 'conflict');
           return !sameContract(run.tool_contracts?.[name], tool ? toolContract(tool) : undefined);
         });
-        const approver = await stillAdmin(tx, workspace, run.approver_user_id);
-        if (changed || !approver) {
+        if (changed) {
           const paused = await pauseRoutine(
             tx,
             run.routine_id,
             'needs_attention',
-            changed ? 'tool_changed' : 'approver_left',
+            'tool_changed',
             run.version_id,
           );
           if (!paused || run.attempt > 0) {
-            await this.end(tx, id, 'stopped', changed ? 'tool_changed' : 'approver_left');
+            await this.end(tx, id, 'stopped', 'tool_changed');
             return null;
           }
-          await tx`update routine_runs set status='held',code=${changed ? 'tool_changed' : 'approver_left'},
+          await tx`update routine_runs set status='held',code='tool_changed',
             lease_owner=null,lease_until=null where id=${id}`;
           return null;
         }
-      }
-      if (run.mode === 'test' && !(await stillAdmin(tx, workspace, run.initiator_user_id))) {
-        await this.end(tx, id, 'stopped', 'not_admin');
-        return null;
       }
       let expiry: Date | null = run.expires_at;
       // A run is always on the surviving record (§6.1): a merged ID resolves

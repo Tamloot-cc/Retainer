@@ -362,11 +362,6 @@ describe('SECURITY DEFINER functions', () => {
     // App sign-in finds the workspace, then checks membership as usual.
     retainer_extension_installation_workspace: 'retainer_control',
     retainer_retire_extension_secrets: RUNTIME_ROLE,
-    retainer_routine_admin: RUNTIME_ROLE,
-    // Triggers that store `approver_left` when an approver loses admin (routines spec §5.3).
-    retainer_admin_lost: null,
-    retainer_routine_stopped: null,
-    retainer_routines_approver_left: null,
     retainer_routine_changes_due: 'retainer_executor',
     retainer_routine_retention_due: 'retainer_executor',
     retainer_routine_runs_due: 'retainer_executor',

@@ -664,7 +664,7 @@ approvals come if it doesn't.
   `retainer_sweep_agent_orphans()`, deletes rows whose thread or run maps to
   no session (§5.4). `retainer_app` (chat delete, retention) and the control
   role (the purge) may execute them, and only them, like the existing
-  `retainer_*` functions such as `retainer_routine_admin`.
+  `retainer_*` functions such as `retainer_set_workspace_time_zone`.
 - **Migrations.** At runtime neither store runs DDL. `pnpm db:migrate`, and
   the hosted migration step, run Mastra's `init()` for the two domains with
   the migration role after Drizzle's migrations, then grant

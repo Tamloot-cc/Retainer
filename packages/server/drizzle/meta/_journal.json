@@ -1142,6 +1142,13 @@
       "when": 1795861103381,
       "tag": "0162_approver_left_stored",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795875035251,
+      "tag": "0163_approval_sticks",
+      "breakpoints": true
     }
   ]
 }

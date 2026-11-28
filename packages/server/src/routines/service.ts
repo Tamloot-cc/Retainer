@@ -18,7 +18,7 @@ import type { Sql } from '../db/client.js';
 import { inWorkspace, jsonValue, lockSchemaShared, type Tx } from '../db/tx.js';
 import { AppError, forbidden, notFound } from '../errors.js';
 import { toolContract } from '../extensions/tools.js';
-import { adminIdentity, stillAdmin } from '../routine-runtime/admission.js';
+import { adminIdentity } from '../routine-runtime/admission.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { type Capabilities, capabilities, type RoutineConfig } from './capabilities.js';
@@ -658,22 +658,14 @@ export class Routines {
         select v.*,s.manifest,s.code from routine_versions v join routine_sources s on s.id=v.source_id
         where v.id=${routine.active_version_id}`;
       if (!version) throw new AppError(409, 'not_approved', 'approve a version first');
-      if (['check_failed', 'tool_changed', 'approver_left'].includes(routine.paused_reason ?? ''))
+      if (['check_failed', 'tool_changed'].includes(routine.paused_reason ?? ''))
         throw new AppError(
           409,
           'approval_required',
           'this routine paused because something it depends on changed; repair it and approve the new version',
         );
-      // Whoever resumes must not become the approver of code they never saw:
-      // an approver who left means approving again, however it paused (#167).
-      // The stored `approver_left` usually refuses above; this is the safety net.
-      if (!(await stillAdmin(tx, caller.workspaceId, version.approver_user_id)))
-        throw new AppError(
-          409,
-          'approval_required',
-          'its approver is no longer an admin; review and approve the routine to resume it',
-          { routineId, versionId: version.id },
-        );
+      // Resuming keeps the active version's approval, even when its approver
+      // has since lost admin (#229): it approves nothing new.
       const zone = await workspaceZone(tx);
       await this.activate(tx, caller.workspaceId, routineId, version.manifest, zone, version.id);
       await tx`update routines set state_changed_by=${caller.cli ? tx.json(jsonValue(caller.actor)) : null} where id=${routineId}`;
@@ -1116,7 +1108,6 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     name: row.name,
     description: row.description,
     status: row.status,
-    // Stored as `approver_left` once a stopped routine's approver loses admin (#167).
     pausedReason: row.paused_reason,
     ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
     pausedAt: row.paused_at?.toISOString() ?? null,

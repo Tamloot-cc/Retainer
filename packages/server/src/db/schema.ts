@@ -3269,7 +3269,7 @@ export const routines = pgTable(
     description: text('description').notNull(),
     stateChangedBy: jsonb('state_changed_by').$type<Actor>(),
     status: text('status').notNull().default('draft'),
-    /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `approver_left`, `runs_held`, `schedule_over_limit`, `schedule_too_large`. */
+    /** Why it paused, as a code: `paused`, `check_failed`, `tool_changed`, `failing`, `runs_held`, `schedule_over_limit`, `schedule_too_large`. */
     pausedReason: text('paused_reason'),
     pausedAt: timestamptz('paused_at'),
     activeVersionId: uuid('active_version_id'),

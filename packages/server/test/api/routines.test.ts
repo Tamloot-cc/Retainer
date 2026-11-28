@@ -1598,117 +1598,85 @@ describe('routines', () => {
     expect(first?.record_id).toBe(survivor);
   });
 
-  it('an approver who leaves a paused routine is stored, and resuming asks for approval (#167)', async () => {
+  it('an approval sticks: an active routine keeps running after its approver loses admin (#229)', async () => {
     const s = await setup();
     const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
-    // Paused by hand first; then the approver's key is revoked while it is paused.
+    await revokeKeyOf(s, 'admin');
+    const acme = await createCompany(s.app, s.keys.boss, 'Acme After');
+    await s.maintenance.maintain();
+    await s.executor.tick();
+    const record = await s.app.request(`/v1/records/${acme}`, { key: s.keys.boss });
+    expect(record.body.fields.tier).toBe('gold');
+    const [routine] =
+      await db.owner`select status,paused_reason,active_version_id from routines where id=${routineId}`;
+    expect(routine).toEqual({
+      status: 'active',
+      paused_reason: null,
+      active_version_id: versionId,
+    });
+    const runs = await db.owner<{ status: string }[]>`
+      select status from routine_runs where routine_id=${routineId} and record_id=${acme}`;
+    expect(runs).toEqual([{ status: 'succeeded' }]);
+  });
+
+  it('a paused routine whose approver lost admin resumes without a new approval (#229)', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
     const paused = await s.app.request(`/v1/routines/${routineId}/pause`, {
       key: s.keys.admin,
       body: {},
     });
     expect(paused.status).toBe(200);
     await revokeKeyOf(s, 'admin');
-    // Stored in the same transaction, so every reader agrees.
     const [stored] =
-      await db.owner`select status,paused_reason,active_version_id from routines where id=${routineId}`;
-    expect(stored).toEqual({
-      status: 'paused',
-      paused_reason: 'approver_left',
-      active_version_id: versionId,
-    });
-    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.boss });
-    expect(view.body.pausedReason).toBe('approver_left');
-    const listed = await s.app.request('/v1/routines', { key: s.keys.boss });
-    expect(listed.body.routines.find((r: { id: string }) => r.id === routineId).pausedReason).toBe(
-      'approver_left',
-    );
-    const client = await s.app.mcpClient(s.keys.agent);
-    try {
-      const tool = await client.call('get_routine', { id: routineId });
-      expect(tool.isError).toBe(false);
-      expect(tool.body.pausedReason).toBe('approver_left');
-    } finally {
-      await client.close();
-    }
+      await db.owner`select status,paused_reason from routines where id=${routineId}`;
+    expect(stored).toEqual({ status: 'paused', paused_reason: 'paused' });
     const resumed = await s.app.request(`/v1/routines/${routineId}/resume`, {
       key: s.keys.boss,
       body: {},
     });
-    expect(resumed.status).toBe(409);
-    expect(resumed.body.error).toMatchObject({ code: 'approval_required' });
-    // Approving on the review screen records a new version and keeps the earlier approval.
-    const approved = await s.app.request(
-      `/v1/routines/${routineId}/versions/${versionId}/approve`,
-      { key: s.keys.boss, body: {} },
-    );
-    expect(approved.status).toBe(200);
-    const versions = await db.owner<
-      { id: string; approver_user_id: string; fresh: boolean; state: string }[]
-    >`
-      select id,approver_user_id,approved_at>now()-interval '1 minute' as fresh,state
-      from routine_versions where routine_id=${routineId} order by number`;
-    expect(versions).toMatchObject([
-      { id: versionId, approver_user_id: 'key:admin', state: 'superseded' },
-      { approver_user_id: 'key:boss', fresh: true, state: 'approved' },
-    ]);
+    expect(resumed.status).toBe(200);
+    // The earlier approval stands: no new version, and the approver is unchanged.
+    const versions = await db.owner`
+      select id,approver_user_id,state from routine_versions where routine_id=${routineId}`;
+    expect(versions).toEqual([{ id: versionId, approver_user_id: 'key:admin', state: 'approved' }]);
     const [active] =
       await db.owner`select status,paused_reason,active_version_id from routines where id=${routineId}`;
-    expect(active).toMatchObject({
-      status: 'active',
-      paused_reason: null,
-      active_version_id: versions[1]?.id,
-    });
-    const again = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.boss });
-    expect(again.body.pausedReason).toBeNull();
+    expect(active).toEqual({ status: 'active', paused_reason: null, active_version_id: versionId });
   });
 
-  it('a routine paused for a repair keeps that reason when its approver leaves', async () => {
+  it('a test run goes on after the admin who started it loses admin (#229)', async () => {
     const s = await setup();
-    const { routineId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
-    await db.owner`update routines set status='needs_attention',paused_reason='check_failed',
-      paused_at=now() where id=${routineId}`;
+    const tier = s.key('tier');
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(tier, s.key('name')));
+    const acme = await createCompany(s.app, s.keys.admin, 'Acme Tested');
+    const tested = await s.app.request(`/v1/routines/${routineId}/versions/${versionId}/test`, {
+      key: s.keys.admin,
+      body: { recordId: acme },
+    });
+    expect(tested.status).toBe(202);
+    // Lost before the executor claims it, and the run still starts and writes.
     await revokeKeyOf(s, 'admin');
-    // What must change before it runs again says more than who approved it.
-    const [stored] = await db.owner`select paused_reason from routines where id=${routineId}`;
-    expect(stored?.paused_reason).toBe('check_failed');
-    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.boss });
-    expect(view.body.pausedReason).toBe('check_failed');
+    const claimed = await s.executor.claim(s.workspace, tested.body.runId);
+    if (!claimed) throw new Error('run not claimed');
+    const token = await tokens.issueRoutine(
+      s.workspace,
+      { runId: claimed.runId, routineId, fence: claimed.fence, mode: 'test', tools: [] },
+      new Date(Date.now() + 60000),
+    );
+    const written = await s.app.request('/v1/routines/runtime/effects', {
+      key: token,
+      body: {
+        position: 1,
+        operation: 'record.update',
+        args: { object: 'company', id: acme, values: { [tier]: 'gold' } },
+      },
+    });
+    expect(written.status).toBe(200);
+    expect(written.body).toMatchObject({ state: 'done' });
+    const [run] = await db.owner`select status from routine_runs where id=${claimed.runId}`;
+    expect(run?.status).toBe('running');
   });
-
-  it.each(['resume', 'approve', 'pause'] as const)(
-    'a %s racing the approver leaving never leaves a stale pause reason',
-    async (action) => {
-      const s = await setup();
-      const { routineId, versionId } = await activate(
-        s,
-        TIER_ROUTINE(s.key('tier'), s.key('name')),
-      );
-      if (action !== 'pause') {
-        const paused = await s.app.request(`/v1/routines/${routineId}/pause`, {
-          key: s.keys.boss,
-          body: {},
-        });
-        expect(paused.status).toBe(200);
-      }
-      const path = { resume: 'resume', pause: 'pause', approve: `versions/${versionId}/approve` }[
-        action
-      ];
-      const [res] = await Promise.all([
-        s.app.request(`/v1/routines/${routineId}/${path}`, { key: s.keys.boss, body: {} }),
-        revokeKeyOf(s, 'admin'),
-      ]);
-      const [row] = await db.owner<
-        { status: string; paused_reason: string | null }[]
-      >`select status,paused_reason from routines where id=${routineId}`;
-      // Either it ran first and the routine is active (its next run pauses it),
-      // or the loss was seen and it is stored as needing approval.
-      if (row?.status === 'active') expect(row.paused_reason).toBeNull();
-      else expect(row).toEqual({ status: 'paused', paused_reason: 'approver_left' });
-      if (action === 'approve') expect(row?.status).toBe('active');
-      if (action === 'resume' && res.status === 409)
-        expect(res.body.error.code).toBe('approval_required');
-    },
-  );
 
   it('a preview samples distinct records, however busy the newest one is', async () => {
     const s = await setup();

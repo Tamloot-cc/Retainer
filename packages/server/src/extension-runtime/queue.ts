@@ -1122,16 +1122,14 @@ export class ExtensionQueue {
       }
       if (!runnable(installation, job.trigger_kind, partial)) return null;
       // A routine's tool call repeats its caller's checks when it starts
-      // (routines spec §8): the run still running and not expired, its
-      // routine active, a test's initiator still an admin.
+      // (routines spec §8): the run still running and not expired, and a
+      // run's routine active.
       const callerRun = (job as Job & { caller_run_id?: string | null }).caller_run_id;
       if (job.trigger_kind === 'tool' && callerRun) {
         const [live] =
           await tx`select 1 from routine_runs r left join routines rt on rt.id=r.routine_id
-          left join routine_versions v on v.id=r.version_id
           where r.id=${callerRun} and r.status='running' and coalesce(r.expires_at>clock_timestamp(),true)
-            and (r.mode<>'run' or (rt.status='active' and retainer_routine_admin(r.workspace_id,v.approver_user_id)))
-            and (r.mode<>'test' or retainer_routine_admin(r.workspace_id,r.initiator_user_id))`;
+            and (r.mode<>'run' or rt.status='active')`;
         if (!live) {
           await tx`update extension_jobs set status='cancelled',code='caller_stopped',lease_owner=null,lease_until=null,run_until=null,updated_at=now() where id=${id}`;
           return null;
