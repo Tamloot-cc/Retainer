@@ -1485,6 +1485,16 @@ describe('routines', () => {
     expect(again.body.pausedReason).toBeNull();
   });
 
+  it('a routine paused for a repair keeps that reason when its approver leaves', async () => {
+    const s = await setup();
+    const { routineId, versionId } = await activate(s, TIER_ROUTINE(s.key('tier'), s.key('name')));
+    await db.owner`update routines set status='needs_attention',paused_reason='check_failed',
+      paused_at=now() where id=${routineId}`;
+    await db.owner`update routine_versions set approver_user_id='someone-who-left' where id=${versionId}`;
+    const view = await s.app.request(`/v1/routines/${routineId}`, { key: s.keys.admin });
+    expect(view.body.pausedReason).toBe('check_failed');
+  });
+
   it('a preview samples distinct records, however busy the newest one is', async () => {
     const s = await setup();
     for (const name of ['Acme One', 'Acme Two', 'Acme Three'])

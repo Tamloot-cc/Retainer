@@ -94,6 +94,10 @@ function Layout() {
   const here = useRef(pathname);
   here.current = pathname;
   const report = shown && (!shown.path || shown.path === pathname) ? shown.node : null;
+  // Leaving its page ends a page-scoped report, so coming back does not revive it.
+  useEffect(() => {
+    if (shown?.path && shown.path !== pathname) setShown(null);
+  }, [pathname, shown]);
   const setReport = useCallback<ReportFn>(
     (node, options) =>
       setShown(node ? { node, ...(options?.thisPage ? { path: here.current } : {}) } : null),

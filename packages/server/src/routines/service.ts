@@ -1116,6 +1116,9 @@ function presentVersion(version: VersionRow, names: FactsNames) {
  * `approver_gone` column; a running or archived routine never asks. The
  * query aliases `routines` as `r`.
  */
+/** Pause reasons more telling than `approver_left`: what must change before it runs again. */
+const NEEDS_REPAIR = ['check_failed', 'tool_changed', 'schedule_too_large'];
+
 const approverGone = (tx: Tx) => tx`case when r.status not in ('active','archived') then
   (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
     from routine_versions a where a.id=r.active_version_id) end as approver_gone`;
@@ -1129,8 +1132,12 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
     status: row.status,
     // A routine paused for another reason whose approver has since left can
     // only be approved again, never simply resumed (#167).
+    // A pause that says more (the code must change, or the tool did) keeps its reason.
     pausedReason:
-      row.status !== 'active' && row.status !== 'archived' && row.approver_gone
+      row.status !== 'active' &&
+      row.status !== 'archived' &&
+      row.approver_gone &&
+      !NEEDS_REPAIR.includes(row.paused_reason ?? '')
         ? 'approver_left'
         : row.paused_reason,
     ...(row.state_changed_by ? { stateChangedBy: row.state_changed_by } : {}),
