@@ -127,7 +127,7 @@ export function runStatusText(run: Pick<RoutineRunView, 'status' | 'code'>) {
 }
 
 /** What a run's status means, when the word alone is not enough. */
-export const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
+const RUN_STATUS_TEXT: Partial<Record<RoutineRunStatus, string>> = {
   held: 'It waits for an admin to run or discard it.',
   waiting:
     'It handed the workspace agent a task and continues from the start when the answer arrives.',

@@ -72,6 +72,7 @@ export function RoutineRunPage() {
     );
   const r = run.data;
   const { label, tone } = runOutcome(r);
+  const statusText = runStatusText(r);
   const test = r.mode === 'test';
   const waiting = pendingReviews(r);
   const output = r.output ?? {};
@@ -89,7 +90,7 @@ export function RoutineRunPage() {
         {r.code ? <Muted>{r.code.replaceAll('_', ' ')}</Muted> : null}
       </Row>
       {failureText(r) ? <Notice error>{failureText(r)}</Notice> : null}
-      {runStatusText(r) ? <Notice>{runStatusText(r)}</Notice> : null}
+      {statusText ? <Notice>{statusText}</Notice> : null}
       {r.needsAttention ? (
         <Notice error>
           Needs attention: data this run read changed while it waited for the agent, so it stopped

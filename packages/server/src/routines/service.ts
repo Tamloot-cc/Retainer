@@ -8,6 +8,7 @@ import {
   routineFacts,
   routineReportSchema,
   type ToolContract,
+  type ToolEffect,
 } from '@retainer/shared';
 import { z } from 'zod';
 import { cancelRunTasks } from '../agent-runtime/tasks.js';
@@ -411,8 +412,7 @@ export class Routines {
       const rows = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
           (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
-          (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
-            from routine_versions a where a.id=r.active_version_id) as approver_gone
+          ${approverGone(tx)}
         from routines r order by r.created_at desc,r.id`;
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
       const versions = await this.versions(
@@ -443,8 +443,7 @@ export class Routines {
       const [row] = await tx<RoutineRow[]>`
         select r.*,(select count(*)::int from routine_runs h where h.routine_id=r.id and h.status='held') as held,
           (select count(*)::int from routine_versions v where v.routine_id=r.id and v.state='proposed') as proposals,
-          (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
-            from routine_versions a where a.id=r.active_version_id) as approver_gone
+          ${approverGone(tx)}
         from routines r where r.id=${id}`;
       if (!row) throw notFound('routine');
       const caps = await capabilities(tx, await getSchema(tx, caller.workspaceId), this.config);
@@ -1112,6 +1111,15 @@ function presentVersion(version: VersionRow, names: FactsNames) {
   };
 }
 
+/**
+ * Whether a stopped routine's approver is no longer an admin (#167), as the
+ * `approver_gone` column; a running or archived routine never asks. The
+ * query aliases `routines` as `r`.
+ */
+const approverGone = (tx: Tx) => tx`case when r.status not in ('active','archived') then
+  (select not coalesce(retainer_routine_admin(r.workspace_id,a.approver_user_id),false)
+    from routine_versions a where a.id=r.active_version_id) end as approver_gone`;
+
 function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: Capabilities) {
   const names = factsNames(caps);
   return {
@@ -1137,7 +1145,6 @@ function presentRoutine(row: RoutineRow, version: VersionRow | undefined, caps: 
   };
 }
 
-/** A run as history shows it: statuses, operations and outcomes; results only while kept. */
 type CallRow = {
   run_id: string;
   position: number;
@@ -1148,7 +1155,7 @@ type CallRow = {
   record_id: string | null;
   result: unknown;
   tool_name: string | null;
-  tool_effect: 'read' | 'write' | 'send' | null;
+  tool_effect: ToolEffect | null;
 };
 
 /** Runs as history shows them, with every run's calls read in one query. */
@@ -1159,7 +1166,11 @@ export async function presentRuns(tx: Tx, runs: RunRow[], withResults: boolean) 
     from routine_run_results where run_id=any(${runs.map((run) => run.id)}::uuid[])
     order by run_id,position`;
   const byRun = new Map<string, CallRow[]>();
-  for (const row of rows) byRun.set(row.run_id, [...(byRun.get(row.run_id) ?? []), row]);
+  for (const row of rows) {
+    const calls = byRun.get(row.run_id);
+    if (calls) calls.push(row);
+    else byRun.set(row.run_id, [row]);
+  }
   return runs.map((run) => runView(run, byRun.get(run.id) ?? [], withResults));
 }
 
@@ -1168,6 +1179,7 @@ export async function presentRun(tx: Tx, run: RunRow, withResults: boolean) {
   return view as ReturnType<typeof runView>;
 }
 
+/** A run as history shows it: statuses, operations and outcomes; results only while kept. */
 function runView(run: RunRow, calls: CallRow[], withResults: boolean) {
   const usedAgent = calls.some((call) => call.operation === 'ai.agent');
   return {

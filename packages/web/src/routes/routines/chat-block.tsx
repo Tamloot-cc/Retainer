@@ -68,11 +68,19 @@ export default function RoutineChatBlock({
   });
   // A dry run still going: read only its runs again until it is done, never
   // start one. The draft itself (facts, check, count) is read once.
-  const going = !!draft.data?.preview?.available && !draft.data.preview.done;
+  const stored = draft.data?.preview?.available ? draft.data.preview : undefined;
   const polled = useQuery({
     queryKey: [...key, 'runs'],
     queryFn: ({ signal }) => api.routinePreview(fence?.preview ?? '', signal),
-    enabled: going && !!fence?.preview,
+    enabled: !!stored && !stored.done && !!fence?.preview,
+    // The draft just read these runs: the first poll waits its turn.
+    ...(stored
+      ? {
+          initialData: { previewId: fence?.preview ?? '', done: stored.done, runs: stored.runs },
+          initialDataUpdatedAt: draft.dataUpdatedAt,
+        }
+      : {}),
+    staleTime: 2000,
     retry: false,
     refetchInterval: (query) => (query.state.data?.done ? false : 2000),
   });
@@ -98,11 +106,8 @@ export default function RoutineChatBlock({
     (draft.error ? errorText(draft.error, 'see this draft') : undefined) ??
     (complete || streaming ? undefined : 'The routine draft is incomplete.');
   const data =
-    draft.data?.preview?.available && polled.data
-      ? {
-          ...draft.data,
-          preview: { available: true as const, done: polled.data.done, runs: polled.data.runs },
-        }
+    draft.data && stored && polled.data
+      ? { ...draft.data, preview: { ...stored, done: polled.data.done, runs: polled.data.runs } }
       : draft.data;
   const state = fence && data ? draftState(fence, data) : undefined;
   const canPropose = canMutate(session);

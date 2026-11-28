@@ -37,12 +37,13 @@ import {
   type WriteContext,
   writeFields,
 } from '../records/write.js';
+import { runDeadline } from '../routine-runtime/admission.js';
 import type { CompiledObject, CompiledSchema } from '../schema/compiled.js';
 import { getSchema } from '../schema/compiled.js';
 import { stableJson } from '../stable-json.js';
 import { capabilities, type RoutineConfig } from './capabilities.js';
 import { contextTypeFor, fieldFor, mapFilter, objectFor } from './manifest.js';
-import { pauseRoutine, RUN_GRACE_SECONDS, useUp } from './runs.js';
+import { pauseRoutine, useUp } from './runs.js';
 import { workspaceZone } from './service.js';
 
 export type RuntimeConfig = RoutineConfig & {
@@ -165,8 +166,7 @@ export class RoutineRuntime {
   private async run(tx: Tx, runId: string, lock = false): Promise<RunState> {
     const [run] = await tx<RunState[]>`
       select r.id,r.routine_id,r.version_id,r.source_id,r.mode,r.trigger_kind,r.record_id,r.run_at,r.started_at,r.expires_at,
-        least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
-          -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond') as deadline,
+        ${runDeadline(tx)} as deadline,
         r.attempt,r.cause,r.cause_depth,r.initiator_user_id,r.initiated_by,r.model_calls,r.input,
         s.manifest,s.code,v.types_fingerprint,v.tool_contracts
       from routine_runs r left join routine_sources s on s.id=r.source_id

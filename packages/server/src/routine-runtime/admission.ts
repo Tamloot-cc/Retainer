@@ -26,6 +26,15 @@ export async function stillAdmin(tx: Tx, workspace: string, who: string | null) 
 /** A run's lease outlasts its deadline by this much, to record the outcome. */
 export const RUN_GRACE_SECONDS = 15;
 
+/**
+ * An attempt's one deadline for new effects of every kind (§6.2, #131): the
+ * run's expiry, or its lease less the grace for recording the outcome and the
+ * margin for reporting it. The query aliases `routine_runs` as `r`.
+ */
+export const runDeadline = (tx: Tx) =>
+  tx`least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
+    -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond')`;
+
 /** Why an effect was refused, as the code the run ends with (routines spec §6.2). */
 export const runRefused = (code: string, message: string) => new AppError(409, code, message);
 
@@ -59,8 +68,7 @@ export async function admitRoutine(
       admits: boolean;
     }[]
   >`select r.status,r.fence::text,coalesce(r.expires_at>clock_timestamp(),true) as live,r.mode,
-      coalesce(least(r.expires_at,r.lease_until-${RUN_GRACE_SECONDS}*interval '1 second'
-        -${ROUTINE_LIMITS.reportMarginMs}*interval '1 millisecond')>clock_timestamp(),true) as admits,
+      coalesce(${runDeadline(tx)}>clock_timestamp(),true) as admits,
       rt.status as routine_status,coalesce(v.name,rt.name) as routine_name,
       r.initiator_user_id,v.approver_user_id,r.initiated_by,v.number,
       w.deletion_scheduled_at is not null as deleting

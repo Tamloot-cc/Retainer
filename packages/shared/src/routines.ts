@@ -200,9 +200,12 @@ export type RoutineManifest = z.infer<typeof routineManifestSchema>;
 export type RoutineTrigger = RoutineManifest['when'];
 
 /** A tool's contract, pinned by a version (§5.3): a change pauses the routine. */
+/** What a tool declares it does: answers, writes, or sends something out. */
+export type ToolEffect = 'read' | 'write' | 'send';
+
 export type ToolContract = {
   registrationId: string;
-  effect: 'read' | 'write' | 'send';
+  effect: ToolEffect;
   connection: 'workspace' | 'member';
   model: boolean;
 };
@@ -914,7 +917,7 @@ export type RoutineRunCall = {
   differs: boolean;
   recordId: string | null;
   /** A `tool` call's tool and its declared effect (#151). */
-  tool?: { name: string; effect: 'read' | 'write' | 'send' };
+  tool?: { name: string; effect: ToolEffect };
   result?: unknown;
 };
 
