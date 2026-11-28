@@ -33,9 +33,17 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { BrandMark } from './brand.js';
 import { type CategoryColor, objectColor } from './colors.js';
 import { cn, Kbd, NavigationContext } from './core.js';
-import { Menu, MenuAction, MenuChoice, MenuChoices, MenuHeading, MenuSeparator } from './menu.js';
+import {
+  Menu,
+  MenuAction,
+  MenuChoice,
+  MenuChoices,
+  MenuHeading,
+  MenuSeparator,
+  MenuSteps,
+} from './menu.js';
 import { objectIcon } from './object-icons.js';
-import { asViewLevel, VIEW_LABELS, VIEW_LEVELS, type ViewLevel } from './view-level.js';
+import { VIEW_LABELS, VIEW_LEVELS, VIEW_SHORTCUT, type ViewLevel } from './view-level.js';
 
 const COLLAPSED_KEY = 'retainer:sidebar:collapsed';
 const WIDTH_KEY = 'retainer:sidebar:width';
@@ -549,20 +557,18 @@ function Sidebar({
               <MenuSeparator />
             </>
           ) : null}
-          <MenuHeading>View</MenuHeading>
-          <MenuChoices
+          <MenuHeading>
+            <span className="flex items-center justify-between gap-2">
+              View
+              <Kbd>{VIEW_SHORTCUT}</Kbd>
+            </span>
+          </MenuHeading>
+          <MenuSteps
+            label="View"
             value={viewLevel}
-            onChange={(level) => {
-              const next = asViewLevel(level);
-              if (next) onViewLevelChange(next);
-            }}
-          >
-            {VIEW_LEVELS.map((level) => (
-              <MenuChoice key={level} value={level}>
-                {VIEW_LABELS[level]}
-              </MenuChoice>
-            ))}
-          </MenuChoices>
+            options={VIEW_LEVELS.map((level) => ({ value: level, label: VIEW_LABELS[level] }))}
+            onChange={onViewLevelChange}
+          />
           <MenuSeparator />
           <MenuAction onSelect={onSignOut}>
             <LogOut size={14} />

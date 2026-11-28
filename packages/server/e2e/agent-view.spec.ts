@@ -79,6 +79,17 @@ test('agent view shows descriptions, the agent context and what agents are told'
   await expect(missing.getByText('hunch', { exact: true })).toBeVisible();
   await expect(missing.getByText('segment', { exact: true })).toHaveCount(0);
   await expect(page.getByText('get_context', { exact: true }).first()).toBeVisible();
+  // The side list follows the scroll: jumping to a section marks it.
+  const sections = page.getByRole('navigation', { name: 'Sections' });
+  await expect(sections.getByRole('button', { name: 'Connection instructions' })).toHaveAttribute(
+    'aria-current',
+    'location',
+  );
+  await sections.getByRole('button', { name: 'Guides' }).click();
+  await expect(page.getByRole('heading', { name: 'Guides' })).toBeInViewport();
+  await expect(
+    sections.getByRole('button', { name: 'Connection instructions' }),
+  ).not.toHaveAttribute('aria-current', 'location');
 
   // Back to Standard: the tab and the link go away, and the address falls back.
   await page.goto(`${r.url}/app/r/${acme.id}?tab=context`);
@@ -87,4 +98,36 @@ test('agent view shows descriptions, the agent context and what agents are told'
   await expect(page.getByRole('button', { name: 'Agent context' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Agent briefing' })).toHaveCount(0);
   await expect(page.getByText(description)).toHaveCount(0);
+});
+
+test('the View control: slider in the account menu, header badge, shortcut and commands', async ({
+  page,
+  retainer: r,
+}) => {
+  await signIn(page, r.url, r.keys.user);
+  const badge = page.locator('header').getByText(/^(Developer|Agent) view$/);
+  await expect(badge).toHaveCount(0);
+
+  // The slider keeps the menu open, so the level can be stepped through.
+  await page.getByRole('button', { name: /^Account: / }).click();
+  await page.getByRole('menuitemradio', { name: 'Developer' }).click();
+  await expect(page.getByRole('menuitemradio', { name: 'Developer' })).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(badge).toHaveText('Developer view');
+
+  // The shortcut steps on to Agent, then round to Standard.
+  await page.keyboard.press('ControlOrMeta+.');
+  await expect(badge).toHaveText('Agent view');
+  await page.keyboard.press('ControlOrMeta+.');
+  await expect(badge).toHaveCount(0);
+
+  // Find anything switches straight to a level.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('combobox').fill('agent view');
+  await page.getByRole('option', { name: /Switch to Agent view/ }).click();
+  await expect(badge).toHaveText('Agent view');
+
+  // The badge's button goes back to Standard.
+  await page.getByRole('button', { name: 'Leave Agent view' }).click();
+  await expect(badge).toHaveCount(0);
 });

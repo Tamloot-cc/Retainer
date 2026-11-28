@@ -121,6 +121,71 @@ export function MenuChoice({
     </MenuPrimitive.RadioItem>
   );
 }
+/**
+ * Levels that build on each other, as a slider with a stop for each: the
+ * track fills up to the chosen one. Inside a menu, so arrow keys move across
+ * the stops as menu items, and picking one leaves the menu open so the
+ * slider is seen to move.
+ */
+export function MenuSteps<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const index = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  // Stops sit at the middle of equal columns: the first at half a column in.
+  const inset = `${50 / options.length}%`;
+  const fill = `${(index / Math.max(1, options.length - 1)) * (100 - 100 / options.length)}%`;
+  return (
+    <MenuPrimitive.RadioGroup
+      aria-label={label}
+      value={value}
+      onValueChange={(next) => {
+        const option = options.find((o) => o.value === next);
+        if (option) onChange(option.value);
+      }}
+      className="relative mx-1 mb-1 flex pt-1"
+    >
+      <span
+        aria-hidden
+        className="absolute top-[12px] h-0.5 rounded-full bg-muted"
+        style={{ left: inset, right: inset }}
+      />
+      <span
+        aria-hidden
+        className="absolute top-[12px] h-0.5 rounded-full bg-primary transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        style={{ left: inset, width: fill }}
+      />
+      {options.map((o, i) => (
+        <MenuPrimitive.RadioItem
+          key={o.value}
+          value={o.value}
+          onSelect={(e) => e.preventDefault()}
+          className="group relative flex flex-1 cursor-pointer select-none flex-col items-center gap-1.5 rounded-md px-1.5 pb-1.5 pt-1 text-xs text-muted-foreground outline-none transition-colors data-highlighted:bg-hover data-highlighted:text-foreground data-[state=checked]:font-medium data-[state=checked]:text-foreground pointer-coarse:min-h-11"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              'size-2.5 rounded-full border-2 transition-colors',
+              i <= index ? 'border-primary bg-primary' : 'border-border bg-card',
+              'group-data-[state=checked]:ring-4 group-data-[state=checked]:ring-primary/20',
+            )}
+          />
+          <span className="whitespace-nowrap">{o.label}</span>
+        </MenuPrimitive.RadioItem>
+      ))}
+    </MenuPrimitive.RadioGroup>
+  );
+}
 /** A quiet heading over the items that follow it. */
 export function MenuHeading({ children }: { children: ReactNode }) {
   return (

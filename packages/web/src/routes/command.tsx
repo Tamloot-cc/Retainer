@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { lazy, type ReactNode, Suspense, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useContext, useRef, useState } from 'react';
 import { useAccount } from '../accounts/context.js';
 import { api, canMutate, useWorkspace } from '../api/client.js';
 import {
@@ -31,6 +31,13 @@ import {
   CommandList,
 } from '../ui/command.js';
 import { ObjectIcon, RecordAvatar } from '../ui/index.js';
+import {
+  DeveloperContext,
+  VIEW_ICONS,
+  VIEW_LABELS,
+  VIEW_LEVELS,
+  VIEW_SHORTCUT,
+} from '../ui/view-level.js';
 import {
   type RecentCommand,
   readRecentCommands,
@@ -60,6 +67,8 @@ type Item = {
   create?: ObjectView;
   recent?: RecentCommand;
   hint?: string;
+  /** Done in place, without going anywhere. */
+  run?: () => void;
 };
 
 /** Text highlighting is presentation only; the server owns data matching and ranking. */
@@ -133,6 +142,7 @@ function PaletteContents({
   const navigate = useNavigate();
   const [text, setText] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const view = useContext(DeveloperContext);
   const [selected, setSelected] = useState('');
   const newTab = useRef(false);
   const typed = text.trim();
@@ -221,6 +231,17 @@ function PaletteContents({
           create: o,
         }))
     : [];
+  // The View control's levels, for everyone (agent view spec §3).
+  const viewActions: Item[] = VIEW_LEVELS.filter((level) => level !== view.level).map((level) => {
+    const Icon = VIEW_ICONS[level];
+    return {
+      id: `view:${level}`,
+      title: `Switch to ${VIEW_LABELS[level]} view`,
+      detail: `View · ${VIEW_SHORTCUT} steps through them`,
+      icon: <Icon size={17} />,
+      run: () => view.set(level),
+    };
+  });
   const normalizedQuery = normalize(typed);
   const match = (item: Item) =>
     !typed || normalize(`${item.title} ${item.id} ${item.detail ?? ''}`).includes(normalizedQuery);
@@ -301,7 +322,7 @@ function PaletteContents({
     { title: 'Records', items: records },
     { title: 'Facts', items: facts },
     { title: 'Events', items: events },
-    { title: 'Actions', items: actions.filter(match) },
+    { title: 'Actions', items: [...actions, ...viewActions].filter(match) },
   ];
   const items = groups.flatMap((group) => group.items);
   const more =
@@ -309,6 +330,11 @@ function PaletteContents({
     data &&
     [data.records, data.facts, data.events].some((hits) => hits.length === limit);
   const activate = (item: Item) => {
+    if (item.run) {
+      onClose();
+      item.run();
+      return;
+    }
     if (item.create) {
       onClose();
       onCreate(item.create);

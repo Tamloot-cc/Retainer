@@ -726,8 +726,10 @@ A **View** control in the account menu with three levels, **Standard**,
 ([agent-view.md](docs/specs/agent-view.md)). Remembered per browser in
 `localStorage` (`retainer:view-level:v1`, holding `off`, `developer` or
 `agent`; refused storage leaves it at Standard and the control still works
-for the visit), available to every actor. It changes what is displayed,
-never what is sent. `useDeveloper()` is true at Developer and Agent,
+for the visit), available to every actor. In the menu it is a stepped
+slider; at Developer and Agent each page header ends in a badge that goes
+back to Standard; ⌘. steps through the levels and ⌘K lists them
+(agent-view.md §3). It changes what is displayed, never what is sent. `useDeveloper()` is true at Developer and Agent,
 `useAgentView()` at Agent only. At Developer (and Agent):
 
 - Object and field labels show their API names beside them: list column
