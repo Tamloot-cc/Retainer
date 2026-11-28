@@ -856,8 +856,6 @@ export class RoutineRuntime {
         'the manifest does not say the routine uses a model',
       );
     if (!started) {
-      if (this.config.modelCallsPerDay <= 0)
-        throw refused('budget_exhausted', 'this server allows no routine model calls');
       if (run.model_calls >= ROUTINE_LIMITS.modelCallsPerRun)
         throw refused(
           'budget_exhausted',
@@ -868,8 +866,10 @@ export class RoutineRuntime {
       // counter: the reservation stays one atomic step.
       const dry = run.mode === 'dry';
       const cap = dry ? Math.floor(this.config.modelCallsPerDay / 2) : this.config.modelCallsPerDay;
-      if (dry && cap <= 0)
-        throw refused('dry_run_budget', 'this server allows dry runs no model calls');
+      if (cap <= 0)
+        throw dry
+          ? refused('dry_run_budget', 'this server allows dry runs no model calls')
+          : refused('budget_exhausted', 'this server allows no routine model calls');
       const [day] = await tx<{ count: number }[]>`
         insert into routine_model_days(workspace_id,day,count)
         values(${caller.workspaceId},(clock_timestamp() at time zone 'UTC')::date,1)

@@ -1681,6 +1681,39 @@ describe('routines', () => {
       output: { type: 'string' },
     });
     expect(asked.body.error.code).toBe('budget_exhausted');
+    // A dry run under the same cap ends with the dry-run code, so the card and
+    // the agent read it as the budget, not a failure (routines-in-chat §7).
+    const preview = await s.app.request('/v1/routines/preview', {
+      key: s.keys.agent,
+      body: {
+        manifest: {
+          when: { kind: 'manual', object: 'company', label: 'Ask' },
+          uses: { tools: [], model: true },
+        },
+        code: `export async function main({ retainer }: RoutineContext<'company'>) {
+  return retainer.ai.generate({ instructions: 'Say hi', input: null, output: { type: 'string' } });
+}
+`,
+      },
+    });
+    const runId = (preview.body.runs as string[])[0];
+    if (!runId) throw new Error('no dry run');
+    const claimed = await s.executor.claim(s.workspace, runId);
+    if (!claimed) throw new Error('dry run not claimed');
+    const key = await tokens.issueRoutine(
+      s.workspace,
+      { runId: claimed.runId, routineId: null, fence: claimed.fence, mode: 'dry', tools: [] },
+      new Date(Date.now() + 60000),
+    );
+    const dry = await s.app.request('/v1/routines/runtime/effects', {
+      key,
+      body: {
+        position: 1,
+        operation: 'ai.generate',
+        args: { instructions: 'Say hi', input: null, output: { type: 'string' } },
+      },
+    });
+    expect(dry.body.error.code).toBe('dry_run_budget');
     const days = await db.owner`select 1 from routine_model_days where workspace_id=${s.workspace}`;
     expect(days).toHaveLength(0);
   });
