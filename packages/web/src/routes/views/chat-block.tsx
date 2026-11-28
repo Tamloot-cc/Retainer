@@ -57,9 +57,9 @@ export default function ViewChatBlock({
       return api.queryRecords(
         preview.object,
         {
-          filter: preview?.filter ?? undefined,
-          sort: preview?.sort ?? undefined,
-          search: preview?.search ?? undefined,
+          filter: preview.filter ?? undefined,
+          sort: preview.sort ?? undefined,
+          search: preview.search ?? undefined,
           limit: 5,
         },
         signal,
@@ -159,7 +159,8 @@ export default function ViewChatBlock({
             filters={preview.filter ? [{ text: describeFilter(preview.filter, object) }] : []}
           />
           <p className="text-xs font-medium">
-            {check?.ok && check.count.toLocaleString()} matching records
+            {check?.ok &&
+              `${check.count.toLocaleString()} matching ${check.count === 1 ? 'record' : 'records'}`}
           </p>
           {records.error && <Notice error>{records.error.message}</Notice>}
           <ul className="space-y-1 text-sm">

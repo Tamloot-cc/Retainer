@@ -457,6 +457,8 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
   const saveOrder = (next: string[]) => patchPrefs({ order: next });
   const setFilter = (next: FilterParts | undefined) =>
     void setSearch({ filter: filterParam(next && encodeFilter(next), base), cursor: undefined });
+  const removeCustom = (index: number) =>
+    setFilter({ clauses, custom: custom.filter((_, i) => i !== index) });
   const setSort = (next: string | undefined) =>
     void setSearch({ sort: sortParam(next, base), cursor: undefined });
   const resetChanges = () => {
@@ -694,7 +696,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
               change={amend}
               filters={custom.map((part, index) => ({
                 text: describeFilter(part, object),
-                remove: () => setFilter({ clauses, custom: custom.filter((_, i) => i !== index) }),
+                remove: () => removeCustom(index),
               }))}
             />
           ) : (
@@ -703,9 +705,7 @@ function ObjectList({ name, schemaObject }: { name: string; schemaObject: Object
                 key={JSON.stringify(part)}
                 field={describeFilter(part, object)}
                 value=""
-                onRemove={() =>
-                  setFilter({ clauses, custom: custom.filter((_, i) => i !== index) })
-                }
+                onRemove={() => removeCustom(index)}
               />
             ))
           )}

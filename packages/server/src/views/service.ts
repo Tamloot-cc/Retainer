@@ -3,6 +3,7 @@ import {
   AGGREGATE_GRANULARITIES,
   AGGREGATE_OPS,
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
   displayViewGroups,
   isRecordId,
@@ -366,12 +367,7 @@ function groupingKind(object: CompiledObject, name: string) {
   if (!field?.isFilterable) return;
   if (canGroupBy(field)) return 'select';
   if (canPlaceBy(field)) return 'date';
-  if (
-    field.type === 'relation' &&
-    field.settings.relationCardinality === 'many_to_one' &&
-    !field.settings.isInverse
-  )
-    return 'relation';
+  if (canGroupByRelation(field)) return 'relation';
 }
 
 function isPeriodStart(value: string, granularity: NonNullable<StoredViewConfig['granularity']>) {
@@ -399,8 +395,8 @@ async function checkRelationGroups(
   write = false,
 ) {
   const name = config.groupBy && new FieldNames(object).name(config.groupBy, 'The grouping');
-  const field = name && object.fieldsByName.get(name);
-  if (field === '' || field?.type !== 'relation') return;
+  const field = name ? object.fieldsByName.get(name) : undefined;
+  if (field?.type !== 'relation') return;
   const ids = [...new Set((config.hiddenGroups ?? []).filter((id): id is string => id !== null))];
   if (!ids.length) return;
   const targets = relationTargets(schema, field)
@@ -651,10 +647,13 @@ export function presentView(tx: Tx, object: CompiledObject, row: ViewRow): Saved
     updatedBy: row.updated_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
-    get issues() {
-      return [...new Set([...(config.issues ?? []), ...fields.issues])];
-    },
+    issues: [...new Set([...(config.issues ?? []), ...fields.issues])],
   };
+}
+
+/** The person whose private views the caller also sees: the one an agent acts for, or the signed-in person. */
+function viewReader(caller: Caller): Actor | undefined {
+  return caller.viewReader ?? (caller.person && { type: 'user', id: caller.person.id });
 }
 
 /** Views the caller may see: the workspace's, and their own private ones (rule 1.4.4). */
@@ -691,7 +690,7 @@ export async function loadView(
   forUpdate = false,
 ): Promise<{ row: ViewRow; object: CompiledObject }> {
   const [row] = await tx<ViewRow[]>`
-    select v.* from views v where v.id = ${id} and ${visibleTo(tx, caller.actor, forUpdate ? undefined : (caller.viewReader ?? (caller.person && { type: 'user', id: caller.person.id })))}
+    select v.* from views v where v.id = ${id} and ${visibleTo(tx, caller.actor, forUpdate ? undefined : viewReader(caller))}
     ${forUpdate ? tx`for update` : tx``}`;
   const object = row && schema.objectsById.get(row.object_type_id);
   if (!row || !object || object.hidden || object.state.status !== 'active')
@@ -706,10 +705,9 @@ export async function listViews(
 ): Promise<{ views: SavedView[] }> {
   return withViews(sql, caller, async (tx, schema) => {
     const ids = objectName ? [requireObject(schema, objectName).id] : schema.visibleObjectIds;
-    const reader = caller.viewReader ?? (caller.person && { type: 'user', id: caller.person.id });
     const rows = await tx<ViewRow[]>`
       select v.* from views v
-      where v.object_type_id = any(${ids}::uuid[]) and ${visibleTo(tx, caller.actor, reader)}
+      where v.object_type_id = any(${ids}::uuid[]) and ${visibleTo(tx, caller.actor, viewReader(caller))}
       order by v.position, v.created_at, v.id`;
     return {
       views: rows.flatMap((row) => {

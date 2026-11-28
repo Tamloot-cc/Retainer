@@ -89,7 +89,7 @@ export function GroupedTable({
         {!groups.length && <Notice>No groups to display.</Notice>}
       </div>
       <GridFooter>
-        {totals.data.total.toLocaleString()} records
+        {totals.data.total.toLocaleString()} {totals.data.total === 1 ? 'record' : 'records'}
         {totals.data.values.slice(groupTotals.length).map((measure) => {
           const value = format(measure);
           const field = object.fields.find((item) => item.name === measure.field);

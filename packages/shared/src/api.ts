@@ -1004,6 +1004,16 @@ export const canGroupBy = (field: KindFieldCandidate) =>
 /** A calendar places records by a filterable date or date-time. */
 export const canPlaceBy = (field: KindFieldCandidate) =>
   (field.type === 'date' || field.type === 'date_time') && field.isFilterable;
+/** Records also group by a filterable single relation; each related record is a group. */
+export const canGroupByRelation = (
+  field: KindFieldCandidate & {
+    settings: { relationCardinality?: string; isInverse?: boolean };
+  },
+) =>
+  field.type === 'relation' &&
+  field.isFilterable &&
+  field.settings.relationCardinality === 'many_to_one' &&
+  !isInverseRelation(field);
 
 export type ViewColumns = {
   /** Visible fields after the label field, in order. */

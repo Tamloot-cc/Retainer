@@ -8,21 +8,18 @@ import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { api, useWorkspace } from '../../api/client.js';
 import { recordTitle } from '../state.js';
-import { aggregateLabel, operatorLabel } from './list-state.js';
+import { aggregateLabel, isPlainObject, operatorLabel } from './list-state.js';
 
-const objectValue = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+/** The built-in date columns every record or event has. */
+const BUILT_IN_LABELS = new Map([
+  ['createdAt', 'Created at'],
+  ['updatedAt', 'Updated at'],
+  ['occurredAt', 'Occurred at'],
+]);
 
 export function fieldLabel(object: ObjectView, key: string) {
   return (
-    object.fields.find((field) => field.name === key)?.label ??
-    (
-      { createdAt: 'Created at', updatedAt: 'Updated at', occurredAt: 'Occurred at' } as Record<
-        string,
-        string
-      >
-    )[key] ??
-    key
+    object.fields.find((field) => field.name === key)?.label ?? BUILT_IN_LABELS.get(key) ?? key
   );
 }
 
@@ -31,7 +28,7 @@ function valueLabel(value: unknown, options: Map<string, string>, relative: bool
     return value.map((item) => valueLabel(item, options, relative)).join(' or ');
   if (typeof value === 'string')
     return options.get(value) ?? (relative ? value.replaceAll('_', ' ') : value);
-  if (objectValue(value)) {
+  if (isPlainObject(value)) {
     for (const [direction, count] of Object.entries(value)) {
       if (typeof count !== 'number' || typeof value.unit !== 'string') continue;
       const amount = `${count} ${value.unit}${count === 1 ? '' : 's'}`;
@@ -56,13 +53,13 @@ export function describeFilter(filter: Record<string, unknown>, object: ObjectVi
       .map(([field, condition]) => {
         if ((field === 'and' || field === 'or') && Array.isArray(condition)) {
           const children = condition
-            .filter(objectValue)
+            .filter(isPlainObject)
             .map((part) => describeFilter(part, object));
           return children.length > 1
             ? `(${children.join(` ${field} `)})`
             : (children[0] ?? (field === 'and' ? 'All records' : 'No records'));
         }
-        if (field === 'not' && objectValue(condition))
+        if (field === 'not' && isPlainObject(condition))
           return `Not (${describeFilter(condition, object)})`;
         const label = fieldLabel(object, field);
         const options = new Map(
@@ -70,7 +67,7 @@ export function describeFilter(filter: Record<string, unknown>, object: ObjectVi
             .find((item) => item.name === field)
             ?.settings.options?.map((option) => [option.value, option.label]),
         );
-        return Object.entries(objectValue(condition) ? condition : { eq: condition })
+        return Object.entries(isPlainObject(condition) ? condition : { eq: condition })
           .map(([op, value]) => {
             if (op === 'isNull' || op === 'isEmpty')
               return `${label} is ${value ? '' : 'not '}empty`;
@@ -86,7 +83,7 @@ export function describeFilter(filter: Record<string, unknown>, object: ObjectVi
             const date =
               object.fields.some(
                 (f) => f.name === field && (f.type === 'date' || f.type === 'date_time'),
-              ) || ['createdAt', 'updatedAt', 'occurredAt'].includes(field);
+              ) || BUILT_IN_LABELS.has(field);
             return `${label} ${(date && operator) || operatorLabel(op)} ${valueLabel(value, options, relative)}`;
           })
           .join(' and ');

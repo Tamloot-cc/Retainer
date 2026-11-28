@@ -8,6 +8,7 @@ import {
   type AggregateValue,
   aggregateOps,
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
   type GroupMatch,
 } from '@retainer/shared';
@@ -145,13 +146,8 @@ function planAggregateGrouping(
       : field && canPlaceBy(field)
         ? typed(tx, field)
         : undefined;
-  const relation =
-    field?.type === 'relation' &&
-    field.isFilterable &&
-    field.settings.relationCardinality === 'many_to_one' &&
-    !field.settings.isInverse;
   if (dateColumn) return { kind: 'date' as const, dateColumn, field };
-  if (field && relation) return { kind: 'relation' as const, field };
+  if (field && canGroupByRelation(field)) return { kind: 'relation' as const, field };
   if (field && canGroupBy(field)) return { kind: 'select' as const, field };
   throw invalidAggregate(
     `groupBy requires a filterable select, date or single relation; "${name}" is not one`,
@@ -208,11 +204,8 @@ export async function aggregateRecords(
   const date = grouping.kind === 'date';
   const granularity = input.granularity ?? 'month';
   // A select's groups are bounded by its options; the others take a default limit.
-  const limit = viewGroups
-    ? grouping.kind === 'select'
-      ? null
-      : 50
-    : (input.limit ?? (grouping.kind === 'select' ? null : 50));
+  const defaultLimit = grouping.kind === 'select' ? null : 50;
+  const limit = viewGroups ? defaultLimit : (input.limit ?? defaultLimit);
   const expression = groupExpression(tx, schema, grouping, granularity);
   const next = date
     ? tx`r.g desc nulls last`

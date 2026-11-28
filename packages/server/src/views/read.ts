@@ -8,6 +8,7 @@ import { aggregateInputSchema, aggregateRecords, groupConstraint } from '../reco
 import { compileFilter, queryInputSchema, queryRecords } from '../records/query.js';
 import { plainPrefixQuery } from '../records/search-sql.js';
 import { aggregate, findRecords, requireObject, withRead } from '../records/service.js';
+import type { CompiledSchema } from '../schema/compiled.js';
 import { loadView, presentView } from './service.js';
 
 const viewId = z.uuid().optional().describe('A saved view ID from list_views');
@@ -44,6 +45,21 @@ function viewConditions(
   return view?.search ? tx`${filter} and r.search @@ ${plainPrefixQuery(tx, view.search)}` : filter;
 }
 
+/** The object read and, given a view ID, that view; a view must be on the named object. */
+async function resolveView(
+  tx: Tx,
+  schema: CompiledSchema,
+  caller: Caller,
+  name: string | undefined,
+  id: string | undefined,
+) {
+  const saved = id ? await loadView(tx, schema, caller, id) : undefined;
+  const object = saved?.object ?? requireObject(schema, objectRequired(name));
+  if (saved && name && requireObject(schema, name).id !== object.id)
+    throw new AppError(422, 'invalid_view', 'The view belongs to a different object');
+  return { object, view: saved && presentView(tx, object, saved.row) };
+}
+
 export async function queryWithView(
   sql: Sql,
   caller: Caller,
@@ -56,11 +72,7 @@ export async function queryWithView(
     sql,
     caller,
     async (tx, schema) => {
-      const saved = id ? await loadView(tx, schema, caller, id) : undefined;
-      const object = saved?.object ?? requireObject(schema, objectRequired(name));
-      if (saved && name && requireObject(schema, name).id !== object.id)
-        throw new AppError(422, 'invalid_view', 'The view belongs to a different object');
-      const view = saved && presentView(tx, object, saved.row);
+      const { object, view } = await resolveView(tx, schema, caller, name, id);
       const group = groupMatch ? groupConstraint(tx, schema, object, groupMatch) : tx`true`;
       const result = await queryRecords(
         tx,
@@ -95,11 +107,7 @@ export async function aggregateWithView(
     sql,
     caller,
     async (tx, schema) => {
-      const saved = id ? await loadView(tx, schema, caller, id) : undefined;
-      const object = saved?.object ?? requireObject(schema, objectRequired(name));
-      if (saved && name && requireObject(schema, name).id !== object.id)
-        throw new AppError(422, 'invalid_view', 'The view belongs to a different object');
-      const view = saved && presentView(tx, object, saved.row);
+      const { object, view } = await resolveView(tx, schema, caller, name, id);
       const result = await aggregateRecords(
         tx,
         caller.workspaceId,

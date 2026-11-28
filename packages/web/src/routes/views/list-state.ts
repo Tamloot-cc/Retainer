@@ -169,7 +169,7 @@ export type FilterClause = { field: string; operator: string; value: unknown };
 export type FilterParts = { clauses: FilterClause[]; custom: Record<string, unknown>[] };
 
 const NESTING = new Set(['and', 'or', 'not']);
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** Splits a filter into its top-level ANDed parts, flattening nested `and`s. */

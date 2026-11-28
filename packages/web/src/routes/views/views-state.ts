@@ -1,8 +1,8 @@
 import {
   canGroupBy,
+  canGroupByRelation,
   canPlaceBy,
   type FieldView,
-  isInverseRelation,
   type ObjectView,
   type SavedView,
   type SavedViewKind,
@@ -130,12 +130,7 @@ export const LAYOUT_FIELDS = {
     setting: 'groupBy',
     label: 'Group by',
     hint: 'Each group becomes a column',
-    fits: (field: FieldView) =>
-      canGroupBy(field) ||
-      (field.type === 'relation' &&
-        field.isFilterable &&
-        !isInverseRelation(field) &&
-        field.settings.relationCardinality === 'many_to_one'),
+    fits: (field: FieldView) => canGroupBy(field) || canGroupByRelation(field),
     choose: 'Choose the field whose options become columns',
     none: (plural: string) => `${plural} have no select or single relation to group by`,
     removed: 'The field this board was grouped by was removed, or can no longer group it. ',
