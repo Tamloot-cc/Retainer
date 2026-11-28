@@ -469,9 +469,10 @@ One PR, as features land whole:
 1. **Query layer**: `within` and relative days in filters
    (`records/query.ts`, the shared filter types), for every reader at
    once.
-2. **Views**: the new keys in `views/service.ts` (`description`, `search`,
-   `granularity`, `groupOrder` and `hideEmptyGroups`, all in `config`),
-   the wider `groupBy` with its Other group, their checks and repair, the
+2. **Views**: `description` as a column beside `name` (`db/schema.ts`,
+   one migration); the new `config` keys in `views/service.ts` (`search`,
+   `granularity`, `groupOrder`, `hideEmptyGroups`); the wider `groupBy`
+   with its Other group, their checks and repair, the
    issue a widening repair leaves (§4.6), the check route,
    `expectedUpdatedAt` on update, and the private-view rule (§7).
 3. **Agent and MCP**: `list_views`, `view` on the two reads, `check_view`,
@@ -480,11 +481,11 @@ One PR, as features land whole:
    summary, the `retainer-view` block with Open, Save and Update, `draft`
    on the object page, the description box.
 
-No migration: every new key, `description` included, lives in `config`,
-which is JSON checked on each write. A column for the description would
-buy nothing, since views are listed per object and never searched by
-description in SQL, and it would cost a migration deploy (Dashboards'
-took about 28 minutes, ten of them with the API in maintenance).
+The description is a column, not a `config` key. `config` holds how a
+view looks and is what a schema change repairs; the name and description
+say what the view is, and no repair should touch them. The migration
+means a longer hosted deploy: Dashboards' took about 28 minutes, ten of
+them with the API in maintenance.
 
 ### 9.1 Acceptance tests
 
